@@ -4,7 +4,10 @@ A PySide6 editor for osu!taiko charts. Run it with `python main.py` from the
 repository root; every import is absolute from there (`from ui import gui`,
 `from app.settings import SettingsManager`).
 
-- `ui/`: `gui.py` (the monolith, ~22k lines), the Settings dialog,
+- `ui/`: `gui.py` (still the largest, ~14.6k lines: the editor views and
+  `MainWindow`), `song_select.py` (the library page), `gameplay_view.py`
+  (the preview), `dialogs.py` (every dialog `MainWindow` opens),
+  `common.py` (what more than one of those needs), the Settings dialog,
   `config_sheet`, `theme`, `motion`, `smooth_scroll`, the trace dialog.
 - `audio/`: `audio_engine` (the transport, see below), `offset_calibration`.
 - `chart/`: `gimmick_session` builds gimmick structures, `time_axis` is the
@@ -17,6 +20,15 @@ repository root; every import is absolute from there (`from ui import gui`,
 
 A path built from `__file__` in a package module is one level below the
 root: use `parents[1]`, as `resource_roots` and `ui_asset` do.
+
+`gui.py` imports every public name back from the modules split out of it,
+so `gui.X` still resolves. But a test that *rebinds* a module name
+(`gui.QMessageBox = Fake`, `patch.object(gui, "reduced_motion")`) only
+reaches code that looks the name up in `gui`: stub it in the module the
+code under test lives in, or a real modal opens offscreen and the run
+hangs. A module-level variable another module assigns needs a setter in
+its own module (`common.set_view_ground_alpha`): `global` rebinds only the
+caller's copy.
 
 ## Measure first. Every time.
 

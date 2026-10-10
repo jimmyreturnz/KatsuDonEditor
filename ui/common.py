@@ -471,3 +471,36 @@ def view_ground(colour: str) -> QColor:
     ground = theme.color(colour)
     ground.setAlpha(_view_ground_alpha)
     return ground
+
+
+# The app's accent, used by the global button style and anywhere a widget has
+# to reproduce it in code rather than in a stylesheet.
+ACCENT_PINK = "#f3a6bd"
+
+
+def display_frame_interval_ns(screen) -> int:
+    """One refresh of `screen`, the cadence anything scrolling should paint at.
+
+    A fixed 120fps on the owner's 99.93Hz monitor is 1.2 frames per refresh,
+    so every fifth refresh showed a frame that had moved twice as far -- a
+    20Hz judder in the gameplay preview (owner, 2026-10-11) that no amount of
+    paint speed fixes. A rate Qt cannot report falls back to 120.
+    """
+    rate = screen.refreshRate() if screen is not None else 0.0
+    if not 30.0 <= rate <= 500.0:
+        rate = 120.0
+    return round(1_000_000_000 / rate)
+
+
+# The song select's chart preview, as a share of a gameplay view's height.
+SONG_SELECT_PREVIEW_DEFAULT_PERCENT = 67
+
+
+def tabular(font: QFont) -> QFont:
+    """Exo 2's tabular figures, so the stat columns line up digit for digit."""
+    font = QFont(font)
+    try:
+        font.setFeature(QFont.Tag("tnum"), 1)
+    except (AttributeError, TypeError):
+        pass  # A Qt without OpenType features: proportional figures, still legible.
+    return font

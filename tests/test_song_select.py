@@ -641,13 +641,14 @@ class PageTests(unittest.TestCase):
 
     def test_a_new_song_rewinds_the_playhead_then_glides_out(self):
         # Owner, 2026-10-09: back to the start, then out to the preview point.
-        from ui import gui
+        # The banner reads reduced_motion through its own module.
+        from ui import song_select
 
         banner = self.window._library.song_banner
         banner.set_tempo([(0.0, 500.0)], lambda: 30000.0)
         banner.set_duration(100000)
         banner._tick_beat()                     # drawn at 0.30
-        with unittest.mock.patch.object(gui, "reduced_motion", return_value=False):
+        with unittest.mock.patch.object(song_select, "reduced_motion", return_value=False):
             banner.glide(rewind=True)
         banner._now = 60000.0                   # the new song's preview point
         path = []

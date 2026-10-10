@@ -413,6 +413,7 @@ class LibraryPageTests(unittest.TestCase):
 
     def test_first_start_explains_the_folder_picker_then_scans(self):
         from ui import gui
+        from ui import song_select  # the folder picker lives there now
 
         shown = []
         chosen = str(self.root)
@@ -428,15 +429,15 @@ class LibraryPageTests(unittest.TestCase):
         self.window.settings.bool_value = lambda key, default=False: bool(stored.get(key, default))
         self.window.settings.set_value = lambda key, value: stored.__setitem__(key, value)
 
-        original_box, original_dialog = gui.QMessageBox, gui.QFileDialog
-        gui.QMessageBox = ExplainBox
-        gui.QFileDialog = type("FakeDialog", (), {
+        original_box, original_dialog = song_select.QMessageBox, song_select.QFileDialog
+        song_select.QMessageBox = ExplainBox
+        song_select.QFileDialog = type("FakeDialog", (), {
             "getExistingDirectory": staticmethod(lambda *args, **kwargs: chosen)
         })
         try:
             self.window.start_library()
         finally:
-            gui.QMessageBox, gui.QFileDialog = original_box, original_dialog
+            song_select.QMessageBox, song_select.QFileDialog = original_box, original_dialog
         self.assertEqual(stored["library/songs_folder"], chosen)
         self.assertTrue(shown, "no explanation before the folder picker")
         self.assertIsNotNone(self.window._scan_iterator)
@@ -447,6 +448,7 @@ class LibraryPageTests(unittest.TestCase):
     def test_setup_runs_again_when_a_folder_was_stored_but_setup_never_finished(self):
         """An install that predates the library still gets the first-run flow."""
         from ui import gui
+        from ui import song_select  # the folder picker lives there now
 
         stored = {"library/songs_folder": str(self.root)}  # no setup/completed
         self.window.settings.string_value = lambda key, default="": stored.get(key, default)
@@ -454,17 +456,17 @@ class LibraryPageTests(unittest.TestCase):
         self.window.settings.set_value = lambda key, value: stored.__setitem__(key, value)
 
         shown = []
-        original_box, original_dialog = gui.QMessageBox, gui.QFileDialog
-        gui.QMessageBox = type("ExplainBox", (), {
+        original_box, original_dialog = song_select.QMessageBox, song_select.QFileDialog
+        song_select.QMessageBox = type("ExplainBox", (), {
             "information": staticmethod(lambda parent, title, text: shown.append(text))
         })
-        gui.QFileDialog = type("FakeDialog", (), {
+        song_select.QFileDialog = type("FakeDialog", (), {
             "getExistingDirectory": staticmethod(lambda *args, **kwargs: "")  # cancelled
         })
         try:
             self.window.start_library()
         finally:
-            gui.QMessageBox, gui.QFileDialog = original_box, original_dialog
+            song_select.QMessageBox, song_select.QFileDialog = original_box, original_dialog
         self.assertTrue(shown)
         self.assertNotIn("setup/completed", stored)
 

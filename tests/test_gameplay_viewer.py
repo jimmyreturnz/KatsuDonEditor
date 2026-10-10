@@ -27,6 +27,8 @@ from PySide6.QtGui import QColor, QImage, QWheelEvent
 from PySide6.QtWidgets import QApplication
 
 from ui import gui
+# The preview calls draw_note_sprite through its own module; a spy goes there.
+from ui import gameplay_view
 from library import skin
 from model.hit_object import HitObject
 from osu_io.parser import parse_osu
@@ -316,17 +318,17 @@ class HitPositionTests(unittest.TestCase):
         landed, coming = self._circle(1000), self._circle(2000)
         view = self._view([landed, coming], at=1000.0)
         drawn = []
-        original = gui.draw_note_sprite
+        original = gameplay_view.draw_note_sprite
 
         def spy(painter, fill, outline, x, y, radius, skin=None, big=False):
             drawn.append(round(x))
             return original(painter, fill, outline, x, y, radius, skin, big)
 
-        gui.draw_note_sprite = spy
+        gameplay_view.draw_note_sprite = spy
         try:
             view.grab()
         finally:
-            gui.draw_note_sprite = original
+            gameplay_view.draw_note_sprite = original
         self.assertEqual(len(drawn), 1, "only the note still approaching")
         self.assertGreater(drawn[0], view._hit_x())
 
@@ -366,16 +368,16 @@ class HitPositionTests(unittest.TestCase):
 
             bodies, heads = [], []
             body = gui.GameplayViewerView._draw_fake_slider
-            sprite = gui.draw_note_sprite
+            sprite = gameplay_view.draw_note_sprite
             gui.GameplayViewerView._draw_fake_slider = (
                 lambda s, *a: bodies.append(1))
-            gui.draw_note_sprite = (
+            gameplay_view.draw_note_sprite = (
                 lambda *a, **k: heads.append(1))
             try:
                 view.grab()
             finally:
                 gui.GameplayViewerView._draw_fake_slider = body
-                gui.draw_note_sprite = sprite
+                gameplay_view.draw_note_sprite = sprite
         return asked, bodies, heads
 
     def test_before_the_target_it_is_drawn_by_its_own_routine(self):
@@ -406,12 +408,12 @@ class HitPositionTests(unittest.TestCase):
                 view = self._view([note], at=1000.0 - 1.0)
                 view._phantom_ends[note.uid] = view._compute_phantom_end(note)
                 heads = []
-                sprite = gui.draw_note_sprite
-                gui.draw_note_sprite = lambda *a, **k: heads.append(1)
+                sprite = gameplay_view.draw_note_sprite
+                gameplay_view.draw_note_sprite = lambda *a, **k: heads.append(1)
                 try:
                     view.grab()
                 finally:
-                    gui.draw_note_sprite = sprite
+                    gameplay_view.draw_note_sprite = sprite
                     view.close()
                 self.assertEqual(len(heads), 1)
 

@@ -213,3 +213,8 @@ test_beatmaps/
 # string conflict on a binary.
 translations/*.qm
 IAMGAY.md
+
+# Local, not source: graphify's generated knowledge graph, and screenshots
+# kept for reference (the folder name says it).
+graphify-out/
+pic_donttrack/

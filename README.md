@@ -28,27 +28,27 @@ The main inspirations include Alchyr's ranked maps *13 Stairs* and *Helios*, whi
 
 ---
 
-**Song select**: star ratings from your osu!.db, now with background and song preview!
+**Song select.** Star ratings from your osu!.db, now with background and song preview!
 
 ![Song select](docs/screenshots/song-select.png)
 
-**Editor**: You may edit multiple difficulties at once, copypasting from one to another is possible here too.
+**Editor.** You may edit multiple difficulties at once, and copy and paste from one to another.
 
 ![Editor](docs/screenshots/editor.png)
 
-**Gameplay preview**: updated to match osu playfield size.
+**Gameplay preview.** Sized to match the osu! playfield.
 
 ![Gameplay preview](docs/screenshots/gameplay-preview.png)
 
-**Gimmick editor**: one layer per kind of gimmick, the fake sliders, barlines and each layer's SV.
+**Gimmick editor.** One layer per kind of gimmick: the fake sliders, the barlines, and each layer's SV.
 
 ![Gimmick editor](docs/screenshots/gimmick-editor.png)
 
-**Fancy Arranger**: transform notes into shape, text, or image. You can change CS and AR here.
+**Fancy Arranger.** Transform notes into a shape, text, or an image. You can change CS and AR here.
 
 ![Fancy Arranger](docs/screenshots/fancy-arranger.png)
 
-**Config sheets**: Improved the UI of the sheet and makes them more intuitive
+**Config sheets.** Every tool's options, in a redesigned sheet.
 
 | | |
 |---|---|
@@ -61,23 +61,23 @@ The main inspirations include Alchyr's ranked maps *13 Stairs* and *Helios*, whi
 
 An autoplay in the gameplay preview, plus drumroll hitsounds.
 
-- **Autoplay**: the skin's input drum is played in kddk full alt, semi alt, single tap, roll or ddkk, with 1234 / 1324 / 4231 bindings and either dominant hand
-- **Kiai glow** and the grey note in the hit target, as in osu!
-- **Drumrolls are heard**, a don on every 1/4 beat tick
-- Semi alt is experimental: send the pattern and how you would play it in 1234
+- **Autoplay.** The skin's input drum plays in kddk full alt, semi alt, single tap, roll or ddkk, with 1234, 1324 or 4231 bindings and either dominant hand.
+- **Kiai glow.** The hit target also shows the grey note, as in osu!
+- **Drumrolls are heard.** A don sounds on every 1/4 beat tick.
+- **Semi alt is experimental.** Send me the pattern and how you would play it in 1234.
 
 Details: [`docs/releases/v3.5.2.md`](docs/releases/v3.5.2.md)
 
 
-Full development log detail lives in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md).
+The full development log is in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md).
 
 ---
 
 ## Windows SmartScreen notice
 
-Taiko Fancy Arranger v3.5.2 is a currently unsigned Windows application. The release includes source-level security hardening, input validation, safer file handling, automated tests, and published SHA-256 checksums.
+Taiko Fancy Arranger v3.5.2 is an unsigned Windows application. The release validates its input files, ships with automated tests, and publishes SHA-256 checksums.
 
-Windows Defender SmartScreen may still display an "unrecognized app" warning because the executable has not yet established download reputation.
+Windows Defender SmartScreen may still show an "unrecognized app" warning, because a new executable has no download reputation yet.
 
 ---
 
@@ -105,8 +105,8 @@ TaikoFancyArranger-Windows-x64.zip
 TaikoFancyArranger.exe
 ```
 
-5. That is the last time you download it by hand. When a new version is out, the app shows its patch notes on startup: click **Update and Restart** and it installs itself into the same folder and reopens. Your settings and shortcuts are kept. Keep the folder somewhere you can write to (not `Program Files`).
-Python and PySide6 are bundled with the portable Windows release. Players using the release ZIP do not need to install Python or run `pip`.
+5. That is the last time you download it by hand. When a new version is out, the app shows its patch notes on startup. Click **Update and Restart** and it installs itself into the same folder and reopens, keeping your settings and shortcuts. Keep the folder somewhere you can write to (not `Program Files`).
+The release ZIP bundles Python and PySide6, so you do not need to install Python or run `pip`.
 
 > Windows may show a reputation warning for an unsigned new application. Review the repository and release files before running the program.
 
@@ -115,8 +115,8 @@ Python and PySide6 are bundled with the portable Windows release. Players using 
 ## First start
 
 1. **Choose a language.** English or 日本語.
-2. **Choose your osu! Songs folder.** Pre-filled with `%LOCALAPPDATA%/osu!/Songs` when it exists. The folder is remembered, and can be changed later from the library page.
-3. **Wait for the scan.** The first scan reads every `.osu` file once and takes a while on a large collection. It runs in slices, so the window stays responsive. Later starts show the cached list before verifying it. You may use the app while it is scanning, but the experience will not be that smooth on the editor and osu. Thus, it is suggested to wait for the scan, or make a small folder that consists of only maps that you would want to edit.
+2. **Choose your osu! Songs folder.** The box starts at `%LOCALAPPDATA%/osu!/Songs` when it exists. The app remembers the folder, and you can change it later from the library page.
+3. **Wait for the scan.** The first scan reads every `.osu` file once and takes a while on a large collection. It runs in slices, so the window keeps responding. Later starts show the cached list before checking it. You can use the app while it scans, but the editor and osu! will not run as smoothly. Wait for the scan, or make a small folder with only the maps you want to edit.
 
 Cancelling the folder picker leaves the library empty with a **Change folder** button.
 
@@ -124,7 +124,7 @@ Cancelling the folder picker leaves the library empty with a **Change folder** b
 
 ## Song library
 
-The library page is the front door.
+The app opens on the library page.
 
 - Left: songs, shown as `Artist - Title · mapper · difficulty count`.
 - Right: the difficulties of the selected song.
@@ -132,14 +132,14 @@ The library page is the front door.
 
 Controls:
 
-- **Search** — matches artist, title, both Unicode variants, difficulty name, creator and tags at once. Same behavior as osu!
-- **Group by** — nothing, mapper, or artist.
-- **Sort** — A→Z or Z→A, which reverses group order too.
-- **Original language metadata** — shows `ArtistUnicode`/`TitleUnicode` instead of the romanized fields, falling back to whichever the map actually has.
-- **Music player** — previous, play / pause, stop and next. Previous and next walk a shuffled song order that is fixed for the session, and select that song. **Space** pauses and resumes, except while typing a search.
-- **Songs folder menu** — Quick scan, Rescan everything, **Reload this beatmap** (`F5`, re-reads only the selected song) and Change folder.
+- **Search.** Matches artist, title, both Unicode variants, difficulty name, creator and tags at once, as osu! does.
+- **Group by.** Nothing, mapper, or artist.
+- **Sort.** A to Z or Z to A. This reverses the group order too.
+- **Original language metadata.** Shows `ArtistUnicode` and `TitleUnicode` instead of the romanized fields, and falls back to whichever the map actually has.
+- **Music player.** Previous, play and pause, stop, and next. Previous and next walk a shuffled song order that stays fixed for the session, and select that song. **Space** pauses and resumes, except while you type a search.
+- **Songs folder menu.** Quick scan, Rescan everything, **Reload this beatmap** (`F5`, which re-reads only the selected song) and Change folder.
 
-The preview plays at 1.00x and the song's own pitch whatever mod is selected; mods apply in the editor.
+The preview plays at 1.00x and the song's own pitch whatever mod is selected. Mods apply in the editor.
 
 Only taiko charts are listed.
 
@@ -151,9 +151,9 @@ There will be a rework on the song library soon, stay tuned!
 
 The Editor page stacks views vertically, grouped under their difficulty. Open one with **+ Add view** (view type + difficulty), or right-click the empty space below the views. Opening a difficulty automatically gives it a chart view and an SV view.
 
-The map's own background shows faded behind the page. **Settings → Editor background → Background opacity** sets how strongly (0% leaves it plain), and changes while you drag it.
+The map's own background shows faded behind the page. **Settings → Appearance → Background opacity** sets how strongly, and the page changes while you drag it. At 0% the page is plain.
 
-Holding **Ctrl** places at 1ms precision regardless of the snap divisor, with a guide line and a live millisecond readout in the corner of every view.
+Holding **Ctrl** places at 1ms precision whatever the snap divisor, with a guide line and a millisecond readout in the corner of every view.
 
 View types:
 
@@ -179,11 +179,11 @@ The tool row sits at the bottom of the page and acts on the focused chart view.
 6  New combo
 ```
 
-- Left click places at the snapped time; a translucent ghost previews where it lands.
+- Left click places at the snapped time. A translucent ghost shows where it will land.
 - Sliders and spinners are **click-dragged** to their length. Press near the right edge of an existing one to resize it, or drag its tail with the **Select** tool afterwards.
-- Holding **Shift** will changes the note to finisher size.
-- Right click deletes the note under the cursor
-- One object per millisecond, spinners excepted — placing over a note replaces it, as a single undo step.
+- Holding **Shift** places a finisher.
+- Right click deletes the note under the cursor.
+- Each millisecond holds one object, spinners excepted. Placing over a note replaces it, as a single undo step.
 
 ### SV editing
 
@@ -196,19 +196,19 @@ With an SV view focused, the tool row becomes:
 ```
 
 - Red lines are uninherited (BPM) points, green are inherited (SV), yellow means both share a millisecond.
-- Click a green line to select it; drag vertically to change its SV, horizontally to retime it, snapped to the grid. Which axis you get depends on how close the click was to the value dot.
-- Deleting green lines will not remove Red lines
+- Click a green line to select it. Drag vertically to change its SV, or horizontally to retime it on the grid. Which axis you get depends on how close the click was to the value dot.
+- Deleting green lines does not remove red lines.
 - Double-clicking any timing line allows you to toggle kiai or the line's omit-barline flag.
 - Dragging vertically moves the SV one `0.01` step per pixel from where you pressed.
-- The graph shows **effective** SV — green over red where both exist — with a fixed 0.1x floor and an autoscaling ceiling. - to be changed to 0.01x
+- The graph shows **effective** SV, which is the green line's value where a green and a red line share a millisecond. Its floor is a fixed 0.1x and its ceiling scales itself. The floor will change to 0.01x.
 
-**Function mode:** drag a range, then choose initial rate, final rate, position offset, whether to omit the first barline, and whether the sweep is relative to the final BPM. Seven curves are offered as tiles, each drawing the sweep you actually typed:
+**Function mode.** Drag a range, then choose the initial rate, final rate, position offset, whether to omit the first barline, and whether the sweep is relative to the final BPM. The seven curves are tiles, each drawn from the values you typed:
 
 ```text
 linear   sin in   sin out   exp1.3   exp1.6   true exp   sin
 ```
 
-Points are generated on the notes in range by default, or every N snaps. The default −5 ms offset makes sure the SV is already in force when the note it governs arrives. However many points it makes, it is one undo step.
+The tool places points on the notes in range by default, or every N snaps. The default -5 ms offset puts the SV in force before the note it governs arrives. However many points it makes, it is one undo step.
 
 Will eventually add an option to select exp(x>=1) SV for an experimental purpose.
 
@@ -237,29 +237,28 @@ Leaving the editor with unsaved work lists which difficulties are unsaved by nam
 
 ## Gimmick editor page
 
-A "gimmick" in osu!taiko is a visual effect built out of timing points rather than notes: drumrolls of negative length that are drawn but never hittable ("fake sliders"), notes drawn out of barlines, and extreme BPM/SV values used to move objects around the screen.
+A "gimmick" in osu!taiko is a visual effect built out of timing points rather than notes. Examples are drumrolls of negative length that are drawn but never hittable ("fake sliders"), notes drawn out of barlines, and extreme BPM and SV values that move objects around the screen.
 
 The gimmick page stacks six layers over one difficulty: the normal chart, a fake slider layer, a barline gimmick layer, and an SV layer for each of the three.
 
 Entering it for a difficulty asks once whether to edit that difficulty in place or copy it into a new `[Gimmick]` difficulty, and remembers the answer permanently.\
 You can also change the timing reference for a smoother scrolling experience, it is suggested to use a clean version of the chart though.\
 
-Kiai sections draw as a translucent orange band in every layer. Every timing point a gimmick tool generates carries the kiai state of the current section.
+Kiai sections show as a translucent orange band in every layer. Every timing point a gimmick tool writes carries the kiai state of the section it lands in.
 
-Holding Ctrl while hovering your cursor at any layer allows you to place objects as precise as 1 millisecond apart.
+Hold Ctrl over any layer to place objects 1 millisecond apart.
 
 ### Fake sliders and shiny notes
 
 The fake slider layer places fake sliders, and "shiny" notes (several fake sliders stacked on one millisecond, which can be seen in game as a bright white glow beside a note)\
-The tool classify them by position: a fake slider at one millisecond after the note or line it hangs off is a shiny, two milliseconds after is a fake slider.\
+The tool classifies them by position: a fake slider at one millisecond after the note or line it hangs off is a shiny, two milliseconds after is a fake slider.\
 The layer draws them on two rows, fake sliders on the ceiling and shiny below, with the snap grid down the middle, because at gimmick zoom they sit one pixel column apart.\
 I hope this design would be easier for you to tell which notes are fake sliders and which notes are shiny.
 
 You can also change the length of the fake slider by double clicking it, defaulting to -0.0010.\
 This is to allow you to kind of 'encode' the fake slider; let's say you have many fake sliders in any given interval and you want each of the groups within them to have different SV behavior, you may pre-config the length before you place the fake slider and then apply SV only to fake sliders with this specific length :) 
 
-Keep in mind that the editor still cannot render fake sliders with high negative length, such as -100 length, yet.\
-I am not sure yet on how I could render them, if you could suggest or educate me how, I would be very thankful :>
+Fake sliders with a long negative length are drawn to scale in the gameplay preview. At SliderMultiplier 2.8, a 750ms beat and 1.0x SV, a length of -100 is 140px of track.
 
 Tools:
 
@@ -273,14 +272,14 @@ Convert Notes
 Kiai
 ```
 
-- **Multiple Fake Slider** writes a whole run of fake sliders at a configured spacing in one click.
+- **Multiple Fake Slider** writes a whole run of fake sliders at a set spacing in one click.
 - **Function** fills a dragged range.
 - **Convert Notes** turns the chart's own notes into fake slider or shiny structures.
 - **Kiai** drags a range and turns every timing point inside it into one kiai section.
 
 ### Barline gimmicks
 
-Notes drawn out of red lines — a Don is one mirrored pair of bars, a Kat is three, and each pair is independently configurable.\
+Notes drawn out of red lines. A Don is one mirrored pair of bars and a Kat is three, and you can set up each pair on its own.\
 Bars can be mirrored around the note or trail it. A red line tool has its own configurable BPM, and a Function tool fills a range with red lines on a millisecond count or the beat grid, with an optional BPM ramp and a chosen SV.\
 You can also do the same kind of behavior with fake sliders where you might want to apply SV to this specific BPM, or better, BPM range.
 
@@ -292,7 +291,7 @@ You can also change the offset of where SV is applied if you prefer, however it 
 As mentioned earlier, you can also apply SV speed only to fake sliders with length-specific and barline with BPM-specific.\
 I believe this can simplify your gimmick beatmaps creation workflow much better, especially if you are a big fan of barline gimmick with barline to obstruct players' reading.
 
-### Known Issue (will fix soon)
+### Known issues (will fix soon)
 - Will try to figure out an issue that when you add redline to the ms where there is already a fake slider and it would be moved to fake slider layer (this is fine and intended), but you cannot move them afterward.\
 - You cannot place redline directly under fake sliders anyways, the current workaround is to place it at somewhere else and Ctrl+Drag it to the fake slider. 
 I will add an option to place redline at the first fake slider at the current BPM (or custom BPM) to accommodate the behavior of you wanting the regular note to be invisible with high bpm, and reset the chart speed back to normal with current bpm at one millisecond later. I hope this would standardize the format of how gimmick charts should be created.
@@ -301,7 +300,7 @@ I will add an option to place redline at the first fake slider at the current BP
 
 ## Fancy Arranger page
 
-The original visual arranger, unchanged in behaviour and now on its own page with its own timeline, timing bar, density chart, difficulty selector, AR/CS controls and export buttons.
+The original visual arranger, unchanged in behaviour, now on its own page with its own timeline, timing bar, density chart, difficulty selector, AR and CS controls and export buttons.
 
 ### Transformations
 
@@ -416,14 +415,14 @@ Its controls include:
 2. Choose **All Notes** or **Split Don / Kat**, then a transformation.
 3. Adjust parameters, or drag the pattern directly inside the transformation view. In Split mode, dragging a Don moves the Don pattern and dragging a Kat moves the Kat pattern.
 4. Press **Transform selected notes** to commit it to the session. `Ctrl+Z` / `Ctrl+Y` still apply.
-5. Set **AR** and **CS** if needed — a slider and a number box each, from `0.00` to `10.00` in `0.01` steps. `AR 0.00` is the slowest approach rate and `CS 0.00` the biggest circle size. CS starts at the map's own value and sizes the circles in the transformation view as osu! does; AR starts at `10`.
+5. Set **AR** and **CS** if needed. Each has a slider and a number box, from `0.00` to `10.00` in `0.01` steps. `AR 0.00` is the slowest approach rate and `CS 0.00` the biggest circle size. CS starts at the map's own value and sizes the circles in the transformation view as osu! does. AR starts at `10`.
 6. **Export applied map** writes a separate arranged difficulty. **Apply all changes to original file** overwrites the loaded `.osu`, after making a backup.
 
 The transformation pane is a preview. Nothing is written until you export or apply.
 
-The beatmap background is shown in the transformation view; its opacity is adjustable and another image can be dragged in to replace it.
+The transformation view shows the beatmap background. You can change its opacity, or drag in another image to replace it.
 
-Notes glide to their new places when a transformation changes. **Settings → Fancy Arranger → Animate transforms** turns that off, which is lighter on a dense map.
+Notes glide to their new places when a transformation changes. **Settings → Appearance → Animate Fancy Arranger transforms** turns that off, which is lighter on a dense map.
 
 ---
 
@@ -436,7 +435,7 @@ Notes glide to their new places when a transformation changes. **Settings → Fa
 | Export applied map | Fancy Arranger | Writes an arranged difficulty to a destination you choose |
 | Apply all changes to original file | Fancy Arranger | Overwrites the loaded `.osu`, after a backup |
 
-Saving regenerates `[TimingPoints]` and `[HitObjects]` and passes every other section through unchanged. The only deliberate loss is `//` comments inside those two sections.
+Saving rewrites `[TimingPoints]` and `[HitObjects]` and copies every other section through unchanged. The one thing it drops is `//` comments inside those two sections.
 
 ---
 
@@ -467,10 +466,6 @@ Text, equations, drawings, and detailed shapes need enough selected notes to rem
 - Increasing equation resolution
 - Adjusting graph bounds or size
 
-### Known approximation
-
-Slider length is computed with osu!'s default `SliderMultiplier` of 1.4, because this program does not yet parse the `[Difficulty]` section's own value. Slider *timing* is exact; only the stored length field can be slightly off on a map that overrides the multiplier.
-
 ---
 
 ## Feedback and bug reports
@@ -491,7 +486,7 @@ Do not upload copyrighted audio or private beatmap assets unless permission has 
 
 ## Project status
 
-Version 3.5.2 is the current public release. The project focuses on creative single player editing, arrangement and previewing. Multiplayer and automatic difficulty calculation are outside the current scope.
+Version 3.5.2 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
 
 Not yet implemented, and next in line:
 

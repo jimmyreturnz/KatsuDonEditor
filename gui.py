@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import gc
 import math
+import operator
 import os
 import random
 import csv
@@ -382,7 +384,6 @@ GUI_TRANSFORMATIONS=[name for name in ("text","drawn_path","equation") if name i
 # a single glyph, and overriding only `padding` and `font-size` leaves the
 # inherited pink background, hover and disabled states alone -- a leaf
 # widget's own QPushButton{} rule overrides just the properties it names.
-STEP_BUTTON_STYLE = "QPushButton { padding: 2px 6px; font-weight: 700; font-size: 15px; }"
 
 
 def button_chrome_width(button: QPushButton) -> int:
@@ -459,17 +460,6 @@ def button_text_width(button: QPushButton) -> int:
 def fit_button_width(button: QPushButton) -> None:
     """Pin `button` to the width its own label needs. See button_text_width."""
     button.setFixedWidth(button_text_width(button))
-
-
-def step_button(text: str, on_click, parent: QWidget | None = None) -> QPushButton:
-    """A compact, glyph-sized +/- button, wired to `on_click`."""
-    button = QPushButton(text, parent)
-    button.setStyleSheet(STEP_BUTTON_STYLE)
-    button.setAutoRepeat(True)
-    button.setFocusPolicy(Qt.NoFocus)
-    button.clicked.connect(on_click)
-    fit_button_width(button)
-    return button
 
 
 def equalize_button_widths(buttons, heights: bool = False, widths: bool = True) -> None:
@@ -940,6 +930,93 @@ def in_kiai(timing_points: list[TimingPoint], time_ms: float) -> bool:
 
 _NOTE_SPRITES: dict[tuple, QPixmap] = {}
 
+def display_frame_interval_ns(screen) -> int:
+    """One refresh of `screen`, the cadence anything scrolling should paint at.
+
+    A fixed 120fps on the owner's 99.93Hz monitor is 1.2 frames per refresh,
+    so every fifth refresh showed a frame that had moved twice as far -- a
+    20Hz judder in the gameplay preview (owner, 2026-10-11) that no amount of
+    paint speed fixes. A rate Qt cannot report falls back to 120.
+    """
+    rate = screen.refreshRate() if screen is not None else 0.0
+    if not 30.0 <= rate <= 500.0:
+        rate = 120.0
+    return round(1_000_000_000 / rate)
+
+
+# Quarter-pixel horizontal placement for anything that scrolls.
+SUBPIXEL_PHASES = 4
+_SUBPIXEL_SHIFTED: dict[tuple[int, int], QPixmap] = {}
+
+
+def _shifted_image(image: QImage, f: float) -> QImage:
+    """`image` moved `f` of a pixel right: each pixel (1 - f) of itself plus
+    f of its left neighbour, on premultiplied bytes, one pixel wider.
+
+    Byte arithmetic rather than a QPainter blend: CompositionMode_Plus with an
+    opacity does not add linearly in Qt (a half-shifted opaque sprite came out
+    at alpha 191 with its colours brightened), and a shifted note has to be
+    exactly the colour it was. Two 256-entry tables and a C-level map add, so
+    a sprite costs about a millisecond, once.
+    """
+    source = image.convertToFormat(QImage.Format_ARGB32_Premultiplied)
+    width, height = source.width(), source.height()
+    stride = source.bytesPerLine()
+    data = bytes(source.constBits())
+    keep = bytes(int(v * (1.0 - f) + 0.5) for v in range(256))
+    # What `keep` left of v, so equal neighbours -- a sprite's flat interior --
+    # come back exactly v, and no sum can pass 255.
+    carry = bytes(v - keep[v] for v in range(256))
+    pad = b"\0\0\0\0"
+    rows = []
+    for y in range(height):
+        row = data[y * stride:y * stride + width * 4]
+        rows.append(bytes(map(operator.add, (row + pad).translate(keep), (pad + row).translate(carry))))
+    shifted = QImage(b"".join(rows), width + 1, height, (width + 1) * 4,
+                     QImage.Format_ARGB32_Premultiplied)
+    # QImage over a Python buffer does not own it; copy before it is freed.
+    return shifted.copy()
+
+
+def draw_pixmap_subpixel(painter: QPainter, pixmap: QPixmap, x: float, y: float) -> None:
+    """`pixmap` with its top-left at `x, y`, placed to a quarter pixel across.
+
+    Qt's raster engine puts an unscaled pixmap on a whole pixel whatever the
+    QPointF says -- measured, with and without SmoothPixmapTransform, and via
+    a same-size QRectF target too. A note scrolling 1.4px a frame therefore
+    moved 1, 1, 2, 1, 2 pixels: the horizontal judder in the gameplay preview
+    (owner, 2026-10-11), which osu! does not have because it draws on the GPU
+    at sub-pixel positions.
+
+    So each sprite gets copies shifted by 1/4, 1/2 and 3/4 of a pixel, made
+    once: (1 - f) of the sprite plus f of it one pixel over, added with
+    CompositionMode_Plus, which on premultiplied pixels is exactly a linear
+    resample. Drawing is still one unscaled blit.
+    """
+    ratio = pixmap.devicePixelRatio()
+    if painter.device().devicePixelRatioF() != ratio:
+        # A pixmap at another density is resampled by the draw already.
+        painter.drawPixmap(QPointF(x, y), pixmap)
+        return
+    device_x = x * ratio
+    whole = math.floor(device_x)
+    phase = round((device_x - whole) * SUBPIXEL_PHASES)
+    if phase == SUBPIXEL_PHASES:
+        whole, phase = whole + 1, 0
+    if phase:
+        key = (pixmap.cacheKey(), phase)
+        shifted = _SUBPIXEL_SHIFTED.get(key)
+        if shifted is None:
+            image = _shifted_image(pixmap.toImage(), phase / SUBPIXEL_PHASES)
+            image.setDevicePixelRatio(ratio)
+            # Cleared wholesale like _NOTE_SPRITES: keys only multiply when the
+            # view is resized, which makes every sprite size new anyway.
+            if len(_SUBPIXEL_SHIFTED) > 512:
+                _SUBPIXEL_SHIFTED.clear()
+            _SUBPIXEL_SHIFTED[key] = shifted = QPixmap.fromImage(image)
+        pixmap = shifted
+    painter.drawPixmap(QPointF(whole / ratio, y), pixmap)
+
 
 def draw_note_sprite(
     painter: QPainter, fill: QColor, outline: QPen, x: float, y: float, radius: float,
@@ -973,11 +1050,14 @@ def draw_note_sprite(
         if base is not None:
             previous = painter.opacity()
             painter.setOpacity(previous * fill.alphaF())
-            target = QRectF(x - radius, y - radius, radius * 2, radius * 2)
-            painter.drawPixmap(target, base, QRectF(base.rect()))
+            # At the art's own scaled size, not stretched into a radius*2 box:
+            # the box was the same size give or take a fraction of a pixel, so
+            # the draw snapped to a whole pixel and scrolling notes judder.
+            draw_pixmap_subpixel(painter, base, x - base.width() / 2.0, y - base.height() / 2.0)
             overlay = skin.scaled(element + "overlay", diameter)
             if overlay is not None:
-                painter.drawPixmap(target, overlay, QRectF(overlay.rect()))
+                draw_pixmap_subpixel(
+                    painter, overlay, x - overlay.width() / 2.0, y - overlay.height() / 2.0)
             painter.setOpacity(previous)
             if selected:
                 painter.setPen(outline)
@@ -1007,7 +1087,7 @@ def draw_note_sprite(
             _NOTE_SPRITES.clear()
         _NOTE_SPRITES[key] = sprite
     half = sprite.width() / (2 * ratio)
-    painter.drawPixmap(QPointF(x - half, y - half), sprite)
+    draw_pixmap_subpixel(painter, sprite, x - half, y - half)
 
 
 def paint_note_preview(painter: QPainter, rect, skin: TaikoSkin, percent: float) -> None:
@@ -5022,10 +5102,6 @@ PLAYFIELD_UNIT = 200.0
 # taiko-barline, 4x175, centred on the bar.
 PLAYFIELD_BARLINE_WIDTH = 4.0 / PLAYFIELD_UNIT
 PLAYFIELD_BARLINE_HEIGHT = 175.0 / PLAYFIELD_UNIT
-# approachcircle is 126x126 where taikohitcircle is 118x118, so the hit target
-# ring is a touch larger than the note that lands in it. Measured on screen:
-# 122px against a 114px note, which is the ring the note lands inside.
-PLAYFIELD_HIT_TARGET_SCALE = 126.0 / 118.0
 
 # One osu!stable gamefield unit (a 480-tall screen), as a fraction of the
 # playfield height. The playfield is BASE_HEIGHT 200 of lazer's 768-tall screen
@@ -5082,6 +5158,12 @@ KIAI_GLOW_IN_MS = 100.0
 KIAI_GLOW_OUT_MS = 600.0
 KIAI_GLOW_SCALE = 0.8  # TaikoLegacyHitTarget.SCALE
 HIT_TARGET_NOTE_ALPHA = 0.22  # its taikobigcircle
+# Its approachcircle: `SCALE + 0.03` of the art's own size, not fitted to the
+# note. Fitting it was wrong both ways (owner, 2026-10-11): by canvas, a ring
+# drawn on a 192px canvas came out a different size from one on 128; by
+# visible ink, riun's soft rainbow glow counted as ring and the line inside it
+# landed smaller than the note.
+HIT_TARGET_RING_SCALE = KIAI_GLOW_SCALE + 0.03
 KIAI_GLOW_KICK = 0.15
 KIAI_GLOW_KICK_MS = 80.0
 KIAI_GLOW_COLOR = QColor(255, 228, 0)
@@ -5910,10 +5992,8 @@ class GameplayViewerView(QWidget):
             if not -1.0 <= x <= self.width() + 1.0:
                 continue
             if marker is not None:
-                painter.drawPixmap(
-                    QPointF(x - marker.width() / 2.0, center_y - marker.height() / 2.0),
-                    marker,
-                )
+                draw_pixmap_subpixel(
+                    painter, marker, x - marker.width() / 2.0, center_y - marker.height() / 2.0)
             else:
                 painter.drawLine(round(x), top, round(x), bottom)
 
@@ -5921,10 +6001,10 @@ class GameplayViewerView(QWidget):
         painter.setRenderHint(QPainter.Antialiasing, True)
         if not self.plain_stage:
             self._draw_hit_target_note(painter, hit_x, center_y, big_radius)
-        if not self._draw_centred(
-            painter, "approachcircle", hit_x, center_y,
-            normal_radius * 2 * PLAYFIELD_HIT_TARGET_SCALE,
-        ):
+        ring = self._hit_ring()
+        if ring is not None:
+            painter.drawPixmap(QPointF(hit_x - ring.width() / 2.0, center_y - ring.height() / 2.0), ring)
+        else:
             painter.setPen(self.hit_pen)
             painter.setBrush(Qt.NoBrush)
             painter.drawEllipse(QPointF(hit_x, center_y), normal_radius, normal_radius)
@@ -6320,25 +6400,11 @@ class GameplayViewerView(QWidget):
                 painter.setOpacity(opacity)
 
 
-    def _draw_centred(
-        self, painter, element, x, y, diameter, opacity=1.0, additive=False,
-        colour=None,
-    ) -> bool:
-        """One skin element centred on `x, y` at `diameter` tall, keeping its
-        own aspect. Returns whether the skin had it."""
-        pixmap = self.skin.scaled(element, round(diameter), colour)
-        if pixmap is None or opacity <= 0.0:
-            return pixmap is not None
-        previous_mode = painter.compositionMode()
-        previous_opacity = painter.opacity()
-        if additive:
-            painter.setCompositionMode(QPainter.CompositionMode_Plus)
-        painter.setOpacity(previous_opacity * min(1.0, opacity))
-        painter.drawPixmap(
-            QPointF(x - pixmap.width() / 2.0, y - pixmap.height() / 2.0), pixmap)
-        painter.setOpacity(previous_opacity)
-        painter.setCompositionMode(previous_mode)
-        return True
+    def _hit_ring(self) -> QPixmap | None:
+        """The skin's `approachcircle` as ppy/osu `TaikoLegacyHitTarget` draws
+        it: its own size, @2x counted as half, at HIT_TARGET_RING_SCALE of the
+        200-unit playfield -- the same rule as the grey note under it."""
+        return self.skin.natural("approachcircle", self.height() / PLAYFIELD_UNIT * HIT_TARGET_RING_SCALE)
 
     def _cap_height(self, diameter: int) -> int:
         """`taiko-roll-end`'s drawn height, so its *ink* matches the note's.
@@ -6395,8 +6461,7 @@ class GameplayViewerView(QWidget):
             )
         tail = self.skin.scaled("taiko-roll-end", cap, self.slider_brush)
         if tail is not None:
-            painter.drawPixmap(
-                QPointF(body_end, center_y - tail.height() / 2.0), tail)
+            draw_pixmap_subpixel(painter, tail, body_end, center_y - tail.height() / 2.0)
         # `big` matters here as much as it does for a finisher note: a big
         # drumroll's head is `taikobigcircle`, which skinners redraw rather
         # than scale up -- some are a different shape, some carry a second ring
@@ -6462,8 +6527,7 @@ class GameplayViewerView(QWidget):
                 painter.drawRect(QRectF(x, center_y - radius, width, radius * 2))
         tail = self.skin.scaled("taiko-roll-end", cap, self.slider_brush)
         if tail is not None:
-            painter.drawPixmap(
-                QPointF(x + width, center_y - tail.height() / 2.0), tail)
+            draw_pixmap_subpixel(painter, tail, x + width, center_y - tail.height() / 2.0)
         else:
             # Without a skin there is no cap art, so the stand-in is the
             # drumroll colour in the shape a built-in drumroll ends in: a disc.
@@ -11109,10 +11173,6 @@ class SongBanner(QWidget):
             self.fade.start()
         self.update()
 
-    def set_song(self, title: str, subtitle: str, art: QPixmap | None) -> None:
-        self.set_text(title, subtitle)
-        self.set_art(art)
-
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self._sync_beat()
@@ -11824,11 +11884,15 @@ class LibraryPageController:
         # A frame for the preview, only while this page shows it. Precise and
         # 4ms, like the editor's render timer: a coarse 16ms timer held it to
         # 62.5 frames a second against the editor's 120 (owner: "a bit laggy").
-        # 8ms, not the editor's 4: this view has no hitsounds to schedule, and
-        # at 4 it painted 250 times a second for a 120Hz screen.
+        # At 4 it once painted 250 times a second; the tick now gates on the
+        # display's refresh instead, so the poll rate no longer sets the paints.
         self.chart_frame = QTimer(self.window)
         self.chart_frame.setTimerType(Qt.PreciseTimer)
-        self.chart_frame.setInterval(8)
+        # Polled at 4ms; _tick_chart_preview paints once per display refresh.
+        self.chart_frame.setInterval(4)
+        self._chart_frame_clock = QElapsedTimer()
+        self._chart_frame_clock.start()
+        self._chart_frame_due_ns = 0
         self.chart_frame.timeout.connect(self._tick_chart_preview)
         self.difficulty_list = QListWidget()
         self.difficulty_list.setObjectName("difficultyList")
@@ -12753,6 +12817,17 @@ class LibraryPageController:
     def _tick_chart_preview(self, force: bool = False) -> None:
         if not force and not self.chart_preview.isVisible():
             return
+        if not force:
+            # Painted once per refresh of the screen it is on, not per tick of
+            # the 4ms timer -- 125 paints a second judders on a 100Hz screen
+            # just as the editor's fixed 120 did (display_frame_interval_ns).
+            now_ns = self._chart_frame_clock.nsecsElapsed()
+            if now_ns < self._chart_frame_due_ns:
+                return
+            interval = display_frame_interval_ns(self.chart_preview.screen())
+            self._chart_frame_due_ns += interval
+            if self._chart_frame_due_ns < now_ns:
+                self._chart_frame_due_ns = now_ns + interval
         now = self._chart_clock()
         if force or abs(now - self.chart_preview.current_time) > 0.5:
             self.chart_preview.current_time = now
@@ -13507,7 +13582,9 @@ class MainWindow(QMainWindow):
         # pace -- the main source of visible stutter in the old scheme.
         self.gameplay_frame_clock = QElapsedTimer()
         self.gameplay_frame_clock.start()
-        self.gameplay_frame_interval_ns = 8_333_333  # ~120fps
+        # The display's own refresh, re-read when the window changes screen
+        # (_follow_screen); see display_frame_interval_ns.
+        self.gameplay_frame_interval_ns = display_frame_interval_ns(QApplication.primaryScreen())
         self._next_frame_due_ns = self.gameplay_frame_interval_ns
         # The real gap between rendered frames drives the interpolated
         # clock's own per-frame advance (_advance_interpolated_clock), rather
@@ -14275,12 +14352,6 @@ class MainWindow(QMainWindow):
                parent painted every plain QWidget in it as a lighter block. */
             QStatusBar { border-top: 1px solid #303947; color: #aeb8c5; }
             QStatusBar::item { border: 0; }
-            QComboBox {
-                background: #252d39;
-                border: 1px solid #3a4554;
-                border-radius: 5px;
-                padding: 5px;
-            }
             """ + control_stylesheet() + """
             QTabWidget::pane { border: 1px solid #303947; }
             QTabBar::tab {
@@ -18781,20 +18852,11 @@ class MainWindow(QMainWindow):
     def _build_tool_shortcuts(self) -> None:
         self._tool_state.build_tool_shortcuts()
 
-    def _set_tool_shortcuts_enabled(self, enabled: bool) -> None:
-        self._tool_state.set_tool_shortcuts_enabled(enabled)
-
     def _refresh_tool_shortcut_scope(self) -> None:
         self._tool_state.refresh_tool_shortcut_scope()
 
     def _activate_tool_digit(self, digit: str) -> None:
         self._tool_state.activate_tool_digit(digit)
-
-    def _set_active_tool(self, tool_id: str) -> None:
-        self._tool_state.set_active_tool(tool_id)
-
-    def _set_active_new_combo(self, value: bool) -> None:
-        self._tool_state.set_active_new_combo(value)
 
     def _editor_view_focus_changed(self, _old, new) -> None:
         self._tool_state.editor_view_focus_changed(_old, new)
@@ -18809,9 +18871,6 @@ class MainWindow(QMainWindow):
 
     def _sync_global_tool_row(self) -> None:
         self._tool_state.sync_global_tool_row()
-
-    def _set_active_sv_tool(self, tool_id: str) -> None:
-        self._tool_state.set_active_sv_tool(tool_id)
 
     def _sv_tools_for(self, view) -> tuple[str, ...]:
         return self._tool_state.sv_tools_for(view)
@@ -20304,8 +20363,19 @@ class MainWindow(QMainWindow):
             """
         )
 
+    def _follow_screen(self, screen=None) -> None:
+        """Pace frames to the screen the window is on, and keep doing so when
+        it is dragged to another one (a 60Hz laptop panel beside a 144Hz
+        monitor is the usual pair)."""
+        handle = self.windowHandle()
+        if handle is not None and not getattr(self, "_screen_followed", False):
+            handle.screenChanged.connect(self._follow_screen)
+            self._screen_followed = True
+        self.gameplay_frame_interval_ns = display_frame_interval_ns(screen or self.screen())
+
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        self._follow_screen()
         self._apply_selected_toggle_style()
         # One size for every tool button, across both rows: they swap in and out
         # of the same spot, so per-label widths made the row re-flow on every
@@ -21984,6 +22054,14 @@ def main() -> None:
             + "\n\n" + update_failure,
         )
     window.maybe_check_for_updates()
+    # Everything built so far -- modules, the window, its pages -- lives for
+    # the whole session, and the cyclic collector rescanned all of it on every
+    # full pass: 80k objects, 12-13ms, longer than a 120Hz frame, at moments
+    # nothing chose. Frozen, those passes cost nothing measurable (2026-10-11).
+    # Only cyclic garbage made before this line could leak, and there is none
+    # worth having: refcounting still frees everything else.
+    gc.collect()
+    gc.freeze()
     raise SystemExit(app.exec())
 
 

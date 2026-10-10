@@ -1,6 +1,6 @@
 # Taiko Fancy Arranger — working notes
 
-A PySide6 editor for osu!taiko charts. `gui.py` is the monolith (~12k lines);
+A PySide6 editor for osu!taiko charts. `gui.py` is the monolith (~22k lines);
 `osu_io/` parses and writes `.osu`, `model/` holds the undo commands,
 `gimmick_session.py` builds gimmick structures, `time_axis.py` is the shared
 scrolling/snapping mixin.
@@ -183,6 +183,30 @@ Found by measurement, listed so the next one is recognised faster:
   fine for it is drawn at a coarser *divisor of* the setting rather than
   dropped: 15.3ms -> 4.3ms. Batching the lines by pen was worth half the raster
   call and nothing else -- the frame was in the walk, not the pen changes.
+- **A pixmap at a fractional x is drawn at a whole one.** Qt's raster
+  engine snaps every unscaled pixmap draw -- QPointF, a same-size QRectF, a
+  near-identity transform, SmoothPixmapTransform on or off, all measured -- so
+  a note scrolling 1.4px a frame stepped 1, 1, 2, 1, 2 and juddered.
+  `draw_pixmap_subpixel` caches quarter-pixel-shifted copies (a Plus blend of
+  the sprite and itself one pixel over) and blits those; anything that
+  scrolls goes through it. `tests/test_subpixel_draw.py` holds the motion.
+- **Frame cadence is the display's, not a constant.** The owner's monitor is
+  99.93Hz; a fixed 120fps put 1.2 frames on every refresh, so one refresh in
+  five showed a double step -- a 20Hz judder that paint speed cannot touch.
+  `display_frame_interval_ns(screen)` is the interval, re-read when the
+  window changes screen; the song select preview gates its 4ms poll on it.
+- **A full GC pass is a dropped frame.** With the library loaded the heap
+  is ~80k objects, and `gc.collect(2)` over it is 12-13ms against an 8.33ms
+  frame, at moments nothing chose (2 of them in one 5s scroll run).
+  `main()` freezes everything built at startup; the same pass is then 0.0ms.
+  Measure with a `gc.callbacks` timer around the harness, not by guessing.
+- **Batching draw calls does not help antialiased lines.** Tried on the SV
+  bands (2026-10-11): 18 drawLines a paint into one drawLines, and the curve
+  into one drawPolyline. The raster work is per pixel, not per call -- the
+  batched lines cost the same 0.2s, and the polyline twice that (it pays for
+  joins). Reverted. A Gimmick-page scroll repaints six layers of chart + SV
+  bands at ~0.6ms each, ~7ms a notch, which is the real limit there.
+
 - **Application-wide event filters.** Qt runs every event in the process
   through every installed filter. Bail out on `event.type()` in one lookup,
   and release the filter in `closeEvent` (`_release_application_hooks`).

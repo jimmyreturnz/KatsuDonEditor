@@ -12,7 +12,7 @@ from PySide6.QtGui import QEnterEvent, QImage, QPainter
 from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtWidgets import QApplication, QPushButton, QWidget
 
-import motion
+from ui import motion
 
 _APP: QApplication | None = None
 

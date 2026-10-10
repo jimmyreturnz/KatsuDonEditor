@@ -32,7 +32,7 @@ data_entries.extend(
 
 
 analysis = Analysis(
-    [str(root / "gui.py")],
+    [str(root / "main.py")],
     pathex=[str(root)],
     binaries=[],
     datas=data_entries,

@@ -11,7 +11,7 @@ from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QWheelEvent
 from PySide6.QtWidgets import QApplication, QScrollArea, QSpinBox, QVBoxLayout, QWidget
 
-from smooth_scroll import SmoothScroller
+from ui.smooth_scroll import SmoothScroller
 
 app = QApplication.instance() or QApplication([])
 

@@ -35,8 +35,8 @@ sys.path.insert(0, __file__.rsplit("tools", 1)[0])
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-import audio_engine  # noqa: E402
-from audio_engine import (  # noqa: E402
+from audio import audio_engine  # noqa: E402
+from audio.audio_engine import (  # noqa: E402
     CHANNELS, GRAIN_FRAMES, SAMPLE_RATE, SEARCH_FRAMES, SEQUENCE_FRAMES,
     TimeStretcher, downmix_to_mono,
 )

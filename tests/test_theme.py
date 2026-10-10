@@ -8,9 +8,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QPushButton
 
-import gui
-import theme
-from settings_dialog import SettingsDialog
+from ui import gui
+from ui import theme
+from ui.settings_dialog import SettingsDialog
 
 _APP: QApplication | None = None
 
@@ -73,7 +73,7 @@ class ThemeMapTests(unittest.TestCase):
         # so the kept source can be translated again for the next theme.
         import re
         from pathlib import Path
-        import config_sheet
+        from ui import config_sheet
         written = config_sheet.ui_asset("switch-on.svg")
         self.assertTrue(written.endswith("assets/ui/switch-on.svg"))
         theme.install("taiko")

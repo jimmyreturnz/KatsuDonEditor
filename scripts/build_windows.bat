@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-cd /d "%~dp0"
+cd /d "%~dp0\.."
 
 echo ==========================================
 echo  Taiko Fancy Arranger v3.0.0 Builder
@@ -107,10 +107,11 @@ echo.
 echo [5/9] Checking Python syntax...
 
 "%VENV_PYTHON%" -m py_compile ^
-    gui.py ^
-    settings.py ^
-    settings_dialog.py ^
-    i18n.py
+    main.py ^
+    ui\gui.py ^
+    app\settings.py ^
+    ui\settings_dialog.py ^
+    app\i18n.py
 
 if errorlevel 1 goto :failed
 

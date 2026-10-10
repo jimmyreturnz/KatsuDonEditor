@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PySide6.QtCore import QCoreApplication, QElapsedTimer, QTimer  # noqa: E402
 
-import audio_engine  # noqa: E402
+from audio import audio_engine  # noqa: E402
 
 # For sweeping tunables against the numbers below without editing the module:
 # TAIKO_SINK_BUFFER_MS_OVERRIDE=<ms> TAIKO_CORRELATION_STEP=<n> TAIKO_SEARCH_STEP=<n>

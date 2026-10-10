@@ -24,7 +24,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from audio_engine import (  # noqa: E402
+from audio.audio_engine import (  # noqa: E402
     CHANNELS, SAMPLE_RATE, SEQUENCE_FRAMES, HitsoundMixer, TimeStretcher,
     downmix_to_mono, frame_for_ms,
 )

@@ -1,8 +1,8 @@
 import tempfile
 import unittest
 from pathlib import Path
-from gui import resolve_song_asset
-from transformer import _compile_safe_expression
+from ui.gui import resolve_song_asset
+from chart.transformer import _compile_safe_expression
 from osu_io.parser import parse_osu
 from osu_io.writer import write_osu
 

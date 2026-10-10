@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, QTranslator
 
-from settings import SettingsManager
+from app.settings import SettingsManager
 
 _TRANSLATOR: QTranslator | None = None
 
@@ -15,7 +15,7 @@ def resource_roots() -> list[Path]:
     roots: list[Path] = []
     if hasattr(sys, "_MEIPASS"):
         roots.append(Path(sys._MEIPASS).resolve())
-    roots.append(Path(__file__).resolve().parent)
+    roots.append(Path(__file__).resolve().parents[1])
     unique: list[Path] = []
     for root in roots:
         if root not in unique:

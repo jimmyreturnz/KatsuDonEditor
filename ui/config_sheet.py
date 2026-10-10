@@ -45,7 +45,7 @@ from PySide6.QtWidgets import (
 )
 
 
-from smooth_scroll import SmoothScroller
+from ui.smooth_scroll import SmoothScroller
 
 WARN_COLOR = "#ffb347"
 
@@ -61,10 +61,14 @@ def ui_asset(name: str) -> str:
     The bundle's copy first, then the source tree's -- the same order as
     gui.resource_roots, which this module cannot import.
     """
-    roots = [Path(getattr(sys, "_MEIPASS", "")), Path(__file__).resolve().parent]
+    # Only a real bundle root: Path("") is ".", whose str is truthy, so a
+    # source run resolved every asset against the working directory and
+    # handed Qt relative paths that broke when started from anywhere else.
+    roots = [Path(sys._MEIPASS)] if hasattr(sys, "_MEIPASS") else []
+    roots.append(Path(__file__).resolve().parents[1])
     for root in roots:
         path = root / "assets" / "ui" / name
-        if str(root) and path.is_file():
+        if path.is_file():
             # As written: the art carries pink-theme colours, and theme.css()
             # swaps in the active theme's copy as the sheet is set.
             return path.as_posix()

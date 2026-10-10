@@ -30,8 +30,8 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
 
-import gui
-from settings import should_ignore_shortcut_focus
+from ui import gui
+from app.settings import should_ignore_shortcut_focus
 from tests.osu_fixtures import write_fixture
 
 _APP: QApplication | None = None

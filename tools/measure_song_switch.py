@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
 
 switches = int(sys.argv[1]) if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else 20
 seed = int(sys.argv[sys.argv.index("--seed") + 1]) if "--seed" in sys.argv else 1

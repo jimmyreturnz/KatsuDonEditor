@@ -41,7 +41,7 @@ from PySide6.QtGui import QWheelEvent  # noqa: E402
 from PySide6.QtMultimedia import QMediaPlayer  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-import gui  # noqa: E402
+from ui import gui  # noqa: E402
 
 FRAME_MS = 1000.0 / 120.0
 

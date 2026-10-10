@@ -7,8 +7,8 @@ from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QApplication, QComboBox, QSlider
 from PySide6.QtCore import Qt
 
-import gui
-from settings_dialog import _NoteOpacityPreview
+from ui import gui
+from ui.settings_dialog import _NoteOpacityPreview
 
 
 class NoteOpacityPreviewTests(unittest.TestCase):
@@ -51,7 +51,7 @@ class NoteOpacityPreviewTests(unittest.TestCase):
         preview2.close()
 
     def test_the_shared_drawing_paints_notes_and_a_spinner(self):
-        from skin import TaikoSkin
+        from library.skin import TaikoSkin
         image = QImage(400, 64, QImage.Format_ARGB32)
         image.fill(0)
         painter = QPainter(image)

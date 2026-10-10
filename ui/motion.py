@@ -15,8 +15,8 @@ from PySide6.QtCore import QElapsedTimer, QEvent, QObject, QPoint, QPointF, QRec
 from PySide6.QtGui import QColor, QConicalGradient, QCursor, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import QAbstractScrollArea, QWidget
 
-import theme
-from smooth_scroll import reduced_motion
+from ui import theme
+from ui.smooth_scroll import reduced_motion
 
 # The pink theme's focus colour; theme.color() moves it to the active theme's.
 FOCUS = "#ff66aa"

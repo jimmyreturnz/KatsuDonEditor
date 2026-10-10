@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QProcess, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QPen, QPixmap
 
-from skin import available_skins, skins_root
+from library.skin import available_skins, skins_root
 from PySide6.QtWidgets import (
     QAbstractButton,
     QAbstractSpinBox,
@@ -34,13 +34,13 @@ from PySide6.QtWidgets import (
     QLineEdit,
 )
 
-from config_sheet import bind_segments, bind_tiles, scrub_label, set_warning, ui_asset
+from ui.config_sheet import bind_segments, bind_tiles, scrub_label, set_warning, ui_asset
 
-import theme
-import updater
-from smooth_scroll import smooth
-from audio_engine import DEFAULT_HITSOUND_OFFSET_MS
-from settings import (
+from ui import theme
+from app import updater
+from ui.smooth_scroll import smooth
+from audio.audio_engine import DEFAULT_HITSOUND_OFFSET_MS
+from app.settings import (
     NOTE_OPACITY_DEFAULT_PERCENT,
     NOTE_OPACITY_MIN_PERCENT,
     SettingsManager,
@@ -662,7 +662,7 @@ class SettingsDialog(QDialog):
         offset. No beatmap's own offset is read or written by any of this --
         the value being measured belongs to the sound card, not to a chart.
         """
-        from offset_calibration import OffsetCalibrationDialog
+        from audio.offset_calibration import OffsetCalibrationDialog
 
         dialog = OffsetCalibrationDialog(self)
         if dialog.exec() == QDialog.Accepted and dialog.result_offset is not None:
@@ -923,7 +923,7 @@ class SettingsDialog(QDialog):
         Japanese is asked in Japanese rather than in the language they were
         moving away from.
         """
-        import i18n
+        from app import i18n
 
         i18n.install_translator(QApplication.instance(), self.settings)
         self._prompt_restart(self.tr("Please restart Taiko Fancy Arranger to apply the language change."))

@@ -1,9 +1,22 @@
 # Taiko Fancy Arranger — working notes
 
-A PySide6 editor for osu!taiko charts. `gui.py` is the monolith (~22k lines);
-`osu_io/` parses and writes `.osu`, `model/` holds the undo commands,
-`gimmick_session.py` builds gimmick structures, `time_axis.py` is the shared
-scrolling/snapping mixin.
+A PySide6 editor for osu!taiko charts. Run it with `python main.py` from the
+repository root; every import is absolute from there (`from ui import gui`,
+`from app.settings import SettingsManager`).
+
+- `ui/`: `gui.py` (the monolith, ~22k lines), the Settings dialog,
+  `config_sheet`, `theme`, `motion`, `smooth_scroll`, the trace dialog.
+- `audio/`: `audio_engine` (the transport, see below), `offset_calibration`.
+- `chart/`: `gimmick_session` builds gimmick structures, `time_axis` is the
+  shared scrolling/snapping mixin, plus `transformer`, `parameters`,
+  `image_to_drawing`, `autoplay`, `sv_curves`.
+- `library/`: `osu_db`, `song_library`, `skin`.
+- `app/`: `settings`, `i18n`, `updater`, `security_utils`.
+- `osu_io/` parses and writes `.osu`, `model/` holds the undo commands,
+  `patterns/` the arranger's shapes. `scripts/` has the build and run `.bat`s.
+
+A path built from `__file__` in a package module is one level below the
+root: use `parents[1]`, as `resource_roots` and `ui_asset` do.
 
 ## Measure first. Every time.
 
@@ -627,8 +640,8 @@ there -- `timing_delete_enabled`, not `timing_edit_enabled`.
 
 ## Things that are true and non-obvious
 
-- **Line endings are mixed, and `core.autocrlf=true`.** `gui.py` used to be
-  LF and is now uniformly CRLF; `offset_calibration.py` and
+- **Line endings are mixed, and `core.autocrlf=true`.** `ui/gui.py` used to be
+  LF and is now uniformly CRLF; `audio/offset_calibration.py` and
   `tests/test_offset_calibration.py` are LF. A scripted patch must **detect**
   the file's own newline rather than assume either — read bytes, normalise to
   `\n`, patch, write back in the newline the file arrived with. Several edits

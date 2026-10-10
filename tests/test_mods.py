@@ -16,7 +16,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
 from osu_io.parser import parse_osu
 from tests.osu_fixtures import write_fixture
 
@@ -43,7 +43,7 @@ class _Window(unittest.TestCase):
         self.path = write_fixture(directory, "full_v14")
         # Test settings are seeded from the real ones, and a real session
         # leaves its mods there -- start from none, whatever was last played.
-        import settings
+        from app import settings
         settings.SettingsManager().set_value("playback/mods", "")
         self.window = gui.MainWindow()
         self.window.show()

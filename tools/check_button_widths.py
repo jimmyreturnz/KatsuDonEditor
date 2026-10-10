@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from PySide6.QtGui import QFont, QFontMetrics
 from PySide6.QtWidgets import QApplication, QPushButton
 
-import gui
+from ui import gui
 
 
 def needed(button: QPushButton) -> int:

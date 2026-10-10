@@ -1,5 +1,5 @@
 import unittest
-from settings import duplicate_shortcuts, normalize_sequence
+from app.settings import duplicate_shortcuts, normalize_sequence
 
 
 class ShortcutTests(unittest.TestCase):
@@ -12,7 +12,7 @@ class ShortcutTests(unittest.TestCase):
 
     def test_the_same_key_in_two_toolboxes_is_not_a_conflict(self):
         """Every toolbox numbers its own tools from 1 and only one is live."""
-        import gui  # noqa: F401  (registers the per-layer tool definitions)
+        from ui import gui  # noqa: F401  (registers the per-layer tool definitions)
 
         self.assertEqual(
             duplicate_shortcuts({"tool_1": "1", "tool_barline_1": "1", "tool_sv_chart_1": "1"}),
@@ -20,13 +20,13 @@ class ShortcutTests(unittest.TestCase):
         )
 
     def test_a_global_action_still_conflicts_with_a_toolbox_key(self):
-        import gui  # noqa: F401
+        from ui import gui  # noqa: F401
 
         duplicates = duplicate_shortcuts({"play_pause": "1", "tool_barline_1": "1"})
         self.assertEqual(duplicates, [("1", "play_pause", "tool_barline_1")])
 
     def test_two_tools_in_one_toolbox_still_conflict(self):
-        import gui  # noqa: F401
+        from ui import gui  # noqa: F401
 
         duplicates = duplicate_shortcuts({"tool_barline_1": "1", "tool_barline_2": "1"})
         self.assertEqual(duplicates, [("1", "tool_barline_1", "tool_barline_2")])

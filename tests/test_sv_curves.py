@@ -6,8 +6,8 @@ import unittest
 
 from model.hit_object import HitObject, TYPE_CIRCLE
 from osu_io.timing import TimingPoint
-import sv_curves
-from sv_curves import ANTI, BARLINE, STEP, anchors, build_model, detect_runs, sv_ease
+from chart import sv_curves
+from chart.sv_curves import ANTI, BARLINE, STEP, anchors, build_model, detect_runs, sv_ease
 
 
 def _note(time_ms: float) -> HitObject:

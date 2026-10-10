@@ -13,7 +13,7 @@ import array
 import math
 import unittest
 
-from audio_engine import (
+from audio.audio_engine import (
     HitsoundMixer,
     CHANNELS, CORRELATION_STEP, FADE_FRAMES, GRAIN_FRAMES, OVERLAP_FRAMES,
     SAMPLE_RATE, SEARCH_FRAMES, SEEK_COALESCE_MS, SEQUENCE_FRAMES,
@@ -517,7 +517,7 @@ class SearchCostTests(unittest.TestCase):
 
     def _grain_cost(self, correlation_step: int, seconds: float = 2.0) -> float:
         import time
-        import audio_engine as ae
+        from audio import audio_engine as ae
         saved = ae.CORRELATION_STEP
         ae.CORRELATION_STEP = correlation_step
         try:

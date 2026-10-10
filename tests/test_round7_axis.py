@@ -21,14 +21,14 @@ from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter, QPix
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
 from osu_io.timing import uninherited_points
 from osu_io.parser import parse_osu
-import skin
-import time_axis
+from library import skin
+from chart import time_axis
 from model.hit_object import TYPE_SPINNER, HitObject
 from osu_io.timing import TimingPoint
-from time_axis import TimeAxisMixin, snap_time, wheel_seek_time
+from chart.time_axis import TimeAxisMixin, snap_time, wheel_seek_time
 
 _APP: QApplication | None = None
 

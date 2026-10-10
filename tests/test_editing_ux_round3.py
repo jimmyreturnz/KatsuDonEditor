@@ -27,7 +27,7 @@ from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QKeyEvent, QMouseEvent, QWheelEvent
 from PySide6.QtWidgets import QApplication, QLabel
 
-import gui
+from ui import gui
 from tests.osu_fixtures import write_fixture
 
 _APP: QApplication | None = None

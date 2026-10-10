@@ -19,7 +19,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtGui import QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
 from osu_io.timing import TimingPoint
 
 _APP: QApplication | None = None

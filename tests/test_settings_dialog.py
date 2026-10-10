@@ -8,8 +8,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
-import gui
-from settings_dialog import SettingsDialog
+from ui import gui
+from ui.settings_dialog import SettingsDialog
 
 _APP: QApplication | None = None
 

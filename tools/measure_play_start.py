@@ -22,7 +22,7 @@ from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtMultimedia import QMediaPlayer  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-import gui  # noqa: E402
+from ui import gui  # noqa: E402
 
 
 def pump(app, seconds: float) -> None:

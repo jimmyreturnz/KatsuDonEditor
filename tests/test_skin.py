@@ -15,7 +15,7 @@ from tempfile import TemporaryDirectory
 from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import QApplication
 
-import skin
+from library import skin
 
 _APP = None
 
@@ -298,7 +298,7 @@ class UiSoundTests(unittest.TestCase):
     def test_the_select_sounds_are_found_in_any_osu_format_and_case(self):
         import shutil
         import tempfile
-        from skin import UI_SOUNDS, sound_paths
+        from library.skin import UI_SOUNDS, sound_paths
         folder = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, folder, True)
         (folder / "Select-Expand.ogg").write_bytes(b"")

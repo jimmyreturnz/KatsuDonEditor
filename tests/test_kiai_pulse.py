@@ -16,8 +16,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QApplication
 
-import gui
-import skin
+from ui import gui
+from library import skin
 from model.hit_object import HitObject
 from osu_io.parser import parse_osu
 from osu_io.timing import TimingPoint

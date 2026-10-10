@@ -38,37 +38,37 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget, QDockWidget, QMenu, QDialog, QDialogButtonBox, QFontComboBox, QSizePolicy
 )
 
-import osu_db
-from motion import (
+from library import osu_db
+from ui.motion import (
     SEGMENT_GLIDE_STYLE, HoverSheen, MorphRect, PageSlide, PlayPauseGlyph, PressRipple, ReorderDrag, RowEntrance,
     ScanShimmer, SegmentGlide, SelectionGlide, out_cubic, paint_living_rim, tick_while_shown,
 )
-from smooth_scroll import SMOOTH_SCROLL_MS, SmoothScroller, reduced_motion, smooth
-from config_sheet import (
+from ui.smooth_scroll import SMOOTH_SCROLL_MS, SmoothScroller, reduced_motion, smooth
+from ui.config_sheet import (
     SEGMENT_STYLE, WARN_COLOR, Diagram, SheetDialog, TrimmedDoubleSpinBox, bind_segments, scrub_label,
     set_field_visible, bind_tiles, control_stylesheet,
     own_or_custom, segmented, set_warning,
 )
-from audio_engine import DEFAULT_HITSOUND_OFFSET_MS, WHEEL_SEEK_HOLD_MS, TrackPlayer
-from skin import UI_SOUNDS, TaikoSkin, skins_root
-from parameters import PARAMETERS
-from i18n import install_translator, tr
-from image_trace_dialog import ImageTraceDialog
+from audio.audio_engine import DEFAULT_HITSOUND_OFFSET_MS, WHEEL_SEEK_HOLD_MS, TrackPlayer
+from library.skin import UI_SOUNDS, TaikoSkin, skins_root
+from chart.parameters import PARAMETERS
+from app.i18n import install_translator, tr
+from ui.image_trace_dialog import ImageTraceDialog
 from model.commands import (
     CompositeCommand, EditTimingPoint, InsertHitObjects, InsertTimingPoints,
     MoveNotes, RemoveHitObjects, RemoveTimingPoints, SetNoteFields, SetNotePositions,
 )
 from model.editor_state import DifficultyState
 from model.hit_object import HITSOUND_CLAP, HITSOUND_FINISH, HitObject, TYPE_CIRCLE, TYPE_NEW_COMBO, TYPE_SLIDER, TYPE_SPINNER
-from settings import (
+from app.settings import (
     NOTE_OPACITY_DEFAULT_PERCENT,
     NOTE_OPACITY_MIN_PERCENT,
     APPLICATION_NAME, ORGANIZATION_NAME, SettingsManager, ShortcutDefinition, ShortcutRegistry,
     register_shortcut_definitions, should_ignore_shortcut_focus,
 )
-from settings_dialog import SettingsDialog
-import theme
-import updater
+from ui.settings_dialog import SettingsDialog
+from ui import theme
+from app import updater
 from osu_io.parser import parse_osu
 from osu_io.timing import (
     EFFECT_KIAI,
@@ -82,19 +82,19 @@ from osu_io.timing import (
     uninherited_points,
 )
 from osu_io.writer import write_osu
-from song_library import (
+from library.song_library import (
     group_by_song, heard_tempo, load_cache, matches_search, most_common_bpm, read_header, save_cache, scan,
     songs_from_cache,
 )
-from song_library import most_common_beat_length as library_common_beat_length
-import autoplay
-import sv_curves
-from sv_curves import _true_exp_ease, sv_ease
-from time_axis import (
+from library.song_library import most_common_beat_length as library_common_beat_length
+from chart import autoplay
+from chart import sv_curves
+from chart.sv_curves import _true_exp_ease, sv_ease
+from chart.time_axis import (
     KIAI_OPEN_END_MS, SNAP_DIVISORS, TimeAxisMixin, osu_round, osu_snap_ms, own_divisor,
     resnap_time, snap_time, wheel_seek_time,
 )
-from gimmick_session import (
+from chart.gimmick_session import (
     DEFAULT_RED_LINE_BPM,
     DEFAULT_SHINY_COUNT,
     FAKE_SLIDER_MAX_LENGTH,
@@ -124,7 +124,7 @@ from gimmick_session import (
     snapshot_timing,
     spacing_collides,
 )
-from transformer import available_transformations, transform, transform_groups
+from chart.transformer import available_transformations, transform, transform_groups
 
 PLAYFIELD_WIDTH = 512
 PLAYFIELD_HEIGHT = 384
@@ -211,7 +211,7 @@ def resource_roots() -> list[Path]:
     roots=[]
     if hasattr(sys,"_MEIPASS"):
         roots.append(Path(sys._MEIPASS).resolve())
-    roots.append(Path(__file__).resolve().parent)
+    roots.append(Path(__file__).resolve().parents[1])
     unique=[]
     for root in roots:
         if root not in unique:unique.append(root)

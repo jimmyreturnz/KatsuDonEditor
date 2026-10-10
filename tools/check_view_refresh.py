@@ -27,7 +27,7 @@ from unittest.mock import patch
 sys.path.insert(0, r"D:/Jimmy/CodingProject/taiko_arranger")
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
-import gui
+from ui import gui
 from tests.osu_fixtures import write_fixture
 
 app = QApplication.instance() or QApplication([])

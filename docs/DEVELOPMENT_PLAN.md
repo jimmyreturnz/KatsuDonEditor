@@ -815,7 +815,10 @@ Gimmick pages, and the BPM stripe is a hidden seek bar.
 - **A full-chart barline converter** (very low priority): which SV it follows
   (the current difficulty's, or a chosen one), and how the difficulty is picked.
 
-## Tidy the repo -- owner, 2026-10-08, not started
+## Tidy the repo -- owner, 2026-10-08; step 1 DONE 2026-10-11
+
+Step 1 landed with `autoplay` and `sv_curves` in `chart/`, an entry point at
+`main.py`, and both `.bat`s in `scripts/`. Step 2 (splitting `gui.py`) is next.
 
 The root has 21 flat `.py` modules plus build scripts, and `gui.py` is 20,280
 lines (CLAUDE.md still says ~12k). Pure moves, no behaviour change, after the

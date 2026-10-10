@@ -15,7 +15,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-import updater
+from app import updater
 
 
 class _Response(io.BytesIO):
@@ -90,7 +90,7 @@ class VersionTests(unittest.TestCase):
                 self.assertFalse(updater.is_newer(remote, local))
 
     def test_local_version_matches_the_repository_version_file(self):
-        expected = (Path(updater.__file__).resolve().parent / "VERSION").read_text(encoding="utf-8").strip()
+        expected = (Path(updater.__file__).resolve().parents[1] / "VERSION").read_text(encoding="utf-8").strip()
         self.assertEqual(updater.local_version(), expected)
 
 

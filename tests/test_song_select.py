@@ -17,8 +17,8 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QApplication
 
-import osu_db
-from song_library import read_header
+from library import osu_db
+from library.song_library import read_header
 from tests.osu_fixtures import write_fixture
 
 _APP: QApplication | None = None
@@ -26,7 +26,7 @@ _APP: QApplication | None = None
 
 def setUpModule() -> None:
     global _APP
-    import settings as settings_module
+    from app import settings as settings_module
 
     settings_module.APPLICATION_NAME = "TaikoFancyArrangerTests"
     _APP = QApplication.instance() or QApplication([])
@@ -78,7 +78,7 @@ class OsuDbTests(unittest.TestCase):
 
 class StarColourTests(unittest.TestCase):
     def test_osu_spectrum_stops(self):
-        import gui
+        from ui import gui
 
         self.assertEqual(gui.star_colour(1.25).name(), "#4fc0ff")
         self.assertEqual(gui.star_colour(5.8).name(), "#c645b8")
@@ -87,12 +87,12 @@ class StarColourTests(unittest.TestCase):
         self.assertEqual(gui.star_colour(12).name(), "#000000")
 
     def test_rounds_away_from_zero_before_sampling(self):
-        import gui
+        from ui import gui
 
         self.assertEqual(gui.star_colour(1.245).name(), gui.star_colour(1.25).name())
 
     def test_text_is_dark_then_gold_then_its_own_spectrum(self):
-        import gui
+        from ui import gui
 
         self.assertEqual(gui.star_text_colour(6.4).alpha(), 191)
         self.assertEqual(gui.star_text_colour(7.0).name(), "#ffd966")
@@ -103,7 +103,7 @@ class BpmTextTests(unittest.TestCase):
     def test_a_subnormal_beat_length_is_infinite_bpm_not_a_crash(self):
         # EGTS 2022 writes `1.14514535393084E-319`: 60000 over it is inf, and
         # round(inf) used to stop the difficulty list at its first chart.
-        import gui
+        from ui import gui
 
         bpm = 60000.0 / 1.14514535393084e-319
         self.assertEqual(gui.format_bpm(180.0, bpm), "180–∞")
@@ -112,8 +112,8 @@ class BpmTextTests(unittest.TestCase):
 
     def test_a_range_says_which_bpm_it_mostly_is(self):
         # Owner, 2026-10-09: aleph-0 as "125–400 (250)", the density view's rule.
-        import gui
-        from song_library import most_common_beat_length
+        from ui import gui
+        from library.song_library import most_common_beat_length
 
         self.assertEqual(gui.format_bpm(125, 400, 250), "125–400 (250)")
         self.assertEqual(gui.format_bpm(250, 250, 250), "250", "one tempo needs no brackets")
@@ -124,7 +124,7 @@ class BpmTextTests(unittest.TestCase):
 
 class SongDotTests(unittest.TestCase):
     def test_a_pack_shows_a_count_of_the_rest(self):
-        import gui
+        from ui import gui
 
         self.assertEqual(gui.song_dots_shown(6, 1000), (6, 0))
         # 1000px allows 20 dots at most, so 40 charts are 18 dots and "+22".
@@ -151,7 +151,7 @@ class ScanFieldTests(unittest.TestCase):
 
 class PageTests(unittest.TestCase):
     def setUp(self):
-        import gui
+        from ui import gui
 
         self._temp = tempfile.TemporaryDirectory()
         self.root = Path(self._temp.name)
@@ -293,7 +293,7 @@ class PageTests(unittest.TestCase):
     def test_a_missing_chart_leaves_its_card_to_the_next_one(self):
         # Owner, 2026-10-09: one of the last four had been deleted, and with
         # only four remembered the row showed three.
-        import gui
+        from ui import gui
 
         library = self.window._library
         charts = []
@@ -366,7 +366,7 @@ class PageTests(unittest.TestCase):
         row, song = self._last_song_file()
         self.window.song_list.setCurrentRow(0)
         self.window._library.show_recent(str(song))
-        from gui import PAGE_LIBRARY
+        from ui.gui import PAGE_LIBRARY
         self.assertEqual(self.window.page_stack.currentIndex(), PAGE_LIBRARY)
         self.assertIsNone(self.window.state)
         self.assertEqual(self.window.song_list.currentRow(), row)
@@ -513,7 +513,7 @@ class PageTests(unittest.TestCase):
         return played
 
     def test_changing_page_clicks_at_full_level(self):
-        import gui
+        from ui import gui
 
         played = []
         self.window._library.play_ui_sound = lambda key, volume=None: played.append((key, volume))
@@ -596,7 +596,7 @@ class PageTests(unittest.TestCase):
         """The Space shortcut is application-wide, so on the song list it fires
         before `LibraryKeys` sees the key. With a difficulty opened earlier it
         used to restart the editor's song from the editor's playhead."""
-        import gui
+        from ui import gui
 
         library = self.window._library
         toggles, editor = [], []
@@ -641,7 +641,7 @@ class PageTests(unittest.TestCase):
 
     def test_a_new_song_rewinds_the_playhead_then_glides_out(self):
         # Owner, 2026-10-09: back to the start, then out to the preview point.
-        import gui
+        from ui import gui
 
         banner = self.window._library.song_banner
         banner.set_tempo([(0.0, 500.0)], lambda: 30000.0)
@@ -668,7 +668,7 @@ class PageTests(unittest.TestCase):
         self.assertAlmostEqual(banner._shown_fraction(), 0.25)
 
     def test_a_fraction_seeks_the_song_lists_player_only(self):
-        import gui
+        from ui import gui
 
         library = self.window._library
         seeks = []
@@ -690,7 +690,7 @@ class PageTests(unittest.TestCase):
         library.preview_player = None
 
     def test_the_chart_preview_shows_the_selected_difficulty(self):
-        import gui
+        from ui import gui
 
         library = self.window._library
         self.window.song_list.setCurrentRow(0)
@@ -721,7 +721,7 @@ class PageTests(unittest.TestCase):
     def test_the_song_select_stage_is_bare(self):
         # Black, no skin bar, no cover past osu!'s edge (the gray strip on
         # the right), and the hit target nearer the left than in game.
-        import gui
+        from ui import gui
 
         preview = self.window._library.chart_preview
         preview.resize(900, 114)

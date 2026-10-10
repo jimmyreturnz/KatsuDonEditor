@@ -29,7 +29,7 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
 from osu_io.timing import TimingPoint
 from tests.osu_fixtures import write_fixture
 
@@ -656,7 +656,7 @@ class ToolNameTests(WindowTestCase):
 
 class ToolNameTranslationTests(unittest.TestCase):
     def test_japanese_keeps_the_old_word_and_adds_katakana(self):
-        import i18n
+        from app import i18n
 
         class FakeSettings:
             def string_value(self, key, default=""):
@@ -683,14 +683,14 @@ class ToolNameTranslationTests(unittest.TestCase):
 
 class LanguageRestartTests(unittest.TestCase):
     def setUp(self) -> None:
-        import settings_dialog
+        from ui import settings_dialog
 
         self.module = settings_dialog
         self.window = gui.MainWindow()
 
     def tearDown(self) -> None:
         self.window.close()
-        import i18n
+        from app import i18n
 
         class English:
             def string_value(self, key, default=""):
@@ -730,7 +730,7 @@ class LanguageRestartTests(unittest.TestCase):
             return "fake"
 
     def _dialog(self, language="en"):
-        from settings import ShortcutRegistry
+        from app.settings import ShortcutRegistry
 
         settings = self.FakeSettings(language)
         return self.module.SettingsDialog(settings, ShortcutRegistry(settings), self.window), settings

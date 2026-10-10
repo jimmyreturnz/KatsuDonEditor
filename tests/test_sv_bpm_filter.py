@@ -25,7 +25,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
 from osu_io.timing import TimingPoint
 from tests.osu_fixtures import write_fixture
 

@@ -17,8 +17,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
-import gimmick_session as gs
-import gui
+from chart import gimmick_session as gs
+from ui import gui
 from tests.test_gimmick_editor import _GimmickFixture
 
 _APP: QApplication | None = None
@@ -1398,7 +1398,7 @@ class SpinButtonTests(unittest.TestCase):
         so a spin box keeps Qt's own buttons -- and every image the rule names
         has to be on disk, or Qt silently draws nothing there."""
         import re
-        from config_sheet import control_stylesheet
+        from ui.config_sheet import control_stylesheet
         dialog = gui.TimingLineDialog(gui.TimingPoint.uninherited_at(0, 180.0))
         self.assertNotEqual(dialog.time_spin.buttonSymbols(), gui.QAbstractSpinBox.NoButtons)
         before = dialog.time_spin.value()

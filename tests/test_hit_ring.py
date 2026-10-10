@@ -12,8 +12,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication
 
-import gui
-from skin import TaikoSkin
+from ui import gui
+from library.skin import TaikoSkin
 
 _APP: QApplication | None = None
 

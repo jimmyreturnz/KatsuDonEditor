@@ -49,7 +49,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
 from model.hit_object import HitObject, HITSOUND_CLAP
 from osu_io.timing import TimingPoint
 from tests.osu_fixtures import write_fixture

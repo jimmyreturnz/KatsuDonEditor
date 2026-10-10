@@ -20,7 +20,7 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QMouseEvent, QPixmap
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
 from osu_io.parser import parse_osu
 from tests.osu_fixtures import write_fixture
 

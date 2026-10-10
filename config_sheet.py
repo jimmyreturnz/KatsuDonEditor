@@ -81,6 +81,8 @@ def control_stylesheet() -> str:
     - **Spin boxes** carry their step arrows *inside* the box, quiet until
       hovered, instead of two pink squares beside it: pink is for the one
       action in a dialog, and 13 fields put 26 of them in the barline Config.
+    - **Combo boxes** draw the same chevron as the spin boxes, a pink rim
+      while open, and a popup whose rows are tall enough to aim at.
     - **Checkboxes are switches.** Every checkbox in the app is an on/off
       setting; none is a list of things to tick.
     - **Scroll bars** are a thin handle with no track and no arrows, wider
@@ -111,6 +113,27 @@ def control_stylesheet() -> str:
             QAbstractSpinBox::down-arrow {{ image: url({down}); width: 9px; height: 9px; }}
             QAbstractSpinBox::down-arrow:hover {{ image: url({down_hover}); }}
             QAbstractSpinBox::down-arrow:disabled, QAbstractSpinBox::down-arrow:off {{ image: url({down_off}); }}
+            QComboBox {{
+                background: #252d39; border: 1px solid #3a4554; border-radius: 8px;
+                padding: 5px 28px 5px 10px; min-height: 20px;
+            }}
+            QComboBox:hover {{ background: #2a3341; border-color: #4a5668; }}
+            QComboBox:focus, QComboBox:on {{ border-color: #ff66aa; }}
+            QComboBox:disabled {{ color: #4d5664; background: #1f262f; border-color: #303947; }}
+            QComboBox::drop-down {{
+                subcontrol-origin: padding; subcontrol-position: center right;
+                width: 24px; border: 0; background: transparent;
+            }}
+            QComboBox::down-arrow {{ image: url({down}); width: 10px; height: 10px; }}
+            QComboBox::down-arrow:hover, QComboBox::down-arrow:on {{ image: url({down_hover}); }}
+            QComboBox::down-arrow:disabled {{ image: url({down_off}); }}
+            QComboBox QAbstractItemView {{
+                background: #1d2431; border: 1px solid #3a4554; padding: 4px; outline: 0;
+                selection-background-color: #2a3341; selection-color: #e8edf3;
+            }}
+            QComboBox QAbstractItemView::item {{ min-height: 26px; padding: 0 8px; border-radius: 5px; }}
+            QComboBox QAbstractItemView::item:hover {{ background: #2a3341; }}
+            QComboBox QAbstractItemView::item:selected {{ background: #2a2230; color: #ff9dcc; }}
             QCheckBox {{ spacing: 10px; }}
             QCheckBox::indicator {{ width: 30px; height: 18px; image: url({ui_asset("switch-off.svg")}); }}
             QCheckBox::indicator:hover {{ image: url({ui_asset("switch-off-hover.svg")}); }}
@@ -238,7 +261,9 @@ def bind_tiles(combo: QComboBox, tiles: list[tuple[str, QPixmap]]) -> QWidget:
         tile.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
         tile.setText(text)
         tile.setIcon(QIcon(picture))
-        tile.setIconSize(picture.size())
+        # Logical size: a picture drawn at 2x for a sharp edge otherwise
+        # takes twice its room.
+        tile.setIconSize(picture.deviceIndependentSize().toSize())
         tile.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         tile.setMinimumWidth(0)
         group.addButton(tile, index)

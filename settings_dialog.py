@@ -3,38 +3,38 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, QSize, Qt
-from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QPen
+from PySide6.QtCore import QProcess, QRectF, QSize, Qt, QTimer
+from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QPen, QPixmap
 
 from skin import available_skins, skins_root
 from PySide6.QtWidgets import (
+    QAbstractButton,
+    QAbstractSpinBox,
     QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
-    QFormLayout,
     QFrame,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSlider,
     QSpinBox,
     QStackedWidget,
-    QTableWidget,
-    QTableWidgetItem,
+    QToolButton,
     QVBoxLayout,
     QWidget,
     QKeySequenceEdit,
     QLineEdit,
 )
 
-from config_sheet import DIALOG_STYLE, ConfigSheet, bind_segments, ui_asset
+from config_sheet import bind_segments, bind_tiles, scrub_label, set_warning, ui_asset
 
 import theme
 import updater
@@ -50,6 +50,243 @@ from settings import (
 )
 
 
+# Each page's tile in the sidebar, the way System Settings tells its panes
+# apart at a glance. Audio and the two greys are theme keys, so they follow
+# the theme; the other three are fixed, like a chart colour, because a tile
+# that changes colour with the theme stops being the thing you look for.
+NAV_TINTS = {
+    "general": "#7d8794",
+    "audio": "#ff66aa",
+    "skin": "#5aa7c7",
+    "language": "#f0b34a",
+    "shortcuts": "#a6e22e",
+    "advanced": "#7d8794",
+}
+
+SETTINGS_STYLE = """
+QDialog#settingsDialog { background: #191f29; }
+QFrame#settingsSide { background: #151b24; border: 0; }
+QLineEdit#settingsSearch, QLineEdit#shortcutSearch {
+    background: #11151c; border: 1px solid #222a36; border-radius: 8px; padding: 6px 10px;
+}
+QLineEdit#settingsSearch:focus, QLineEdit#shortcutSearch:focus { border-color: #ff66aa; }
+QListWidget#settingsNav { background: transparent; border: 0; outline: 0; font-size: 13px; font-weight: 600; }
+QListWidget#settingsNav::item { color: #aeb8c5; padding: 5px 6px; border-radius: 8px; margin: 1px 0; }
+QListWidget#settingsNav::item:hover { background: #1d2431; color: #e8edf3; }
+QListWidget#settingsNav::item:selected { background: #2a3341; color: #e8edf3; }
+QLabel#sideNote { color: #7d8794; font-size: 12px; background: transparent; }
+QScrollArea#settingsPage, QWidget#settingsPageBody { background: transparent; border: 0; }
+QLabel#pageTitle { font-size: 22px; font-weight: 700; background: transparent; }
+QLabel#groupTitle { color: #aeb8c5; font-size: 12.5px; font-weight: 600; background: transparent; }
+QFrame#settingsCard { background: #222a36; border: 0; border-radius: 12px; }
+QFrame#settingsRow { background: transparent; border: 0; }
+QFrame#settingsRow[divider="true"] { border-top: 1px solid #2a3341; }
+QLabel#rowLabel { font-size: 13px; font-weight: 600; background: transparent; }
+QLabel#rowLabel:disabled { color: #4d5664; }
+QLabel#rowNote { color: #aeb8c5; font-size: 12px; background: transparent; }
+QLabel#rowNote:disabled { color: #4d5664; }
+QFrame#settingsFoot { background: #191f29; border: 0; border-top: 1px solid #222a36; }
+QFrame#settingsRow QCheckBox { background: transparent; spacing: 0; }
+QWidget#settingsControl, QWidget#settingsControl QLabel { background: transparent; }
+QSlider { background: transparent; min-height: 20px; }
+QSlider::groove:horizontal { height: 4px; border-radius: 2px; background: #3a4554; }
+QSlider::sub-page:horizontal { border-radius: 2px; background: #ff66aa; }
+QSlider::handle:horizontal { width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; background: #e8edf3; }
+QSlider::sub-page:horizontal:disabled { background: #3a4554; }
+QSlider::handle:horizontal:disabled { background: #4d5664; }
+QCheckBox::indicator { width: 40px; height: 24px; }
+QKeySequenceEdit QLineEdit {
+    background: #151b24; border: 1px solid #3a4554; border-radius: 6px; padding: 4px 8px; font-weight: 600;
+}
+QKeySequenceEdit QLineEdit:hover { border-color: #4a5668; }
+QKeySequenceEdit QLineEdit:focus { border-color: #ff66aa; }
+QKeySequenceEdit QLineEdit[warn="true"] { border-color: #ffb347; color: #ffb347; }
+QToolButton#shortcutReset { background: transparent; border: 0; border-radius: 6px; padding: 4px; }
+QToolButton#shortcutReset:hover { background: #2a3341; }
+"""
+
+
+def _nav_tile(page_id: str, tint: QColor, selected: bool) -> QPixmap:
+    """The page's glyph on a rounded tile: tinted on a faint tile, or ink on
+    a solid one when the page is showing. Drawn at 2x so it stays sharp on a
+    scaled display."""
+    ratio, side, glyph_side = 2, 26, 16
+    glyph = QIcon(ui_asset(f"settings-{page_id}.svg")).pixmap(QSize(glyph_side * ratio, glyph_side * ratio), 1.0)
+    glyph.setDevicePixelRatio(1.0)
+    ink = QPixmap(glyph.size())
+    ink.fill(Qt.transparent)
+    painter = QPainter(ink)
+    painter.drawPixmap(0, 0, glyph)
+    painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+    painter.fillRect(ink.rect(), theme.color("#17191f") if selected else tint)
+    painter.end()
+    tile = QPixmap(side * ratio, side * ratio)
+    tile.fill(Qt.transparent)
+    painter = QPainter(tile)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(tint if selected else QColor(255, 255, 255, 16))
+    painter.drawRoundedRect(QRectF(0, 0, side * ratio, side * ratio), 7 * ratio, 7 * ratio)
+    offset = (side - glyph_side) // 2 * ratio
+    painter.drawPixmap(offset, offset, ink)
+    painter.end()
+    tile.setDevicePixelRatio(ratio)
+    return tile
+
+
+def _theme_swatch(steps, primary: str, focus: str) -> QPixmap:
+    """A theme in miniature: its ground, a bar of its fill colour, and a dot
+    each of fill and rim. Painted rather than styled, so the theme being
+    previewed never recolours the other themes' swatches."""
+    # Five abreast in the narrowest page the dialog allows.
+    ratio, width, height = 2, 80, 40
+    pixmap = QPixmap(width * ratio, height * ratio)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.scale(ratio, ratio)
+    painter.setPen(Qt.NoPen)
+    # None keeps the chrome as written: the navy steps.
+    painter.setBrush(QColor(steps[2] if steps else "#191f29"))
+    painter.drawRoundedRect(QRectF(0, 0, width, height), 7, 7)
+    painter.setBrush(QColor(primary))
+    painter.drawRoundedRect(QRectF(9, 10, width * 0.55, 7), 3.5, 3.5)
+    painter.drawEllipse(QRectF(9, 26, 13, 13))
+    painter.setBrush(QColor(focus))
+    painter.drawEllipse(QRectF(26, 26, 13, 13))
+    painter.end()
+    pixmap.setDevicePixelRatio(ratio)
+    return pixmap
+
+
+class _SwitchRow(QFrame):
+    """A row whose whole width flips its switch, as a label beside a switch
+    does everywhere else -- the switch alone is a 40px target at the far end."""
+
+    def __init__(self, check: QCheckBox) -> None:
+        super().__init__()
+        self.check = check
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton and self.check.isEnabled():
+            self.check.toggle()
+            return
+        super().mousePressEvent(event)
+
+
+class _Group:
+    """One titled card of rows: label and note on the left, control on the right."""
+
+    def __init__(self, page_layout: QVBoxLayout, title: str) -> None:
+        self.heading = heading = QLabel(title)
+        heading.setObjectName("groupTitle")
+        heading.setContentsMargins(4, 10, 4, 0)
+        self.card = QFrame()
+        self.card.setObjectName("settingsCard")
+        self.rows = QVBoxLayout(self.card)
+        self.rows.setContentsMargins(0, 0, 0, 0)
+        self.rows.setSpacing(0)
+        # Before the page's closing stretch.
+        page_layout.insertWidget(page_layout.count() - 1, heading)
+        page_layout.insertWidget(page_layout.count() - 1, self.card)
+
+    def set_visible(self, visible: bool) -> None:
+        self.heading.setVisible(visible)
+        self.card.setVisible(visible)
+
+    def _frame(self, frame: QFrame) -> QHBoxLayout:
+        frame.setObjectName("settingsRow")
+        # A hairline between rows, not above the first.
+        frame.setProperty("divider", self.rows.count() > 0)
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(16)
+        self.rows.addWidget(frame)
+        return layout
+
+    @staticmethod
+    def _text(label: str, note: str) -> tuple[QVBoxLayout, QLabel]:
+        column = QVBoxLayout()
+        column.setSpacing(2)
+        caption = QLabel(label)
+        caption.setObjectName("rowLabel")
+        caption.setWordWrap(True)
+        column.addWidget(caption)
+        if note:
+            line = QLabel(note)
+            line.setObjectName("rowNote")
+            line.setWordWrap(True)
+            column.addWidget(line)
+        return column, caption
+
+    def row(self, label: str, control: QWidget, note: str = "",
+            scrub: QAbstractSpinBox | None = None) -> QFrame:
+        frame = QFrame()
+        layout = self._frame(frame)
+        column, caption = self._text(label, note)
+        layout.addLayout(column, 1)
+        layout.addWidget(control, 0, Qt.AlignVCenter)
+        target = scrub or (control if isinstance(control, QAbstractSpinBox) else None)
+        if target is not None:
+            # The label drag every other sheet in the app has.
+            scrub_label(caption, target)
+        return frame
+
+    def switch(self, check: QCheckBox, note: str = "") -> QFrame:
+        label = check.text()
+        # The label is drawn beside the row instead, so the switch can sit
+        # at the end of it; the name stays for screen readers.
+        check.setText("")
+        check.setAccessibleName(label)
+        frame = _SwitchRow(check)
+        layout = self._frame(frame)
+        column, _caption = self._text(label, note)
+        layout.addLayout(column, 1)
+        layout.addWidget(check, 0, Qt.AlignVCenter)
+        return frame
+
+    def wide(self, widget: QWidget, own_width: bool = False) -> QFrame:
+        """`widget` across the whole row, or at its own width on the left."""
+        frame = QFrame()
+        layout = self._frame(frame)
+        layout.addWidget(widget)
+        if own_width:
+            layout.addStretch(1)
+        return frame
+
+
+class _Page(QScrollArea):
+    """A page: its title, then cards of rows. Scrolls itself, so a short
+    screen never pushes the buttons at the bottom off the edge."""
+
+    def __init__(self, title: str) -> None:
+        super().__init__()
+        self.setObjectName("settingsPage")
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        body = QWidget()
+        body.setObjectName("settingsPageBody")
+        self.body_layout = QVBoxLayout(body)
+        self.body_layout.setContentsMargins(28, 18, 28, 24)
+        self.body_layout.setSpacing(8)
+        if title:
+            heading = QLabel(title)
+            heading.setObjectName("pageTitle")
+            self.body_layout.addWidget(heading)
+        self.body_layout.addStretch(1)
+        self.setWidget(body)
+        smooth(self)
+
+    def group(self, title: str) -> _Group:
+        return _Group(self.body_layout, title)
+
+
+def _control_width(widget: QWidget, width: int = 280) -> QWidget:
+    widget.setFixedWidth(width)
+    return widget
+
+
 class SettingsDialog(QDialog):
     """The app-wide settings, in the window's own theme."""
 
@@ -57,14 +294,18 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.settings = settings
         self.shortcuts = shortcuts
+        self.setObjectName("settingsDialog")
         self.setWindowTitle(self.tr("Settings"))
-        self.resize(880, 620)
+        self.resize(960, 660)
         # Small enough to fit a short laptop screen once the pages scroll.
-        self.setMinimumSize(560, 360)
+        self.setMinimumSize(640, 380)
         self._shortcut_editors: dict[str, QKeySequenceEdit] = {}
         self._update_check: object | None = None
         self._build_ui()
         self._load_current_values()
+        # A switch loaded off emits nothing, so its rows are set here.
+        for row in self._hitsound_rows:
+            row.setEnabled(self.hitsounds_enabled.isChecked())
         self._fit_to_screen()
 
     def _fit_to_screen(self) -> None:
@@ -87,77 +328,74 @@ class SettingsDialog(QDialog):
         )
 
     def _build_ui(self) -> None:
-        """Header, a page list with icons, the page, and a footer.
+        """A sidebar of pages with a search over them, the page, and a footer.
 
-        Each page is a small config sheet of section cards, so the pages look
-        like every other settings surface in the app; the page list stays a
-        list (not one long scroll) because the Shortcuts table scrolls on its
-        own and a table inside a scrolling column is two scroll bars fighting.
+        Laid out like System Settings: a darker sidebar for structure, pages
+        of rounded cards whose rows put the label on the left and the control
+        on the right. The page list stays a list (not one long scroll) because
+        the Shortcuts table scrolls on its own and a table inside a scrolling
+        column is two scroll bars fighting.
         """
-        self.setStyleSheet(DIALOG_STYLE + """
-            QListWidget#settingsNav { background: transparent; border: 0; border-right: 1px solid #303947;
-                outline: 0; padding: 10px 8px 10px 0; font-size: 13px; font-weight: 600; }
-            QListWidget#settingsNav::item { color: #aeb8c5; padding: 7px 10px; border-left: 3px solid transparent; }
-            QListWidget#settingsNav::item:hover { background: #2a3341; color: #e8edf3; }
-            QListWidget#settingsNav::item:selected { background: #2a2230; color: #ffffff; border-left: 3px solid #ff66aa; }
-            QTableWidget { background: #1b212b; border: 1px solid #303947; border-radius: 6px; gridline-color: #262e3a; }
-            QHeaderView::section { background: #1e2530; color: #7d8794; border: 0; border-bottom: 1px solid #303947;
-                padding: 6px 8px; font-size: 11px; font-weight: 700; }
-            QLineEdit#shortcutSearch { background: #252d39; border: 1px solid #3a4554; border-radius: 6px; padding: 6px 10px; }
-            QLineEdit#shortcutSearch:focus { border-color: #ff66aa; }
-            QKeySequenceEdit QLineEdit { background: transparent; border: 1px dashed transparent; border-radius: 5px; }
-            QKeySequenceEdit QLineEdit:hover { border-color: #3a4554; }
-            QKeySequenceEdit QLineEdit:focus { border-color: #ff66aa; }
-        """)
+        self.setStyleSheet(SETTINGS_STYLE)
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        head = QFrame()
-        head.setObjectName("sheetHead")
-        head_layout = QVBoxLayout(head)
-        head_layout.setContentsMargins(16, 12, 16, 12)
-        head_layout.setSpacing(1)
-        title = QLabel(self.tr("Settings"))
-        title.setObjectName("sheetTitle")
-        subtitle = QLabel(self.tr("For the whole app. Saved on this computer."))
-        subtitle.setObjectName("sheetSub")
-        head_layout.addWidget(title)
-        head_layout.addWidget(subtitle)
-        root.addWidget(head)
-
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
+        side = QFrame()
+        side.setObjectName("settingsSide")
+        side.setFixedWidth(232)
+        side_layout = QVBoxLayout(side)
+        side_layout.setContentsMargins(10, 16, 10, 14)
+        side_layout.setSpacing(10)
+        self.page_search = QLineEdit()
+        self.page_search.setObjectName("settingsSearch")
+        self.page_search.setPlaceholderText(self.tr("Search settings"))
+        self.page_search.addAction(QIcon(ui_asset("settings-search.svg")), QLineEdit.LeadingPosition)
+        self.page_search.setClearButtonEnabled(True)
+        self.page_search.textChanged.connect(self._filter_pages)
+        side_layout.addWidget(self.page_search)
         self.nav = QListWidget()
         self.nav.setObjectName("settingsNav")
-        self.nav.setFixedWidth(196)
-        self.nav.setIconSize(QSize(16, 16))
+        self.nav.setIconSize(QSize(26, 26))
         self.nav.setFocusPolicy(Qt.NoFocus)
+        side_layout.addWidget(self.nav, 1)
+        side_note = QLabel(self.tr("For the whole app. Saved on this computer."))
+        side_note.setObjectName("sideNote")
+        side_note.setWordWrap(True)
+        side_note.setContentsMargins(6, 0, 6, 0)
+        side_layout.addWidget(side_note)
+
         self.pages = QStackedWidget()
         self._page_ids: list[str] = []
-        for page_id, title_text, page in (
-            ("general", self.tr("General"), self._general_page()),
-            ("audio", self.tr("Audio"), self._audio_page()),
-            ("skin", self.tr("Skin"), self._skin_page()),
-            ("language", self.tr("Language"), self._language_page()),
-            ("shortcuts", self.tr("Shortcuts"), self._shortcuts_page()),
-            ("advanced", self.tr("Advanced"), self._advanced_page()),
+        for page_id, build in (
+            ("general", self._general_page),
+            ("audio", self._audio_page),
+            ("skin", self._skin_page),
+            ("language", self._language_page),
+            ("shortcuts", self._shortcuts_page),
+            ("advanced", self._advanced_page),
         ):
-            item = QListWidgetItem(QIcon(ui_asset(f"settings-{page_id}.svg")), title_text)
-            self.nav.addItem(item)
-            self.pages.addWidget(page)
+            title_text = self._page_title(page_id)
+            self.nav.addItem(QListWidgetItem(title_text))
+            self.pages.addWidget(build(title_text))
             self._page_ids.append(page_id)
+        self._paint_nav_icons()
+        # The tiles carry theme colours, and the theme is picked live on the
+        # Appearance page; repainted once the window has switched to it.
+        self.theme_combo.currentIndexChanged.connect(lambda _index: QTimer.singleShot(0, self._paint_nav_icons))
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
         self.nav.setCurrentRow(0)
-        body.addWidget(self.nav)
-        # Each page scrolls itself (a ConfigSheet's column), so a short
-        # screen never pushes the buttons at the bottom off the edge.
+        self._page_words = [self._words_of(self.pages.widget(i), self.nav.item(i).text())
+                            for i in range(self.pages.count())]
+        body.addWidget(side)
         body.addWidget(self.pages, 1)
         root.addLayout(body, 1)
 
         foot = QFrame()
-        foot.setObjectName("sheetFoot")
+        foot.setObjectName("settingsFoot")
         footer = QHBoxLayout(foot)
         footer.setContentsMargins(16, 10, 16, 10)
         footer.setSpacing(8)
@@ -177,9 +415,50 @@ class SettingsDialog(QDialog):
         footer.addWidget(self.buttons)
         root.addWidget(foot)
 
+    def _page_title(self, page_id: str) -> str:
+        return {
+            "general": self.tr("General"),
+            "audio": self.tr("Audio"),
+            # Theme, skin and how the timeline is drawn: more than the skin.
+            "skin": self.tr("Appearance"),
+            "language": self.tr("Language"),
+            "shortcuts": self.tr("Shortcuts"),
+            "advanced": self.tr("Advanced"),
+        }[page_id]
+
+    def _paint_nav_icons(self) -> None:
+        for row, page_id in enumerate(self._page_ids):
+            tint = theme.color(NAV_TINTS[page_id])
+            icon = QIcon()
+            icon.addPixmap(_nav_tile(page_id, tint, False), QIcon.Normal)
+            icon.addPixmap(_nav_tile(page_id, tint, True), QIcon.Selected)
+            self.nav.item(row).setIcon(icon)
+
     @staticmethod
-    def _sheet() -> ConfigSheet:
-        return ConfigSheet(rail=False, explain=False)
+    def _words_of(page: QWidget, title: str) -> str:
+        """Every word a page shows, for the sidebar search: titles, labels,
+        notes, switch names and the choices in its menus."""
+        words = [title]
+        for label in page.findChildren(QLabel):
+            words.append(label.text())
+        for button in page.findChildren(QAbstractButton):
+            words.extend((button.text(), button.accessibleName()))
+        for combo in page.findChildren(QComboBox):
+            words.extend(combo.itemText(i) for i in range(combo.count()))
+        return "\n".join(words).lower()
+
+    def _filter_pages(self, text: str) -> None:
+        """Leave in the sidebar only the pages that mention `text`, and show
+        the first of them if the one showing is not among them."""
+        wanted = text.strip().lower()
+        for row, words in enumerate(self._page_words):
+            self.nav.item(row).setHidden(bool(wanted) and wanted not in words)
+        current = self.nav.currentItem()
+        if current is None or current.isHidden():
+            for row in range(self.nav.count()):
+                if not self.nav.item(row).isHidden():
+                    self.nav.setCurrentRow(row)
+                    break
 
     def _volume_row(self, spin: QSpinBox) -> QWidget:
         """A slider for a volume, with its box beside it.
@@ -192,34 +471,52 @@ class SettingsDialog(QDialog):
         slider.setValue(spin.value())
         slider.valueChanged.connect(spin.setValue)
         spin.valueChanged.connect(slider.setValue)
-        spin.setFixedWidth(96)
+        spin.setFixedWidth(84)
+        return self._beside(slider, spin)
+
+    @staticmethod
+    def _beside(main: QWidget, side: QWidget, width: int = 280) -> QWidget:
         row = QWidget()
+        # Named so it is not painted by the window's `QWidget { background }`.
+        row.setObjectName("settingsControl")
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
-        layout.addWidget(slider, 1)
-        layout.addWidget(spin)
-        return row
+        layout.addWidget(main, 1)
+        layout.addWidget(side)
+        return _control_width(row, width)
 
-    def _general_page(self) -> QWidget:
-        sheet = self._sheet()
-        saving = sheet.add_section("saving", self.tr("Saving"))
+    def _percent_slider(self, low: int, high: int, page_step: int = 10) -> tuple[QSlider, QLabel, QWidget]:
+        """A slider with its value as a readout, for a look rather than a
+        number: nobody knows they want 62%, they want it a bit fainter."""
+        slider = QSlider(Qt.Horizontal)
+        slider.setRange(low, high)
+        slider.setSingleStep(1)
+        slider.setPageStep(page_step)
+        value = QLabel()
+        value.setMinimumWidth(44)
+        value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        slider.valueChanged.connect(lambda percent: value.setText(f"{percent} %"))
+        return slider, value, self._beside(slider, value)
+
+    @staticmethod
+    def _ghost(button: QPushButton) -> QPushButton:
+        button.setProperty("role", "ghost")
+        button.setStyleSheet("QPushButton { border: 1px solid #3a4554; }")
+        return button
+
+    def _general_page(self, title: str) -> QWidget:
+        page = _Page(title)
+        saving = page.group(self.tr("Saving"))
         self.confirm_overwrite = QCheckBox(self.tr("Confirm before overwriting original beatmap"))
         saving.switch(self.confirm_overwrite, self.tr("Asks once per save when the file on disk is the one you opened."))
-        updates = sheet.add_section("updates", self.tr("Updates"))
+        updates = page.group(self.tr("Updates"))
         self.check_updates_on_startup = QCheckBox(self.tr("Check for updates on startup"))
         updates.switch(self.check_updates_on_startup, self.tr("One request to GitHub when the app opens."))
-        self.check_updates_button = QPushButton(self.tr("Check for updates now"))
-        self.check_updates_button.setProperty("role", "ghost")
-        self.check_updates_button.setStyleSheet("QPushButton { border: 1px solid #3a4554; }")
+        self.check_updates_button = self._ghost(QPushButton(self.tr("Check for updates now")))
         self.check_updates_button.clicked.connect(self._check_for_updates)
-        row = QWidget()
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.addWidget(self.check_updates_button)
-        row_layout.addStretch(1)
-        updates.add(row, 2)
-        return sheet
+        updates.wide(self.check_updates_button, own_width=True)
+        return page
 
     def _check_for_updates(self) -> None:
         # Held so the worker is not garbage collected while it is running.
@@ -227,16 +524,16 @@ class SettingsDialog(QDialog):
         restart = getattr(self.parent(), "restart_into_update", None)
         self._update_check = updater.check_now(self, self.settings, restart)
 
-    def _audio_page(self) -> QWidget:
-        sheet = self._sheet()
-        hits = sheet.add_section("hitsounds", self.tr("Hitsounds"))
+    def _audio_page(self, title: str) -> QWidget:
+        page = _Page(title)
+        hits = page.group(self.tr("Hitsounds"))
         self.hitsounds_enabled = QCheckBox(self.tr("Hitsounds"))
         hits.switch(self.hitsounds_enabled, self.tr("The skin's own samples when a skin is chosen."))
         self.hitsound_volume = QSpinBox()
         self.hitsound_volume.setRange(0, 100)
         self.hitsound_volume.setSuffix("%")
-        hits.field(self.tr("Hitsound volume"), self._volume_row(self.hitsound_volume), span=2,
-                   scrub=self.hitsound_volume)
+        volume_row = hits.row(self.tr("Hitsound volume"), self._volume_row(self.hitsound_volume),
+                              scrub=self.hitsound_volume)
         self.hitsound_offset_ms = QSpinBox()
         # A trim against the music, not a latency any more. The notes are mixed
         # into the music stream (`audio_engine.HitsoundMixer`), so they already
@@ -245,22 +542,22 @@ class SettingsDialog(QDialog):
         # the physical world and somebody will want to nudge it.
         self.hitsound_offset_ms.setRange(-500, 500)
         self.hitsound_offset_ms.setSuffix(" ms")
-        hits.field(self.tr("Hitsound offset (ms)"), self.hitsound_offset_ms)
-        offset_note = QLabel(self.tr(
-            "Nudge hitsounds earlier or later against the music. Your device's "
-            "latency is already covered by Music offset below, because the "
-            "notes leave through the same output as the song."
-        ))
-        offset_note.setObjectName("fieldNote")
-        offset_note.setWordWrap(True)
-        hits.add(offset_note, 2)
+        offset_row = hits.row(self.tr("Hitsound offset (ms)"), _control_width(self.hitsound_offset_ms, 120),
+                              self.tr(
+                                  "Nudge hitsounds earlier or later against the music. Your device's "
+                                  "latency is already covered by Music offset below, because the "
+                                  "notes leave through the same output as the song."
+                              ))
+        # Nothing to set for sounds that are off; still saved as they stand.
+        self._hitsound_rows = (volume_row, offset_row)
+        for row in self._hitsound_rows:
+            self.hitsounds_enabled.toggled.connect(row.setEnabled)
 
-        music = sheet.add_section("music", self.tr("Music"))
+        music = page.group(self.tr("Music"))
         self.music_volume = QSpinBox()
         self.music_volume.setRange(0, 100)
         self.music_volume.setSuffix("%")
-        music.field(self.tr("Music volume"), self._volume_row(self.music_volume), span=2,
-                    scrub=self.music_volume)
+        music.row(self.tr("Music volume"), self._volume_row(self.music_volume), scrub=self.music_volume)
         # **This** is the device latency, and now the only setting that is.
         # Both the music and the notes leave through one sink, so one number
         # covers both -- the hitsound offset above is a trim between them
@@ -270,51 +567,41 @@ class SettingsDialog(QDialog):
         self.output_offset_ms = QSpinBox()
         self.output_offset_ms.setRange(-500, 500)
         self.output_offset_ms.setSuffix(" ms")
-        offset_row = QWidget()
-        offset_layout = QHBoxLayout(offset_row)
-        offset_layout.setContentsMargins(0, 0, 0, 0)
-        offset_layout.addWidget(self.output_offset_ms, 1)
-        self.calibrate_button = QPushButton(self.tr("Calibrate…"))
-        self.calibrate_button.setProperty("role", "ghost")
-        self.calibrate_button.setStyleSheet("QPushButton { border: 1px solid #3a4554; }")
+        self.calibrate_button = self._ghost(QPushButton(self.tr("Calibrate…")))
         self.calibrate_button.clicked.connect(self._calibrate_offset)
-        offset_layout.addWidget(self.calibrate_button)
-        music.field(self.tr("Music offset (ms)"), offset_row, scrub=self.output_offset_ms)
-        output_note = QLabel(self.tr(
-            "Shift the playhead to match when the music actually reaches your "
-            "ears. Raise it if the notes look early against what you hear. "
-            "Measured in real time, so one value stays correct at every "
-            "playback speed."
-        ))
-        output_note.setObjectName("fieldNote")
-        output_note.setWordWrap(True)
-        music.add(output_note, 2)
-        return sheet
+        music.row(self.tr("Music offset (ms)"), self._beside(self.output_offset_ms, self.calibrate_button),
+                  self.tr(
+                      "Shift the playhead to match when the music actually reaches your "
+                      "ears. Raise it if the notes look early against what you hear. "
+                      "Measured in real time, so one value stays correct at every "
+                      "playback speed."
+                  ), scrub=self.output_offset_ms)
+        return page
 
-    def _skin_page(self) -> QWidget:
-        """Skin selection. Its own page rather than a row on the Audio one:
-        nothing here is about sound."""
-        sheet = self._sheet()
-        look = sheet.add_section("theme", self.tr("App theme"))
+    def _skin_page(self, title: str) -> QWidget:
+        """Theme, skin and the timeline's look. Its own page rather than rows
+        on the Audio one: nothing here is about sound."""
+        page = _Page(title)
+        look = page.group(self.tr("App theme"))
         self.theme_combo = QComboBox()
-        for name, label in (
-            ("osu", self.tr("osu!")),
-            ("taiko", self.tr("Taiko")),
-            ("lantern", self.tr("Lantern Rite")),
-            ("gold", self.tr("Gold")),
-            ("monokai", self.tr("Monokai")),
-        ):
+        names = [("osu", self.tr("osu!")), ("taiko", self.tr("Taiko")), ("lantern", self.tr("Lantern Rite")),
+                 ("gold", self.tr("Gold")), ("monokai", self.tr("Monokai"))]
+        for name, label in names:
             self.theme_combo.addItem(label, name)
-        look.field(self.tr("Theme"), bind_segments(self.theme_combo), span=2)
+        swatches = []
+        for name, label in names:
+            primary, _ink, focus, _accent, steps = theme.THEMES[name]
+            swatches.append((label, _theme_swatch(steps, primary, focus)))
+        look.wide(bind_tiles(self.theme_combo, swatches))
         theme_note = QLabel(self.tr(
             "The colours of the window around the chart. Notes, snap ticks and "
             "the SV graph keep osu!'s own."
         ))
-        theme_note.setObjectName("fieldNote")
+        theme_note.setObjectName("rowNote")
         theme_note.setWordWrap(True)
-        look.add(theme_note, 2)
+        look.wide(theme_note)
 
-        skin = sheet.add_section("skin", self.tr("Gameplay preview"))
+        skin = page.group(self.tr("Gameplay preview"))
         # Skins live beside the songs folder the user already chose, so this
         # asks for nothing new. Only folders carrying taiko note art are
         # offered -- an osu! install collects dozens of skins for other modes,
@@ -324,117 +611,49 @@ class SettingsDialog(QDialog):
         root = skins_root(self.settings.string_value("library/songs_folder", ""))
         for name in available_skins(root):
             self.skin_combo.addItem(name, name)
-        skin.field(self.tr("Gameplay skin"), self.skin_combo, span=2)
-        skin_note = QLabel(self.tr(
+        skin.row(self.tr("Gameplay skin"), _control_width(self.skin_combo), self.tr(
             "Uses the note, drumroll and hit-explosion art from one of your "
             "osu! skins in the gameplay preview. Anything a skin does not "
             "provide falls back to the built-in drawing."
         ))
-        skin_note.setObjectName("fieldNote")
-        skin_note.setWordWrap(True)
-        skin.add(skin_note, 2)
         # The song list's preview, under the art. Live, so the size can be
         # picked by eye against the pane it is in.
-        self.song_select_preview = QSlider(Qt.Horizontal)
-        self.song_select_preview.setRange(50, 75)
-        self.song_select_preview.setSingleStep(1)
-        self.song_select_preview.setPageStep(5)
-        self.song_select_preview_value = QLabel()
-        self.song_select_preview_value.setMinimumWidth(44)
-        self.song_select_preview.valueChanged.connect(
-            lambda percent: self.song_select_preview_value.setText(f"{percent} %"))
-        preview_row = QWidget()
-        preview_layout = QHBoxLayout(preview_row)
-        preview_layout.setContentsMargins(0, 0, 0, 0)
-        preview_layout.addWidget(self.song_select_preview, 1)
-        preview_layout.addWidget(self.song_select_preview_value)
-        skin.field(self.tr("Song select preview size"), preview_row, span=2)
+        self.song_select_preview, self.song_select_preview_value, preview_row = self._percent_slider(50, 75, 5)
+        skin.row(self.tr("Song select preview size"), preview_row)
 
-        # A slider, because this is a look rather than a number: nobody knows
-        # they want 62%, they want it a bit fainter than it is. The readout
-        # beside it is what makes the position mean something, and the notes
-        # under it show what the number looks like.
-        opacity = sheet.add_section("opacity", self.tr("Editor timeline"))
-        self.note_opacity = QSlider(Qt.Horizontal)
-        self.note_opacity.setRange(NOTE_OPACITY_MIN_PERCENT, 100)
-        self.note_opacity.setSingleStep(1)
-        self.note_opacity.setPageStep(10)
-        self.note_opacity_value = QLabel()
-        self.note_opacity_value.setMinimumWidth(44)
-        self.note_opacity.valueChanged.connect(
-            lambda percent: self.note_opacity_value.setText(f"{percent} %"))
-        opacity_row = QWidget()
-        row_layout = QHBoxLayout(opacity_row)
-        row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.addWidget(self.note_opacity, 1)
-        row_layout.addWidget(self.note_opacity_value)
-        opacity.field(self.tr("Note opacity"), opacity_row, span=2)
-        self.note_opacity_preview = _NoteOpacityPreview(self.note_opacity, self.skin_combo)
-        opacity.add(self.note_opacity_preview, 2)
-        opacity_note = QLabel(self.tr(
+        # The notes under the slider show what the number looks like.
+        timeline = page.group(self.tr("Editor timeline"))
+        self.note_opacity, self.note_opacity_value, opacity_row = self._percent_slider(NOTE_OPACITY_MIN_PERCENT, 100)
+        timeline.row(self.tr("Note opacity"), opacity_row, self.tr(
             "How solid notes are drawn in the editor timeline layers. Lower "
             "leaves the snap grid and the lines behind them easier to read "
             "through a dense section; 100% draws them opaque. The gameplay "
             "preview is unaffected."
         ))
-        opacity_note.setObjectName("fieldNote")
-        opacity_note.setWordWrap(True)
-        opacity.add(opacity_note, 2)
+        self.note_opacity_preview = _NoteOpacityPreview(self.note_opacity, self.skin_combo)
+        timeline.wide(self.note_opacity_preview)
 
-        # The same kind of control for the same reason; MainWindow listens to
-        # this one while it moves, so the Editor and Gimmick pages show what
-        # the number looks like and cancelling puts the saved value back.
-        backdrop = sheet.add_section("backdrop", self.tr("Editor background"))
-        self.background_opacity = QSlider(Qt.Horizontal)
-        self.background_opacity.setRange(0, 100)
-        self.background_opacity.setSingleStep(1)
-        self.background_opacity.setPageStep(10)
-        self.background_opacity_value = QLabel()
-        self.background_opacity_value.setMinimumWidth(44)
-        self.background_opacity.valueChanged.connect(
-            lambda percent: self.background_opacity_value.setText(f"{percent} %"))
-        backdrop_row = QWidget()
-        backdrop_layout = QHBoxLayout(backdrop_row)
-        backdrop_layout.setContentsMargins(0, 0, 0, 0)
-        backdrop_layout.addWidget(self.background_opacity, 1)
-        backdrop_layout.addWidget(self.background_opacity_value)
-        backdrop.field(self.tr("Background opacity"), backdrop_row, span=2)
-        backdrop_note = QLabel(self.tr(
+        # MainWindow listens to these while they move, so the Editor and
+        # Gimmick pages show what the number looks like and cancelling puts
+        # the saved value back.
+        backdrop = page.group(self.tr("Editor background"))
+        self.background_opacity, self.background_opacity_value, backdrop_row = self._percent_slider(0, 100)
+        backdrop.row(self.tr("Background opacity"), backdrop_row, self.tr(
             "How strongly the map's own background shows behind the Editor and "
             "Gimmick pages. 0% leaves them plain."
         ))
-        backdrop_note.setObjectName("fieldNote")
-        backdrop_note.setWordWrap(True)
-        backdrop.add(backdrop_note, 2)
-        # Live, like the one above, and for the same reason.
-        self.view_opacity = QSlider(Qt.Horizontal)
-        self.view_opacity.setRange(0, 100)
-        self.view_opacity.setSingleStep(1)
-        self.view_opacity.setPageStep(10)
-        self.view_opacity_value = QLabel()
-        self.view_opacity_value.setMinimumWidth(44)
-        self.view_opacity.valueChanged.connect(
-            lambda percent: self.view_opacity_value.setText(f"{percent} %"))
-        view_row = QWidget()
-        view_layout = QHBoxLayout(view_row)
-        view_layout.setContentsMargins(0, 0, 0, 0)
-        view_layout.addWidget(self.view_opacity, 1)
-        view_layout.addWidget(self.view_opacity_value)
-        backdrop.field(self.tr("View opacity"), view_row, span=2)
-        view_note = QLabel(self.tr(
+        self.view_opacity, self.view_opacity_value, view_row = self._percent_slider(0, 100)
+        backdrop.row(self.tr("View opacity"), view_row, self.tr(
             "How solid the views are. Under 100% the background shows through "
             "them as well as around them."
         ))
-        view_note.setObjectName("fieldNote")
-        view_note.setWordWrap(True)
-        backdrop.add(view_note, 2)
 
-        fancy = sheet.add_section("fancy", self.tr("Fancy Arranger"))
+        fancy = page.group(self.tr("Fancy Arranger"))
         self.transform_animation = QCheckBox(self.tr("Animate transforms"))
         fancy.switch(self.transform_animation, self.tr(
             "Notes glide to their new places when a transform changes. Off "
             "jumps straight there, which is lighter on a dense map."))
-        return sheet
+        return page
 
     def _calibrate_offset(self) -> None:
         """Tap along to a click track and take the number it settles on.
@@ -449,24 +668,33 @@ class SettingsDialog(QDialog):
         if dialog.exec() == QDialog.Accepted and dialog.result_offset is not None:
             self.output_offset_ms.setValue(dialog.result_offset)
 
-    def _language_page(self) -> QWidget:
-        sheet = self._sheet()
-        section = sheet.add_section("language", self.tr("Language"))
+    def _language_page(self, title: str) -> QWidget:
+        page = _Page(title)
+        section = page.group(self.tr("Language"))
         self.language_combo = QComboBox()
         self.language_combo.addItem("English", "en")
         self.language_combo.addItem("日本語", "ja")
-        section.field(self.tr("Language"), bind_segments(self.language_combo), span=2)
-        note = QLabel(self.tr("Restart Taiko Fancy Arranger to apply the interface language."))
-        note.setObjectName("fieldNote")
-        note.setWordWrap(True)
-        section.add(note, 2)
-        return sheet
+        section.row(self.tr("Language"), bind_segments(self.language_combo),
+                    self.tr("Restart Taiko Fancy Arranger to apply the interface language."))
+        return page
 
-    def _shortcuts_page(self) -> QWidget:
+    def _shortcuts_page(self, title: str) -> QWidget:
+        """One card per category, a key chip at the end of each row.
+
+        The title, the search and the conflict line stay put while the cards
+        scroll under them: with a tool set per gimmick layer the list is long,
+        and a clash reported somewhere off screen is not reported.
+        """
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        top = QVBoxLayout()
+        top.setContentsMargins(28, 18, 28, 6)
+        top.setSpacing(12)
+        heading = QLabel(title)
+        heading.setObjectName("pageTitle")
+        top.addWidget(heading)
         # Forty-odd actions across the tool rows of every layer: finding one
         # by name (or finding what Ctrl+R does) beats scrolling for it.
         self.shortcut_search = QLineEdit()
@@ -475,97 +703,87 @@ class SettingsDialog(QDialog):
         self.shortcut_search.addAction(QIcon(ui_asset("settings-search.svg")), QLineEdit.LeadingPosition)
         self.shortcut_search.setClearButtonEnabled(True)
         self.shortcut_search.textChanged.connect(self._filter_shortcuts)
-        layout.addWidget(self.shortcut_search)
-        self.shortcuts_table = QTableWidget(0, 2)
-        self.shortcuts_table.setHorizontalHeaderLabels([self.tr("Action"), self.tr("Shortcut")])
-        self.shortcuts_table.setShowGrid(False)
-        smooth(self.shortcuts_table)
-        header = self.shortcuts_table.horizontalHeader()
-        # Action sizes to its longest label -- which is a translation, so no
-        # fixed width can be right in both languages -- and the editor column
-        # takes what is left.
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        header.setStretchLastSection(True)
-        # The category is a spanned header row rather than a column: with a
-        # tool set per gimmick layer the list is long enough that repeating
-        # "Tools -- Fake sliders" on nine consecutive rows says less than one
-        # heading above them does. The table scrolls, so the page stays the
-        # same height however many layers exist.
-        self.shortcuts_table.verticalHeader().setVisible(False)
-        self._shortcut_rows: list[tuple[int, int | None, str]] = []
-        current_category = None
-        heading_row = None
+        top.addWidget(self.shortcut_search)
+        layout.addLayout(top)
+
+        cards = _Page("")
+        self._shortcut_syncs: list = []
+        # (group, [(row, label, editor)]) per category, for the filter.
+        self._shortcut_groups: list[tuple[_Group, list[tuple[QFrame, str, QKeySequenceEdit]]]] = []
         for definition in self.shortcuts.definitions.values():
-            if definition.category != current_category:
-                current_category = definition.category
-                row = self.shortcuts_table.rowCount()
-                self.shortcuts_table.insertRow(row)
-                heading = QTableWidgetItem(self.tr(definition.category).upper())
-                font = heading.font()
-                font.setBold(True)
-                font.setPointSizeF(font.pointSizeF() * 0.85)
-                heading.setFont(font)
-                heading.setForeground(theme.color("#7d8794"))
-                # A heading is not a row anyone edits or picks.
-                heading.setFlags(Qt.NoItemFlags)
-                self.shortcuts_table.setItem(row, 0, heading)
-                self.shortcuts_table.setSpan(row, 0, 1, 2)
-                heading_row = row
-                self._shortcut_rows.append((row, None, self.tr(definition.category)))
-            row = self.shortcuts_table.rowCount()
-            self.shortcuts_table.insertRow(row)
-            self.shortcuts_table.setItem(row, 0, QTableWidgetItem(self.tr(definition.label)))
+            if not self._shortcut_groups or self._shortcut_groups[-1][0].category != definition.category:
+                group = cards.group(self.tr(definition.category))
+                group.category = definition.category
+                self._shortcut_groups.append((group, []))
+            group, rows = self._shortcut_groups[-1]
             editor = QKeySequenceEdit()
             editor.setProperty("action_id", definition.action_id)
-            self.shortcuts_table.setCellWidget(row, 1, editor)
+            # One chord per action, as osu! binds them; a second key press
+            # replaces the first instead of starting a two-step sequence.
+            editor.setMaximumSequenceLength(1)
+            editor.setClearButtonEnabled(True)
+            editor.setFixedWidth(170)
+            reset = QToolButton()
+            reset.setObjectName("shortcutReset")
+            reset.setIcon(QIcon(ui_asset("settings-reset.svg")))
+            reset.setIconSize(QSize(14, 14))
+            default = QKeySequence(definition.default).toString(QKeySequence.NativeText)
+            reset.setToolTip(self.tr("Back to the default: {sequence}").format(sequence=default or "—"))
+            reset.setAccessibleName(reset.toolTip())
+            reset.clicked.connect(
+                lambda _checked=False, e=editor, d=definition.default: e.setKeySequence(QKeySequence(d)))
+            # Space held while hidden, so the chips stay in one column.
+            policy = reset.sizePolicy()
+            policy.setRetainSizeWhenHidden(True)
+            reset.setSizePolicy(policy)
+            def sync_reset(_sequence=None, e=editor, r=reset, d=definition.default) -> None:
+                r.setVisible(normalize_sequence(e.keySequence()) != normalize_sequence(d))
+            editor.keySequenceChanged.connect(sync_reset)
+            # Loading an empty binding over an empty editor emits nothing.
+            self._shortcut_syncs.append(sync_reset)
+            editor.keySequenceChanged.connect(lambda _sequence: self._validate())
+            label = self.tr(definition.label)
+            row = group.row(label, self._beside(editor, reset, width=200))
             self._shortcut_editors[definition.action_id] = editor
-            self._shortcut_rows.append((row, heading_row, self.tr(definition.label)))
+            rows.append((row, label, editor))
+        layout.addWidget(cards, 1)
         self.validation_label = QLabel("")
         self.validation_label.setStyleSheet("color: #ffb347;")
         self.validation_label.setWordWrap(True)
-        layout.addWidget(self.shortcuts_table, 1)
+        self.validation_label.setContentsMargins(28, 0, 28, 10)
+        self.validation_label.hide()
         layout.addWidget(self.validation_label)
         return page
 
     def _filter_shortcuts(self, text: str) -> None:
-        """Hide actions whose name and keys do not contain `text`; a heading
-        stays while any action under it does."""
+        """Hide actions whose name and keys do not contain `text`; a category
+        stays while any action in it does."""
         wanted = text.strip().lower()
-        shown_headings = set()
-        for row, heading, label in self._shortcut_rows:
-            if heading is None:
-                continue
-            editor = self.shortcuts_table.cellWidget(row, 1)
-            keys = editor.keySequence().toString().lower() if editor is not None else ""
-            visible = not wanted or wanted in label.lower() or wanted in keys
-            self.shortcuts_table.setRowHidden(row, not visible)
-            if visible:
-                shown_headings.add(heading)
-        for row, heading, label in self._shortcut_rows:
-            if heading is None:
-                self.shortcuts_table.setRowHidden(row, bool(wanted) and row not in shown_headings)
+        for group, rows in self._shortcut_groups:
+            any_shown = False
+            for row, label, editor in rows:
+                keys = editor.keySequence().toString(QKeySequence.NativeText).lower()
+                visible = not wanted or wanted in label.lower() or wanted in keys
+                row.setVisible(visible)
+                any_shown = any_shown or visible
+            group.set_visible(any_shown)
 
-    def _advanced_page(self) -> QWidget:
-        sheet = self._sheet()
-        section = sheet.add_section("storage", self.tr("Settings storage location:").rstrip(":"))
+    def _advanced_page(self, title: str) -> QWidget:
+        page = _Page(title)
+        section = page.group(self.tr("Settings storage location:").rstrip(":"))
         self.storage_value = QLabel(self.settings.storage_name())
-        self.storage_value.setObjectName("fieldNote")
+        self.storage_value.setObjectName("rowNote")
         self.storage_value.setWordWrap(True)
         self.storage_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        section.add(self.storage_value, 2)
+        section.wide(self.storage_value)
         self.reset_all_button = QPushButton(self.tr("Reset All Settings"))
         self.reset_all_button.setProperty("role", "ghost")
         self.reset_all_button.setStyleSheet(
             "QPushButton { border: 1px solid #6b3a3a; color: #ff8a8a; }"
             "QPushButton:hover { background: #2a1f24; color: #ffb0b0; }")
         self.reset_all_button.clicked.connect(self._reset_all_settings)
-        row = QWidget()
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.addWidget(self.reset_all_button)
-        row_layout.addStretch(1)
-        section.add(row, 2)
-        return sheet
+        section.wide(self.reset_all_button, own_width=True)
+        return page
 
     def _load_current_values(self) -> None:
         self.confirm_overwrite.setChecked(self.settings.bool_value("general/confirm_overwrite", True))
@@ -594,6 +812,8 @@ class SettingsDialog(QDialog):
         self.language_combo.setCurrentIndex(max(0, index))
         for action_id, editor in self._shortcut_editors.items():
             editor.setKeySequence(QKeySequence(self.shortcuts.sequence(action_id)))
+        for sync in self._shortcut_syncs:
+            sync()
 
     def _restore_current_page_defaults(self) -> None:
         """Reset whichever page is showing.
@@ -639,18 +859,28 @@ class SettingsDialog(QDialog):
         return {action_id: normalize_sequence(editor.keySequence()) for action_id, editor in self._shortcut_editors.items()}
 
     def _validate(self) -> bool:
+        """Mark every chip in a clash, and name the first clash under the list."""
         duplicates = duplicate_shortcuts(self._shortcut_values())
+        clashing = {action for _sequence, first, second in duplicates for action in (first, second)}
+        for action_id, editor in self._shortcut_editors.items():
+            line = editor.findChild(QLineEdit)
+            if line is not None:
+                set_warning(line, action_id in clashing)
         if duplicates:
             sequence, first, second = duplicates[0]
             first_label = self.shortcuts.definitions[first].label
             second_label = self.shortcuts.definitions[second].label
             self.validation_label.setText(self.tr("Shortcut conflict: {sequence} is assigned to {first} and {second}.").format(sequence=sequence, first=first_label, second=second_label))
+            self.validation_label.show()
             return False
         self.validation_label.setText("")
+        self.validation_label.hide()
         return True
 
     def apply(self) -> bool:
         if not self._validate():
+            # The clash is named on the Shortcuts page, so show it.
+            self.nav.setCurrentRow(self._page_ids.index("shortcuts"))
             return False
         previous_language = self.settings.string_value("language/current", "en")
         selected_language = str(self.language_combo.currentData())

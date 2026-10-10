@@ -3011,6 +3011,18 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
     <context>
         <name>SettingsDialog</name>
         <message>
+            <source>Appearance</source>
+            <translation>外観</translation>
+        </message>
+        <message>
+            <source>Search settings</source>
+            <translation>設定を検索</translation>
+        </message>
+        <message>
+            <source>Back to the default: {sequence}</source>
+            <translation>既定に戻す: {sequence}</translation>
+        </message>
+        <message>
             <source>Asks once per save when the file on disk is the one you opened.</source>
             <translation>開いたファイルに上書き保存するとき、保存のたびに確認します。</translation>
         </message>

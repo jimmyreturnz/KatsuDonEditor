@@ -32,12 +32,6 @@ def translation_file(language_code: str, suffix: str) -> Path | None:
     return None
 
 
-def translation_path(language_code: str) -> Path | None:
-    if language_code == "en":
-        return None
-    return translation_file(language_code, "qm")
-
-
 class TsTranslator(QTranslator):
     """Safe source-tree fallback when a compiled QM catalog is unavailable.
 

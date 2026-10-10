@@ -24,11 +24,3 @@ def resolve_child_asset(folder,name,*,suffixes,max_bytes):
  except ValueError as e: raise UnsafeInputError("Asset path escapes the beatmap folder") from e
  if p.suffix.lower() not in suffixes or not p.is_file() or p.stat().st_size>max_bytes: raise UnsafeInputError("Unsupported or oversized asset")
  return p
-def validate_image(path,reader_type):
- p=Path(path).resolve(strict=True)
- if p.suffix.lower() not in IMAGE_SUFFIXES or p.stat().st_size>MAX_IMAGE_BYTES: raise UnsafeInputError("Unsupported or oversized image")
- q=reader_type(str(p));q.setDecideFormatFromContent(True)
- if not q.canRead(): raise UnsafeInputError("Invalid image")
- z=q.size()
- if z.width()<=0 or z.height()<=0 or z.width()*z.height()>MAX_IMAGE_PIXELS: raise UnsafeInputError("Image dimensions are unsafe")
- return p

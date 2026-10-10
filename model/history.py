@@ -37,12 +37,6 @@ class History:
     def can_redo(self) -> bool:
         return bool(self.redo_stack)
 
-    def undo_label(self) -> str | None:
-        return self.undo_stack[-1].label_id if self.undo_stack else None
-
-    def redo_label(self) -> str | None:
-        return self.redo_stack[-1].label_id if self.redo_stack else None
-
     def clear(self) -> None:
         self.undo_stack.clear()
         self.redo_stack.clear()

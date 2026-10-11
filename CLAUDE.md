@@ -4,11 +4,13 @@ A PySide6 editor for osu!taiko charts. Run it with `python main.py` from the
 repository root; every import is absolute from there (`from ui import gui`,
 `from app.settings import SettingsManager`).
 
-- `ui/`: `gui.py` (still the largest, ~14.6k lines: the editor views and
-  `MainWindow`), `song_select.py` (the library page), `gameplay_view.py`
+- `ui/`: `gui.py` (still the largest, ~10.9k lines, nearly all of it
+  `MainWindow`), `chart_views.py` (the chart lane, the overview bars and the
+  view frame), `sv_editor.py` (the SV graph), `song_select.py` (the library
+  page), `gameplay_view.py`
   (the preview), `dialogs.py` (every dialog `MainWindow` opens),
   `common.py` (what more than one of those needs), `editor_keys.py` (osu!'s
-  editor shortcuts on the Editor and Gimmick pages), the Settings dialog,
+  editor shortcuts on the Editor and Gimmick pages), the Settings dialog and `settings_widgets.py`,
   `config_sheet`, `theme`, `motion`, `smooth_scroll`, the trace dialog.
 - `audio/`: `audio_engine` (the transport, see below), `offset_calibration`.
 - `chart/`: `gimmick_session` builds gimmick structures, `time_axis` is the

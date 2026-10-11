@@ -821,7 +821,14 @@ Gimmick pages, and the BPM stripe is a hidden seek bar.
 ## Tidy the repo -- owner, 2026-10-08; step 1 DONE 2026-10-11
 
 Step 1 landed with `autoplay` and `sv_curves` in `chart/`, an entry point at
-`main.py`, and both `.bat`s in `scripts/`. Step 2 (splitting `gui.py`) is next.
+`main.py`, and both `.bat`s in `scripts/`. Step 2 is done up to `MainWindow`
+(2026-10-11): dialogs, gameplay preview, song select, chart views and the SV
+editor each have a module, gui.py is 10,933 lines. **What is left is not a
+move.** The Gimmick page inside `MainWindow` is 31 methods / 1,277 lines by
+name alone, reading window state 162 times and calling 52 other MainWindow
+methods; 22 methods call into it and the tests reference it 228 times.
+Extracting it is a controller design (what it owns, what it asks the window
+for), to be agreed with the owner before starting.
 
 The root has 21 flat `.py` modules plus build scripts, and `gui.py` is 20,280
 lines (CLAUDE.md still says ~12k). Pure moves, no behaviour change, after the

@@ -32,8 +32,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PySide6.QtCore import QTimer, QUrl  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-import audio_engine  # noqa: E402
-from audio_engine import SAMPLE_RATE, TrackPlayer, frame_for_ms  # noqa: E402
+from audio import audio_engine  # noqa: E402
+from audio.audio_engine import SAMPLE_RATE, TrackPlayer, frame_for_ms  # noqa: E402
 from osu_io.parser import parse_osu  # noqa: E402
 
 # gui.py's, without importing it: pulling in the window to read four filenames

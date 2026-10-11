@@ -1,9 +1,36 @@
 # Taiko Fancy Arranger — working notes
 
-A PySide6 editor for osu!taiko charts. `gui.py` is the monolith (~12k lines);
-`osu_io/` parses and writes `.osu`, `model/` holds the undo commands,
-`gimmick_session.py` builds gimmick structures, `time_axis.py` is the shared
-scrolling/snapping mixin.
+A PySide6 editor for osu!taiko charts. Run it with `python main.py` from the
+repository root; every import is absolute from there (`from ui import gui`,
+`from app.settings import SettingsManager`).
+
+- `ui/`: `gui.py` (still the largest, ~14.6k lines: the editor views and
+  `MainWindow`), `song_select.py` (the library page), `gameplay_view.py`
+  (the preview), `dialogs.py` (every dialog `MainWindow` opens),
+  `common.py` (what more than one of those needs), the Settings dialog,
+  `config_sheet`, `theme`, `motion`, `smooth_scroll`, the trace dialog.
+- `audio/`: `audio_engine` (the transport, see below), `offset_calibration`.
+- `chart/`: `gimmick_session` builds gimmick structures, `time_axis` is the
+  shared scrolling/snapping mixin, plus `transformer`, `parameters`,
+  `image_to_drawing`, `autoplay`, `sv_curves`.
+- `library/`: `osu_db`, `song_library`, `skin`.
+- `app/`: `settings`, `i18n`, `updater`, `security_utils`.
+- `osu_io/` parses and writes `.osu`, `model/` holds the undo commands,
+  `patterns/` the arranger's shapes. `scripts/` has the build and run `.bat`s.
+
+A path built from `__file__` in a package module is one level below the
+root: use `parents[1]`, as `resource_roots` and `ui_asset` do.
+
+`gui.py` imports only what it uses, so reach a name through the module that
+defines it (`gameplay_view.beat_pulse`, not `gui.beat_pulse`); an import
+`gui` does not use is dead, and `gui.X` for it is an `AttributeError`. A
+test that *rebinds* a module name
+(`gui.QMessageBox = Fake`, `patch.object(gui, "reduced_motion")`) only
+reaches code that looks the name up in `gui`: stub it in the module the
+code under test lives in, or a real modal opens offscreen and the run
+hangs. A module-level variable another module assigns needs a setter in
+its own module (`common.set_view_ground_alpha`): `global` rebinds only the
+caller's copy.
 
 ## Measure first. Every time.
 
@@ -124,6 +151,23 @@ recovery -- two real bugs inherited from reading a stale copy.
   `BackgroundJobs`. Qt's image decode was measured to release the GIL (0.7ms
   worst main-thread stall during 1.3s of decoding); a worker that merely
   *overlaps* a gap is not its cause, which the attribution once got wrong.
+- `tools/measure_ui_freeze.py <map.osu> [--runs N] [--profile map|settings|theme]`
+  -- the freeze on opening a map, Settings, or switching theme, each up to
+  the end of the paint it causes. Opening a map parsed every difficulty in
+  the folder for the dropdown's names: 360ms -> 76ms repeat, 626ms -> 325ms
+  cold (2026-10-11). Settings (~260ms) and a theme switch (~230ms) are now
+  Qt building and restyling widgets: setting the dialog's sheet after its
+  widgets made it 180 -> 285ms, and the order sheets are re-set in on a
+  theme switch changes nothing. Nor does the sheet's size (MainWindow's 8KB
+  restyles in 110ms, an empty sheet in 90ms): the cost is per widget, and a
+  switch restyles each about twice, because every one of the ~100 themed
+  sheets repolishes its whole subtree under MainWindow's own pass. With
+  Settings open that is 669ms (main 282, the dialog's own 145). Hoisting
+  the big nested sheets' colours into MainWindow's would save ~35%, at the
+  price of Qt's own-sheet-wins precedence; the owner chose to leave it
+  (2026-10-11). **Process deleteLater** in a harness
+  (`sendPostedEvents(None, QEvent.DeferredDelete)`): `processEvents` never
+  does, so closed dialogs lived on and inflated every theme switch to 1.4s.
 - `tools/play_with_hitsounds.py <map.osu> [rate] [seconds] [start_ms]` — the
   whole path, audibly: parse, schedule, decode, stretch, mix, sink. `voiced`
   and `offered` must be equal, or the 1/rate dedupe has leaked and every note
@@ -183,6 +227,30 @@ Found by measurement, listed so the next one is recognised faster:
   fine for it is drawn at a coarser *divisor of* the setting rather than
   dropped: 15.3ms -> 4.3ms. Batching the lines by pen was worth half the raster
   call and nothing else -- the frame was in the walk, not the pen changes.
+- **A pixmap at a fractional x is drawn at a whole one.** Qt's raster
+  engine snaps every unscaled pixmap draw -- QPointF, a same-size QRectF, a
+  near-identity transform, SmoothPixmapTransform on or off, all measured -- so
+  a note scrolling 1.4px a frame stepped 1, 1, 2, 1, 2 and juddered.
+  `draw_pixmap_subpixel` caches quarter-pixel-shifted copies (a Plus blend of
+  the sprite and itself one pixel over) and blits those; anything that
+  scrolls goes through it. `tests/test_subpixel_draw.py` holds the motion.
+- **Frame cadence is the display's, not a constant.** The owner's monitor is
+  99.93Hz; a fixed 120fps put 1.2 frames on every refresh, so one refresh in
+  five showed a double step -- a 20Hz judder that paint speed cannot touch.
+  `display_frame_interval_ns(screen)` is the interval, re-read when the
+  window changes screen; the song select preview gates its 4ms poll on it.
+- **A full GC pass is a dropped frame.** With the library loaded the heap
+  is ~80k objects, and `gc.collect(2)` over it is 12-13ms against an 8.33ms
+  frame, at moments nothing chose (2 of them in one 5s scroll run).
+  `main()` freezes everything built at startup; the same pass is then 0.0ms.
+  Measure with a `gc.callbacks` timer around the harness, not by guessing.
+- **Batching draw calls does not help antialiased lines.** Tried on the SV
+  bands (2026-10-11): 18 drawLines a paint into one drawLines, and the curve
+  into one drawPolyline. The raster work is per pixel, not per call -- the
+  batched lines cost the same 0.2s, and the polyline twice that (it pays for
+  joins). Reverted. A Gimmick-page scroll repaints six layers of chart + SV
+  bands at ~0.6ms each, ~7ms a notch, which is the real limit there.
+
 - **Application-wide event filters.** Qt runs every event in the process
   through every installed filter. Bail out on `event.type()` in one lookup,
   and release the filter in `closeEvent` (`_release_application_hooks`).
@@ -603,8 +671,8 @@ there -- `timing_delete_enabled`, not `timing_edit_enabled`.
 
 ## Things that are true and non-obvious
 
-- **Line endings are mixed, and `core.autocrlf=true`.** `gui.py` used to be
-  LF and is now uniformly CRLF; `offset_calibration.py` and
+- **Line endings are mixed, and `core.autocrlf=true`.** `ui/gui.py` used to be
+  LF and is now uniformly CRLF; `audio/offset_calibration.py` and
   `tests/test_offset_calibration.py` are LF. A scripted patch must **detect**
   the file's own newline rather than assume either — read bytes, normalise to
   `\n`, patch, write back in the newline the file arrived with. Several edits

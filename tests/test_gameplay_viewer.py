@@ -26,8 +26,11 @@ from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QColor, QImage, QWheelEvent
 from PySide6.QtWidgets import QApplication
 
-import gui
-import skin
+from ui import gui
+from ui import common
+# The preview calls draw_note_sprite through its own module; a spy goes there.
+from ui import gameplay_view
+from library import skin
 from model.hit_object import HitObject
 from osu_io.parser import parse_osu
 from osu_io.timing import TimingPoint
@@ -143,11 +146,11 @@ class TaikoProportionTests(unittest.TestCase):
         """`TaikoHitObject.DEFAULT_SIZE = 0.475f`, a fraction of the playfield
         height. It used to be `min(30.0, height * 0.19)`, which stopped growing
         with the view entirely once it was tall enough."""
-        self.assertAlmostEqual(gui.TAIKO_NOTE_SIZE, 0.475, places=6)
+        self.assertAlmostEqual(gameplay_view.TAIKO_NOTE_SIZE, 0.475, places=6)
         for height in (120, 180, 400, 900):
             with self.subTest(height=height):
                 self.assertAlmostEqual(
-                    height * gui.TAIKO_NOTE_SIZE / 2.0, height * 0.2375, places=6)
+                    height * gameplay_view.TAIKO_NOTE_SIZE / 2.0, height * 0.2375, places=6)
 
     def test_a_finisher_is_the_rulesets_strong_scale(self):
         """`TaikoStrongableHitObject.STRONG_SCALE = 1 / 0.65f`. 1.4 was assumed
@@ -316,17 +319,17 @@ class HitPositionTests(unittest.TestCase):
         landed, coming = self._circle(1000), self._circle(2000)
         view = self._view([landed, coming], at=1000.0)
         drawn = []
-        original = gui.draw_note_sprite
+        original = gameplay_view.draw_note_sprite
 
         def spy(painter, fill, outline, x, y, radius, skin=None, big=False):
             drawn.append(round(x))
             return original(painter, fill, outline, x, y, radius, skin, big)
 
-        gui.draw_note_sprite = spy
+        gameplay_view.draw_note_sprite = spy
         try:
             view.grab()
         finally:
-            gui.draw_note_sprite = original
+            gameplay_view.draw_note_sprite = original
         self.assertEqual(len(drawn), 1, "only the note still approaching")
         self.assertGreater(drawn[0], view._hit_x())
 
@@ -366,16 +369,16 @@ class HitPositionTests(unittest.TestCase):
 
             bodies, heads = [], []
             body = gui.GameplayViewerView._draw_fake_slider
-            sprite = gui.draw_note_sprite
+            sprite = gameplay_view.draw_note_sprite
             gui.GameplayViewerView._draw_fake_slider = (
                 lambda s, *a: bodies.append(1))
-            gui.draw_note_sprite = (
+            gameplay_view.draw_note_sprite = (
                 lambda *a, **k: heads.append(1))
             try:
                 view.grab()
             finally:
                 gui.GameplayViewerView._draw_fake_slider = body
-                gui.draw_note_sprite = sprite
+                gameplay_view.draw_note_sprite = sprite
         return asked, bodies, heads
 
     def test_before_the_target_it_is_drawn_by_its_own_routine(self):
@@ -406,12 +409,12 @@ class HitPositionTests(unittest.TestCase):
                 view = self._view([note], at=1000.0 - 1.0)
                 view._phantom_ends[note.uid] = view._compute_phantom_end(note)
                 heads = []
-                sprite = gui.draw_note_sprite
-                gui.draw_note_sprite = lambda *a, **k: heads.append(1)
+                sprite = gameplay_view.draw_note_sprite
+                gameplay_view.draw_note_sprite = lambda *a, **k: heads.append(1)
                 try:
                     view.grab()
                 finally:
-                    gui.draw_note_sprite = sprite
+                    gameplay_view.draw_note_sprite = sprite
                     view.close()
                 self.assertEqual(len(heads), 1)
 
@@ -964,7 +967,7 @@ class OsuVisibleRangeTests(unittest.TestCase):
         view = self._view(600, 170)
         view.show()
         self.addCleanup(view.close)
-        self.assertEqual(view.height(), gui.GAMEPLAY_MIN_HEIGHT)
+        self.assertEqual(view.height(), common.GAMEPLAY_MIN_HEIGHT)
 
 
 class BarlineTests(unittest.TestCase):
@@ -1084,7 +1087,7 @@ class PaintAndInputTests(unittest.TestCase):
         self.view._rebuild_velocities()
         self.view.current_time = 2000.0
         start, end = self.view.visible_time_range()
-        self.assertLessEqual(end - start, 2 * gui.GAMEPLAY_MAX_LOOKAHEAD_MS)
+        self.assertLessEqual(end - start, 2 * gameplay_view.GAMEPLAY_MAX_LOOKAHEAD_MS)
         self.view.grab()
 
     def test_a_barline_gimmick_section_does_not_generate_millions_of_lines(self):
@@ -1202,14 +1205,14 @@ class PaintAndInputTests(unittest.TestCase):
     def test_notes_are_blitted_from_the_sprite_cache(self):
         """Stroking an antialiased ellipse per note per frame was most of the
         frame; the cache is what makes a dense map scroll."""
-        gui._NOTE_SPRITES.clear()
+        common._NOTE_SPRITES.clear()
         self.view.grab()
-        self.assertTrue(gui._NOTE_SPRITES, "no note sprite was cached")
-        cached = len(gui._NOTE_SPRITES)
+        self.assertTrue(common._NOTE_SPRITES, "no note sprite was cached")
+        cached = len(common._NOTE_SPRITES)
         for offset in range(5):
             self.view.current_time = 1000.0 + offset * 16.0
             self.view.grab()
-        self.assertEqual(len(gui._NOTE_SPRITES), cached, "sprites are being rebuilt per frame")
+        self.assertEqual(len(common._NOTE_SPRITES), cached, "sprites are being rebuilt per frame")
 
     def test_a_wheel_notch_moves_one_snap_division(self):
         self.view.snap_divisor = 4

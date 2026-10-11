@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from audio_engine import SAMPLE_RATE, TrackPlayer
+from audio.audio_engine import SAMPLE_RATE, TrackPlayer
 
 # 120 BPM. Fast enough to gather taps quickly, slow enough that nobody has to
 # rush, and the half-interval (250ms) is a wide enough window that a tap can

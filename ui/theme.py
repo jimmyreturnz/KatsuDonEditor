@@ -329,7 +329,7 @@ def switch(name: str) -> None:
 def _load() -> None:
     # Through SettingsManager rather than a QSettings of its own, so the test
     # suite's private settings copy (tests/__init__.py) is the one read.
-    from settings import SettingsManager
+    from app.settings import SettingsManager
     install(SettingsManager().string_value(SETTING, DEFAULT))
 
 

@@ -20,8 +20,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
-import gui
-from gimmick_session import format_length
+from ui import gui
+from chart.gimmick_session import format_length
 from model.hit_object import TYPE_SLIDER, HitObject
 from tests.osu_fixtures import write_fixture
 

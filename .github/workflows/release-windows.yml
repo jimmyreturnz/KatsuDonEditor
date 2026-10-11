@@ -38,7 +38,7 @@ jobs:
       # release a five-hour wait. Tests now run locally instead, in two
       # places, both of which fail loudly:
       #   * tools/run_tests.bat  -- run this before tagging a release
-      #   * build_windows.bat    -- step [6/9], aborts the build on failure
+      #   * scripts/build_windows.bat -- step [6/9], aborts the build on failure
       # Do not tag a release from a tree where those have not passed.
 
       - name: Build portable Windows application

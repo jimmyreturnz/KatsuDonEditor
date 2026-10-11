@@ -11,6 +11,7 @@ counted: the song list shows its background, BPM, note count and length.
 """
 from __future__ import annotations
 
+import os
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -363,13 +364,16 @@ def songs_from_cache(cache: dict[str, list], root: Path) -> Iterator[TaikoDiffic
     verification walk begins. Entries are filtered by `root` because the cache
     outlives a change of songs folder.
     """
-    root = Path(root)
+    # A string prefix, not `root in Path(key).parents`: that walked and
+    # case-folded every ancestor of 15,290 cached paths, about a third of a
+    # second of every launch (measured 2026-10-11). normcase is the same
+    # case-insensitive comparison Windows paths make.
+    prefix = os.path.join(os.path.normcase(str(Path(root))), "")
     for key, entry in cache.items():
         if entry[2] != TAIKO_MODE:
             continue
-        path = Path(key)
-        if root in path.parents:
-            yield TaikoDifficulty(path, *entry[3:])
+        if os.path.normcase(key).startswith(prefix):
+            yield TaikoDifficulty(Path(key), *entry[3:])
 
 
 def load_cache(path: Path) -> dict[str, list]:

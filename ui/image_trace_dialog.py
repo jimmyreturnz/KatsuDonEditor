@@ -10,8 +10,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-import theme
-from image_to_drawing import TraceOptions, fit_strokes, trace_image
+from ui import theme
+from chart.image_to_drawing import TraceOptions, fit_strokes, trace_image
 
 
 MODE_HELP = {

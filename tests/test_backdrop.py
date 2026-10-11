@@ -13,14 +13,14 @@ from PySide6.QtCore import QPoint
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QApplication, QPushButton, QWidget
 
-import gui
+from ui import gui
 
 _APP: QApplication | None = None
 
 
 def setUpModule() -> None:
     global _APP
-    import settings as settings_module
+    from app import settings as settings_module
 
     settings_module.APPLICATION_NAME = "TaikoFancyArrangerTests"
     _APP = QApplication.instance() or QApplication([])

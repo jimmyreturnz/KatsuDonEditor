@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
 
 path = Path(sys.argv[1])
 frames = int(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith("-") else 400
@@ -125,7 +125,7 @@ if "--focused" in sys.argv:
 
 if "--no-motion" in sys.argv:
     # What "Animation effects" off does: the rim stands still, its clock stops.
-    import motion
+    from ui import motion
     motion.reduced_motion = lambda: True
     motion.RimClock.shared()._timer.stop()
     print("     motion: off")
@@ -155,7 +155,7 @@ if "--view-opacity" in sys.argv:
 # which exists to look at exactly what the app does not expose.
 if "--no-settle" not in sys.argv:
     began = perf_counter()
-    import audio_engine
+    from audio import audio_engine
     engine = window.player._engine
     last, last_change = -1, perf_counter()
     while perf_counter() - began < 60.0:

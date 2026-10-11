@@ -27,7 +27,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
 
 
 def legacy_paint(self, event) -> None:

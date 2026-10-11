@@ -6,7 +6,7 @@ are 1234 strings: 1 left kat, 2 left don, 3 right don, 4 right kat.
 """
 import unittest
 
-from autoplay import DDKK, FULL_ALT, ROLL, SEMI_ALT, SINGLE_TAP, note_halves, roll_halves
+from chart.autoplay import DDKK, FULL_ALT, ROLL, SEMI_ALT, SINGLE_TAP, note_halves, roll_halves
 
 BEAT = 500.0  # 120 BPM
 ROUND_1 = "dddd kkk ddkdd/k/kdkkd (kkkd)d|ddd"

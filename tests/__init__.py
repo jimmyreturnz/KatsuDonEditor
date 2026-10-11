@@ -26,7 +26,7 @@ import tempfile
 
 from PySide6.QtCore import QSettings
 
-import settings as _settings
+from app import settings as _settings
 
 _DIRECTORY = tempfile.mkdtemp(prefix="taiko-tests-settings-")
 atexit.register(shutil.rmtree, _DIRECTORY, True)

@@ -195,7 +195,7 @@ class TimelineMetadataTests(unittest.TestCase):
     """PreviewTime lives in [General], not [Editor]."""
 
     def _metadata(self, name):
-        import gui
+        from ui import gui
         with tempfile.TemporaryDirectory() as directory:
             return gui.editor_timeline_metadata(parse_osu(write_fixture(Path(directory), name)))
 

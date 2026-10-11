@@ -31,8 +31,9 @@ ROOT = Path(__file__).resolve().parents[1]
 TS_PATH = ROOT / "translations" / "taiko_ja.ts"
 
 # Files whose visible strings are looked up through explicit contexts.
-SOURCE_FILES = ("gui.py", "settings_dialog.py", "image_trace_dialog.py", "updater.py",
-                "offset_calibration.py", "config_sheet.py")
+SOURCE_FILES = ("ui/gui.py", "ui/settings_dialog.py", "ui/image_trace_dialog.py", "app/updater.py",
+                "audio/offset_calibration.py", "ui/config_sheet.py",
+                "ui/dialogs.py", "ui/common.py")
 
 _APP: QApplication | None = None
 
@@ -108,8 +109,8 @@ def parameter_labels() -> tuple[set[str], set[str]]:
     covers both parameters.py originals and gui.py additions such as Font and
     Notes per Drawing.
     """
-    import gui  # noqa: F401  (import for its PARAMETERS side effects)
-    from parameters import PARAMETERS
+    from ui import gui  # noqa: F401  (import for its PARAMETERS side effects)
+    from chart.parameters import PARAMETERS
 
     labels: set[str] = set()
     choices: set[str] = set()
@@ -179,7 +180,7 @@ class CoverageTests(unittest.TestCase):
         self.assertEqual(missing, [], f"parameter labels missing Japanese: {missing}")
 
     def test_every_transformation_name_is_translated(self):
-        import gui
+        from ui import gui
 
         entries = load_catalog()["Transformations"]
         missing = sorted(
@@ -188,7 +189,7 @@ class CoverageTests(unittest.TestCase):
         self.assertEqual(missing, [], f"transformation names missing Japanese: {missing}")
 
     def test_every_gui_transformation_has_an_explicit_label(self):
-        import gui
+        from ui import gui
 
         missing = [
             name for name in gui.GUI_TRANSFORMATIONS if name not in gui.TRANSFORMATION_LABELS
@@ -200,7 +201,7 @@ class JapaneseLookupTests(unittest.TestCase):
     """Spot checks for controls that have regressed to English before."""
 
     def setUp(self):
-        import i18n
+        from app import i18n
 
         self.i18n = i18n
         self.assertEqual(i18n.install_translator(_APP, FakeSettings("ja")), "ja")
@@ -209,7 +210,7 @@ class JapaneseLookupTests(unittest.TestCase):
         self.i18n.install_translator(_APP, FakeSettings("en"))
 
     def test_known_translations(self):
-        from i18n import tr
+        from app.i18n import tr
 
         expected = {
             ("MainWindow", "Play"): "再生",
@@ -223,7 +224,7 @@ class JapaneseLookupTests(unittest.TestCase):
                 self.assertEqual(tr(context, source), value)
 
     def test_previously_regressed_controls_are_not_english(self):
-        from i18n import tr
+        from app.i18n import tr
 
         cases = [
             ("MainWindow", "Reset Applied Transforms"),
@@ -250,7 +251,7 @@ class JapaneseLookupTests(unittest.TestCase):
                 self.assertNotEqual(translated, source, f"{source} is still English")
 
     def test_untranslated_source_falls_back_to_english(self):
-        from i18n import tr
+        from app.i18n import tr
 
         self.assertEqual(
             tr("MainWindow", "String that is deliberately absent"),
@@ -260,17 +261,17 @@ class JapaneseLookupTests(unittest.TestCase):
 
 class TranslatorInstallationTests(unittest.TestCase):
     def tearDown(self):
-        import i18n
+        from app import i18n
 
         i18n.install_translator(_APP, FakeSettings("en"))
 
     def test_invalid_stored_language_falls_back_to_english(self):
-        import i18n
+        from app import i18n
 
         self.assertEqual(i18n.install_translator(_APP, FakeSettings("klingon")), "en")
 
     def test_missing_catalog_files_do_not_crash(self):
-        import i18n
+        from app import i18n
 
         original = i18n.translation_file
         i18n.translation_file = lambda language_code, suffix: None
@@ -280,7 +281,7 @@ class TranslatorInstallationTests(unittest.TestCase):
             i18n.translation_file = original
 
     def test_english_installs_no_translator(self):
-        import i18n
+        from app import i18n
 
         self.assertEqual(i18n.install_translator(_APP, FakeSettings("en")), "en")
 
@@ -289,16 +290,16 @@ class StableIdentifierTests(unittest.TestCase):
     """Internal identifiers must never follow the display language."""
 
     def tearDown(self):
-        import i18n
+        from app import i18n
 
         i18n.install_translator(_APP, FakeSettings("en"))
 
     def _build_window(self, language: str):
-        import i18n
+        from app import i18n
 
         i18n.install_translator(_APP, FakeSettings(language))
-        import gui
-        import settings
+        from ui import gui
+        from app import settings
 
         # Test settings are seeded from the real ones, and a real session
         # leaves its Fancy layout there -- one with the Transform dock closed

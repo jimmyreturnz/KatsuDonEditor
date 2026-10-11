@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import gimmick_session as gs
+from chart import gimmick_session as gs
 from model.hit_object import HITSOUND_CLAP, HITSOUND_FINISH, TYPE_CIRCLE, TYPE_SLIDER, HitObject
 from osu_io.timing import TimingPoint, serialize_timing_point
 

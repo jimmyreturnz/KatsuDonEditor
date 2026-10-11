@@ -32,7 +32,7 @@ sys.path.insert(0, __file__.rsplit("tools", 1)[0] + "tools")
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from audio_engine import CHANNELS, SAMPLE_RATE, downmix_to_mono, frame_for_ms  # noqa: E402
+from audio.audio_engine import CHANNELS, SAMPLE_RATE, downmix_to_mono, frame_for_ms  # noqa: E402
 from measure_stretch_quality import decode  # noqa: E402
 from osu_io.parser import parse_osu  # noqa: E402
 

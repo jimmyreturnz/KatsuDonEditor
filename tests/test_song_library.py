@@ -15,8 +15,8 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from tests.osu_fixtures import write_fixture
 
-import song_library
-from song_library import (
+from library import song_library
+from library.song_library import (
     group_by_song, load_cache, matches_search, read_header, save_cache, scan,
 )
 
@@ -33,7 +33,7 @@ def setUpModule() -> None:
     stray `library/original_metadata` once ended up switched on for real.
     """
     global _APP, _REAL_APPLICATION_NAME
-    import settings as settings_module
+    from app import settings as settings_module
 
     _REAL_APPLICATION_NAME = settings_module.APPLICATION_NAME
     settings_module.APPLICATION_NAME = "TaikoFancyArrangerTests"
@@ -41,7 +41,7 @@ def setUpModule() -> None:
 
 
 def tearDownModule() -> None:
-    import settings as settings_module
+    from app import settings as settings_module
 
     from PySide6.QtCore import QSettings
 
@@ -200,7 +200,7 @@ class ScanTests(unittest.TestCase):
         elsewhere = self.root.parent / "not-my-songs" / "other.osu"
         cache[str(elsewhere)] = [0, 0, "1", "A", "", "T", "", "Oni", "someone", ""]
 
-        from song_library import songs_from_cache
+        from library.song_library import songs_from_cache
 
         found = list(songs_from_cache(cache, self.root))
         self.assertEqual([item.version for item in found], ["Oni"])
@@ -236,7 +236,7 @@ class HeardTempoTests(unittest.TestCase):
 
 class LibraryPageTests(unittest.TestCase):
     def setUp(self):
-        import gui
+        from ui import gui
 
         self._temp = tempfile.TemporaryDirectory()
         self.root = Path(self._temp.name)
@@ -372,7 +372,7 @@ class LibraryPageTests(unittest.TestCase):
         self.assertIn("テスト", self.window.song_list.item(0).text())
 
     def test_opening_a_difficulty_switches_to_the_editor(self):
-        import gui
+        from ui import gui
 
         self.run_scan()
         self.window.song_list.setCurrentRow(0)
@@ -382,7 +382,7 @@ class LibraryPageTests(unittest.TestCase):
         self.assertTrue(self.window.editor_page_button.isChecked())
 
     def test_escape_returns_to_the_song_list_when_nothing_is_dirty(self):
-        import gui
+        from ui import gui
 
         self.run_scan()
         self.window.song_list.setCurrentRow(0)
@@ -392,7 +392,7 @@ class LibraryPageTests(unittest.TestCase):
         self.assertTrue(self.window.library_page_button.isChecked())
 
     def test_escape_in_a_view_with_a_selection_clears_it_instead_of_leaving(self):
-        import gui
+        from ui import gui
 
         self.run_scan()
         self.window.song_list.setCurrentRow(0)
@@ -412,7 +412,8 @@ class LibraryPageTests(unittest.TestCase):
         self.assertEqual(self.window.page_stack.currentIndex(), gui.PAGE_LIBRARY)
 
     def test_first_start_explains_the_folder_picker_then_scans(self):
-        import gui
+        from ui import gui
+        from ui import song_select  # the folder picker lives there now
 
         shown = []
         chosen = str(self.root)
@@ -428,15 +429,15 @@ class LibraryPageTests(unittest.TestCase):
         self.window.settings.bool_value = lambda key, default=False: bool(stored.get(key, default))
         self.window.settings.set_value = lambda key, value: stored.__setitem__(key, value)
 
-        original_box, original_dialog = gui.QMessageBox, gui.QFileDialog
-        gui.QMessageBox = ExplainBox
-        gui.QFileDialog = type("FakeDialog", (), {
+        original_box, original_dialog = song_select.QMessageBox, song_select.QFileDialog
+        song_select.QMessageBox = ExplainBox
+        song_select.QFileDialog = type("FakeDialog", (), {
             "getExistingDirectory": staticmethod(lambda *args, **kwargs: chosen)
         })
         try:
             self.window.start_library()
         finally:
-            gui.QMessageBox, gui.QFileDialog = original_box, original_dialog
+            song_select.QMessageBox, song_select.QFileDialog = original_box, original_dialog
         self.assertEqual(stored["library/songs_folder"], chosen)
         self.assertTrue(shown, "no explanation before the folder picker")
         self.assertIsNotNone(self.window._scan_iterator)
@@ -446,7 +447,8 @@ class LibraryPageTests(unittest.TestCase):
 
     def test_setup_runs_again_when_a_folder_was_stored_but_setup_never_finished(self):
         """An install that predates the library still gets the first-run flow."""
-        import gui
+        from ui import gui
+        from ui import song_select  # the folder picker lives there now
 
         stored = {"library/songs_folder": str(self.root)}  # no setup/completed
         self.window.settings.string_value = lambda key, default="": stored.get(key, default)
@@ -454,17 +456,17 @@ class LibraryPageTests(unittest.TestCase):
         self.window.settings.set_value = lambda key, value: stored.__setitem__(key, value)
 
         shown = []
-        original_box, original_dialog = gui.QMessageBox, gui.QFileDialog
-        gui.QMessageBox = type("ExplainBox", (), {
+        original_box, original_dialog = song_select.QMessageBox, song_select.QFileDialog
+        song_select.QMessageBox = type("ExplainBox", (), {
             "information": staticmethod(lambda parent, title, text: shown.append(text))
         })
-        gui.QFileDialog = type("FakeDialog", (), {
+        song_select.QFileDialog = type("FakeDialog", (), {
             "getExistingDirectory": staticmethod(lambda *args, **kwargs: "")  # cancelled
         })
         try:
             self.window.start_library()
         finally:
-            gui.QMessageBox, gui.QFileDialog = original_box, original_dialog
+            song_select.QMessageBox, song_select.QFileDialog = original_box, original_dialog
         self.assertTrue(shown)
         self.assertNotIn("setup/completed", stored)
 
@@ -486,7 +488,7 @@ class LibraryPageTests(unittest.TestCase):
         self.assertEqual(self.window.song_list.count(), 0)
 
     def test_group_headers_are_bold_accent_and_unselectable(self):
-        import gui
+        from ui import gui
 
         self.run_scan()
         self.window.library_group_combo.setCurrentIndex(
@@ -550,7 +552,7 @@ class LibraryPageTests(unittest.TestCase):
         self.assertEqual(positions, [7345, 2000])
 
     def test_every_configurable_shortcut_is_wired(self):
-        from settings import all_shortcut_definitions
+        from app.settings import all_shortcut_definitions
 
         wired = {
             "play_pause": self.window.play_shortcut,
@@ -601,7 +603,7 @@ class LibraryPageTests(unittest.TestCase):
         )
 
     def test_rebound_shortcuts_take_effect(self):
-        import gui
+        from ui import gui
 
         sequences = {"tool_2": "F2", "back_to_songs": "Ctrl+B"}
         self.window.shortcuts.sequence = lambda action_id: sequences.get(
@@ -627,7 +629,7 @@ class LibraryPageTests(unittest.TestCase):
         self.assertTrue(self.window.state.history.dirty)
 
     def test_leaving_with_unsaved_edits_asks_and_can_be_cancelled(self):
-        import gui
+        from ui import gui
 
         self._open_and_dirty()
         answers = {"role": QMessageBox.RejectRole}
@@ -637,7 +639,7 @@ class LibraryPageTests(unittest.TestCase):
         self.assertTrue(self.window.state.history.dirty)
 
     def test_leaving_with_unsaved_edits_can_save(self):
-        import gui
+        from ui import gui
 
         self._open_and_dirty()
         self._fake_message_box({"role": QMessageBox.AcceptRole})
@@ -646,7 +648,7 @@ class LibraryPageTests(unittest.TestCase):
         self.assertFalse(self.window.state.history.dirty)
 
     def test_leaving_with_unsaved_edits_can_discard(self):
-        import gui
+        from ui import gui
 
         self._open_and_dirty()
         self._fake_message_box({"role": QMessageBox.DestructiveRole})
@@ -659,7 +661,7 @@ class LibraryPageTests(unittest.TestCase):
         """Answering "Continue Without Saving" must stick: the very next
         page/view change (or Esc, or quit) must not immediately re-ask about
         the exact same still-unsaved edit."""
-        import gui
+        from ui import gui
 
         self._open_and_dirty()
         self._fake_message_box({"role": QMessageBox.DestructiveRole})
@@ -719,7 +721,7 @@ class LibraryPageTests(unittest.TestCase):
         test needs to reach `_confirm_exit_application`'s own belt-and-
         suspenders call to it in isolation.
         """
-        import gui
+        from ui import gui
 
         self._open_and_dirty()
         self.window._show_page(gui.PAGE_LIBRARY)
@@ -733,7 +735,7 @@ class LibraryPageTests(unittest.TestCase):
         self.assertTrue(self.window.state.history.dirty)
 
     def test_escape_at_the_library_exits_after_discarding_unsaved_work(self):
-        import gui
+        from ui import gui
 
         self._open_and_dirty()
         self.window._show_page(gui.PAGE_LIBRARY)
@@ -753,7 +755,7 @@ class LibraryPageTests(unittest.TestCase):
         one, such as Esc's exit confirmation followed by the unsaved-work
         prompt.
         """
-        import gui
+        from ui import gui
 
         pending = list(roles)
 
@@ -785,7 +787,7 @@ class LibraryPageTests(unittest.TestCase):
         A subclass, so every QMessageBox constant the prompt uses still
         resolves; only exec() and clickedButton() are replaced.
         """
-        import gui
+        from ui import gui
 
         class FakeBox(QMessageBox):
             def __init__(self, *args, **kwargs):

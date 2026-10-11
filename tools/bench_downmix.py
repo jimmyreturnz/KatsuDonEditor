@@ -21,7 +21,7 @@ from time import perf_counter
 
 sys.path.insert(0, ".")
 
-import audio_engine
+from audio import audio_engine
 
 seconds = float(sys.argv[1]) if len(sys.argv) > 1 else 131.0
 frames = int(seconds * audio_engine.SAMPLE_RATE)

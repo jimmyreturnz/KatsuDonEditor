@@ -53,6 +53,26 @@ def _format_version(lines):
     return 14
 
 
+def read_version(path):
+    """The difficulty name, read the way parse_osu reads it, without parsing
+    the notes and timing behind it.
+
+    The difficulty dropdown wants one line per file and was parsing every
+    difficulty in the folder for it: 17 files, 0.88s of a 1.1s map open
+    (measured 2026-10-11). The whole file is still decoded, because whether
+    it is UTF-8 or cp1252 is decided over all of it, and a label must not
+    come out differently from the one parse_osu would give.
+    """
+    text,_=_decode_file(Path(path).read_bytes()); section=""; version=""
+    for line in text.splitlines():
+        stripped=line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            if section=="Metadata": break
+            section=stripped[1:-1]; continue
+        if section=="Metadata" and line.startswith("Version:"): version=line.split(":",1)[1].strip()
+    return version
+
+
 def parse_osu(path):
     source_path=Path(path).resolve(); text,encoding=_decode_file(source_path.read_bytes()); lines=text.splitlines(keepends=True)
     section=version=audio_filename=""; hit_objects=[]; timing_points=[]; slider_multiplier=1.4

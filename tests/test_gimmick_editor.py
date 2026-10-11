@@ -18,7 +18,8 @@ from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QImage, QKeyEvent, QMouseEvent, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
+from chart import gimmick_session
 from osu_io.parser import parse_osu
 from tests.osu_fixtures import write_fixture
 
@@ -273,7 +274,7 @@ class NoteOpacityTests(_GimmickFixture, unittest.TestCase):
         """What "remember it" means in practice: Settings writes the store,
         and the next read -- a reopened dialog, or the next launch -- gets the
         number back rather than the default."""
-        from settings_dialog import SettingsDialog
+        from ui.settings_dialog import SettingsDialog
 
         dialog = SettingsDialog(self.window.settings, self.window.shortcuts, self.window)
         dialog.note_opacity.setValue(45)
@@ -529,7 +530,7 @@ class DialogWheelIsolationTests(_GimmickFixture, unittest.TestCase):
         QApplication.processEvents()
 
     def _dialog(self):
-        from settings_dialog import SettingsDialog
+        from ui.settings_dialog import SettingsDialog
 
         dialog = SettingsDialog(
             self.window.settings, self.window.shortcuts, self.window)
@@ -1602,11 +1603,11 @@ class GimmickStructureTests(_GimmickFixture, unittest.TestCase):
 
     def test_the_spacing_caution_fires_only_when_the_two_agree(self):
         self.assertFalse(
-            gui.spacing_collides(gui.GimmickConfig(), gui.GimmickConfig()),
+            gimmick_session.spacing_collides(gui.GimmickConfig(), gui.GimmickConfig()),
             "the defaults are deliberately different: 1ms spacing, +2ms offset",
         )
         self.assertTrue(
-            gui.spacing_collides(
+            gimmick_session.spacing_collides(
                 gui.GimmickConfig(spacing_ms=1), gui.GimmickConfig(fake_slider_offset_ms=1)
             )
         )

@@ -29,7 +29,8 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
+from ui import dialogs
 from osu_io.timing import TimingPoint
 from tests.osu_fixtures import write_fixture
 
@@ -656,7 +657,7 @@ class ToolNameTests(WindowTestCase):
 
 class ToolNameTranslationTests(unittest.TestCase):
     def test_japanese_keeps_the_old_word_and_adds_katakana(self):
-        import i18n
+        from app import i18n
 
         class FakeSettings:
             def string_value(self, key, default=""):
@@ -683,14 +684,14 @@ class ToolNameTranslationTests(unittest.TestCase):
 
 class LanguageRestartTests(unittest.TestCase):
     def setUp(self) -> None:
-        import settings_dialog
+        from ui import settings_dialog
 
         self.module = settings_dialog
         self.window = gui.MainWindow()
 
     def tearDown(self) -> None:
         self.window.close()
-        import i18n
+        from app import i18n
 
         class English:
             def string_value(self, key, default=""):
@@ -730,7 +731,7 @@ class LanguageRestartTests(unittest.TestCase):
             return "fake"
 
     def _dialog(self, language="en"):
-        from settings import ShortcutRegistry
+        from app.settings import ShortcutRegistry
 
         settings = self.FakeSettings(language)
         return self.module.SettingsDialog(settings, ShortcutRegistry(settings), self.window), settings
@@ -1003,7 +1004,7 @@ class FunctionChooserTests(unittest.TestCase):
 class FunctionPreviewTests(unittest.TestCase):
     def test_a_falling_sweep_is_drawn_falling(self):
         """1.10x -> 0.90x must descend, whatever the easing does."""
-        preview = gui.SVFunctionPreview()
+        preview = dialogs.SVFunctionPreview()
         preview.set_range(1.1, 0.9)
         for function_id in ("linear", "sin_in", "sin_out", "exp1.3", "exp1.6", "true_exp", "sin"):
             with self.subTest(function_id=function_id):
@@ -1014,21 +1015,21 @@ class FunctionPreviewTests(unittest.TestCase):
         preview.deleteLater()
 
     def test_a_rising_sweep_is_drawn_rising(self):
-        preview = gui.SVFunctionPreview()
+        preview = dialogs.SVFunctionPreview()
         preview.set_range(0.9, 1.1)
         preview.set_function("true_exp")
         self.assertLess(preview.rate_at(0.0), preview.rate_at(1.0))
         preview.deleteLater()
 
     def test_it_plots_real_rates_not_normalised_progress(self):
-        preview = gui.SVFunctionPreview()
+        preview = dialogs.SVFunctionPreview()
         preview.set_range(1.1, 0.9)
         preview.set_function("linear")
         self.assertAlmostEqual(preview.rate_at(0.5), 1.0, places=6)
         preview.deleteLater()
 
     def test_a_flat_sweep_paints_without_dividing_by_zero(self):
-        preview = gui.SVFunctionPreview()
+        preview = dialogs.SVFunctionPreview()
         preview.set_range(1.0, 1.0)
         preview.grab()
         preview.deleteLater()
@@ -1042,7 +1043,7 @@ class FunctionPreviewTests(unittest.TestCase):
         dialog.deleteLater()
 
     def test_the_preview_paints_for_every_function(self):
-        preview = gui.SVFunctionPreview()
+        preview = dialogs.SVFunctionPreview()
         preview.set_range(1.5, 0.4)
         for function_id in ("linear", "sin_in", "sin_out", "exp1.3", "exp1.6", "true_exp", "sin"):
             preview.set_function(function_id)

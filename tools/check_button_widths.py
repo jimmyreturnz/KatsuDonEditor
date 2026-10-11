@@ -31,7 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from PySide6.QtGui import QFont, QFontMetrics
 from PySide6.QtWidgets import QApplication, QPushButton
 
-import gui
+from ui import gui
+from ui import common
 
 
 def needed(button: QPushButton) -> int:
@@ -47,7 +48,7 @@ def needed(button: QPushButton) -> int:
     if button.isCheckable():
         font.setWeight(QFont.Weight.Bold)
     metrics = QFontMetrics(font, button)
-    return metrics.horizontalAdvance(button.text()) + gui.button_chrome_width(button)
+    return metrics.horizontalAdvance(button.text()) + common.button_chrome_width(button)
 
 
 def report(name: str, root) -> int:

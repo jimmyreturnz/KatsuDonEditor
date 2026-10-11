@@ -33,8 +33,8 @@ from PySide6.QtMultimedia import QAudioDecoder, QAudioFormat  # noqa: E402
 
 import os  # noqa: E402
 
-import audio_engine  # noqa: E402
-from audio_engine import (  # noqa: E402
+from audio import audio_engine  # noqa: E402
+from audio.audio_engine import (  # noqa: E402
     CHANNELS, SAMPLE_RATE, TimeStretcher, downmix_to_mono,
 )
 

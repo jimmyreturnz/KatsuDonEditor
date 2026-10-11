@@ -764,6 +764,11 @@ Gimmick pages, and the BPM stripe is a hidden seek bar.
   tile grids 17+13ms, the song select page 11ms, a scroll area 5ms -- plus
   ~45ms retheme and paint. Folding those nested sheets into the window's (by
   object name) would take the second pass away.
+- **Make volume adjustment easier to use** (owner, 2026-10-11). Today music
+  and hitsound volume are only reachable in Settings > Audio: a slider plus a
+  % box each, heard live while dragging, nothing saved until OK. What is
+  awkward about it -- where it lives, the step, or the lack of a quick control
+  while editing -- is still to be asked before building anything.
 - **test_playback_timing's paused-seek test is flaky** (3 runs in 4 fail,
   already at d56b51e); and test_gimmick_editor holds ~5.7GB and takes ~40s
   to exit after printing OK.
@@ -810,7 +815,10 @@ Gimmick pages, and the BPM stripe is a hidden seek bar.
 - **A full-chart barline converter** (very low priority): which SV it follows
   (the current difficulty's, or a chosen one), and how the difficulty is picked.
 
-## Tidy the repo -- owner, 2026-10-08, not started
+## Tidy the repo -- owner, 2026-10-08; step 1 DONE 2026-10-11
+
+Step 1 landed with `autoplay` and `sv_curves` in `chart/`, an entry point at
+`main.py`, and both `.bat`s in `scripts/`. Step 2 (splitting `gui.py`) is next.
 
 The root has 21 flat `.py` modules plus build scripts, and `gui.py` is 20,280
 lines (CLAUDE.md still says ~12k). Pure moves, no behaviour change, after the

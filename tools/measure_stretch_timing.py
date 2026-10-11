@@ -77,7 +77,7 @@ import sys
 
 sys.path.insert(0, __file__.rsplit("tools", 1)[0])
 
-from audio_engine import (  # noqa: E402
+from audio.audio_engine import (  # noqa: E402
     CHANNELS, PUMP_INTERVAL_MS, SAMPLE_RATE, TimeStretcher, downmix_to_mono,
     grain_offset_ms,
 )

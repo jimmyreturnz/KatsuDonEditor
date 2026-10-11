@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
 
 POINT_COUNT = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
 NOTE_COUNT = int(sys.argv[2]) if len(sys.argv) > 2 else 3000

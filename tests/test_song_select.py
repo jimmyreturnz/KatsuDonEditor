@@ -17,8 +17,9 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QApplication
 
-import osu_db
-from song_library import read_header
+from library import osu_db
+from ui import common, song_select
+from library.song_library import read_header
 from tests.osu_fixtures import write_fixture
 
 _APP: QApplication | None = None
@@ -26,7 +27,7 @@ _APP: QApplication | None = None
 
 def setUpModule() -> None:
     global _APP
-    import settings as settings_module
+    from app import settings as settings_module
 
     settings_module.APPLICATION_NAME = "TaikoFancyArrangerTests"
     _APP = QApplication.instance() or QApplication([])
@@ -78,45 +79,45 @@ class OsuDbTests(unittest.TestCase):
 
 class StarColourTests(unittest.TestCase):
     def test_osu_spectrum_stops(self):
-        import gui
+        from ui import gui
 
-        self.assertEqual(gui.star_colour(1.25).name(), "#4fc0ff")
-        self.assertEqual(gui.star_colour(5.8).name(), "#c645b8")
-        self.assertEqual(gui.star_colour(0.05).name(), "#aaaaaa")
-        self.assertEqual(gui.star_colour(None).name(), "#aaaaaa")
-        self.assertEqual(gui.star_colour(12).name(), "#000000")
+        self.assertEqual(song_select.star_colour(1.25).name(), "#4fc0ff")
+        self.assertEqual(song_select.star_colour(5.8).name(), "#c645b8")
+        self.assertEqual(song_select.star_colour(0.05).name(), "#aaaaaa")
+        self.assertEqual(song_select.star_colour(None).name(), "#aaaaaa")
+        self.assertEqual(song_select.star_colour(12).name(), "#000000")
 
     def test_rounds_away_from_zero_before_sampling(self):
-        import gui
+        from ui import gui
 
-        self.assertEqual(gui.star_colour(1.245).name(), gui.star_colour(1.25).name())
+        self.assertEqual(song_select.star_colour(1.245).name(), song_select.star_colour(1.25).name())
 
     def test_text_is_dark_then_gold_then_its_own_spectrum(self):
-        import gui
+        from ui import gui
 
-        self.assertEqual(gui.star_text_colour(6.4).alpha(), 191)
-        self.assertEqual(gui.star_text_colour(7.0).name(), "#ffd966")
-        self.assertEqual(gui.star_text_colour(9.9).name(), "#ff8068")
+        self.assertEqual(song_select.star_text_colour(6.4).alpha(), 191)
+        self.assertEqual(song_select.star_text_colour(7.0).name(), "#ffd966")
+        self.assertEqual(song_select.star_text_colour(9.9).name(), "#ff8068")
 
 
 class BpmTextTests(unittest.TestCase):
     def test_a_subnormal_beat_length_is_infinite_bpm_not_a_crash(self):
         # EGTS 2022 writes `1.14514535393084E-319`: 60000 over it is inf, and
         # round(inf) used to stop the difficulty list at its first chart.
-        import gui
+        from ui import gui
 
         bpm = 60000.0 / 1.14514535393084e-319
-        self.assertEqual(gui.format_bpm(180.0, bpm), "180–∞")
-        self.assertEqual(gui.format_bpm(bpm, bpm), "∞")
-        self.assertEqual(gui.format_bpm(150.2, 149.8), "150")
+        self.assertEqual(song_select.format_bpm(180.0, bpm), "180–∞")
+        self.assertEqual(song_select.format_bpm(bpm, bpm), "∞")
+        self.assertEqual(song_select.format_bpm(150.2, 149.8), "150")
 
     def test_a_range_says_which_bpm_it_mostly_is(self):
         # Owner, 2026-10-09: aleph-0 as "125–400 (250)", the density view's rule.
-        import gui
-        from song_library import most_common_beat_length
+        from ui import gui
+        from library.song_library import most_common_beat_length
 
-        self.assertEqual(gui.format_bpm(125, 400, 250), "125–400 (250)")
-        self.assertEqual(gui.format_bpm(250, 250, 250), "250", "one tempo needs no brackets")
+        self.assertEqual(song_select.format_bpm(125, 400, 250), "125–400 (250)")
+        self.assertEqual(song_select.format_bpm(250, 250, 250), "250", "one tempo needs no brackets")
         # 250 for 60s, 400 for 20s, 125 for 10s up to the last object at 90s.
         lines = [(0.0, 240.0), (60000.0, 150.0), (80000.0, 480.0)]
         self.assertEqual(most_common_beat_length(lines, 90000.0), 240.0)
@@ -124,14 +125,14 @@ class BpmTextTests(unittest.TestCase):
 
 class SongDotTests(unittest.TestCase):
     def test_a_pack_shows_a_count_of_the_rest(self):
-        import gui
+        from ui import gui
 
-        self.assertEqual(gui.song_dots_shown(6, 1000), (6, 0))
+        self.assertEqual(song_select.song_dots_shown(6, 1000), (6, 0))
         # 1000px allows 20 dots at most, so 40 charts are 18 dots and "+22".
-        self.assertEqual(gui.song_dots_shown(40, 1000), (18, 22))
-        self.assertEqual(gui.song_dots_shown(20, 1000), (20, 0))
+        self.assertEqual(song_select.song_dots_shown(40, 1000), (18, 22))
+        self.assertEqual(song_select.song_dots_shown(20, 1000), (20, 0))
         # A narrow list gives the dots 40% of it: 300px is 8 slots.
-        shown, more = gui.song_dots_shown(12, 300)
+        shown, more = song_select.song_dots_shown(12, 300)
         self.assertEqual(shown + more, 12)
         self.assertLessEqual(shown, 8)
 
@@ -151,7 +152,7 @@ class ScanFieldTests(unittest.TestCase):
 
 class PageTests(unittest.TestCase):
     def setUp(self):
-        import gui
+        from ui import gui
 
         self._temp = tempfile.TemporaryDirectory()
         self.root = Path(self._temp.name)
@@ -293,11 +294,11 @@ class PageTests(unittest.TestCase):
     def test_a_missing_chart_leaves_its_card_to_the_next_one(self):
         # Owner, 2026-10-09: one of the last four had been deleted, and with
         # only four remembered the row showed three.
-        import gui
+        from ui import gui
 
         library = self.window._library
         charts = []
-        for index in range(gui.RECENT_CHARTS_SHOWN + 1):
+        for index in range(song_select.RECENT_CHARTS_SHOWN + 1):
             folder = self.root / f"Extra {index}"
             folder.mkdir()
             charts.append(write_fixture(folder, "full_v14"))
@@ -306,7 +307,7 @@ class PageTests(unittest.TestCase):
         charts[-1].unlink()  # the newest is gone
         library.refresh_continue_row()
         shown = [card.path for card in library.continue_cards if not card.isHidden()]
-        self.assertEqual(len(shown), gui.RECENT_CHARTS_SHOWN)
+        self.assertEqual(len(shown), song_select.RECENT_CHARTS_SHOWN)
         self.assertNotIn(str(charts[-1]), shown)
 
     def test_opening_a_chart_puts_it_in_continue(self):
@@ -366,7 +367,7 @@ class PageTests(unittest.TestCase):
         row, song = self._last_song_file()
         self.window.song_list.setCurrentRow(0)
         self.window._library.show_recent(str(song))
-        from gui import PAGE_LIBRARY
+        from ui.gui import PAGE_LIBRARY
         self.assertEqual(self.window.page_stack.currentIndex(), PAGE_LIBRARY)
         self.assertIsNone(self.window.state)
         self.assertEqual(self.window.song_list.currentRow(), row)
@@ -513,7 +514,7 @@ class PageTests(unittest.TestCase):
         return played
 
     def test_changing_page_clicks_at_full_level(self):
-        import gui
+        from ui import gui
 
         played = []
         self.window._library.play_ui_sound = lambda key, volume=None: played.append((key, volume))
@@ -596,7 +597,7 @@ class PageTests(unittest.TestCase):
         """The Space shortcut is application-wide, so on the song list it fires
         before `LibraryKeys` sees the key. With a difficulty opened earlier it
         used to restart the editor's song from the editor's playhead."""
-        import gui
+        from ui import gui
 
         library = self.window._library
         toggles, editor = [], []
@@ -641,13 +642,14 @@ class PageTests(unittest.TestCase):
 
     def test_a_new_song_rewinds_the_playhead_then_glides_out(self):
         # Owner, 2026-10-09: back to the start, then out to the preview point.
-        import gui
+        # The banner reads reduced_motion through its own module.
+        from ui import song_select
 
         banner = self.window._library.song_banner
         banner.set_tempo([(0.0, 500.0)], lambda: 30000.0)
         banner.set_duration(100000)
         banner._tick_beat()                     # drawn at 0.30
-        with unittest.mock.patch.object(gui, "reduced_motion", return_value=False):
+        with unittest.mock.patch.object(song_select, "reduced_motion", return_value=False):
             banner.glide(rewind=True)
         banner._now = 60000.0                   # the new song's preview point
         path = []
@@ -668,7 +670,7 @@ class PageTests(unittest.TestCase):
         self.assertAlmostEqual(banner._shown_fraction(), 0.25)
 
     def test_a_fraction_seeks_the_song_lists_player_only(self):
-        import gui
+        from ui import gui
 
         library = self.window._library
         seeks = []
@@ -690,7 +692,7 @@ class PageTests(unittest.TestCase):
         library.preview_player = None
 
     def test_the_chart_preview_shows_the_selected_difficulty(self):
-        import gui
+        from ui import gui
 
         library = self.window._library
         self.window.song_list.setCurrentRow(0)
@@ -699,7 +701,7 @@ class PageTests(unittest.TestCase):
         library.jobs.drain()  # parsed on a worker
         self.assertTrue(library.chart_preview.notes)
         library.chart_preview.resize(600, 300)
-        natural = gui.osu_screen_height_for(600)
+        natural = common.osu_screen_height_for(600)
         self.assertEqual(library.chart_preview.height(), round(natural * 0.67))
         self.assertFalse(library.chart_preview.follows_view_opacity)
 
@@ -721,7 +723,7 @@ class PageTests(unittest.TestCase):
     def test_the_song_select_stage_is_bare(self):
         # Black, no skin bar, no cover past osu!'s edge (the gray strip on
         # the right), and the hit target nearer the left than in game.
-        import gui
+        from ui import gui
 
         preview = self.window._library.chart_preview
         preview.resize(900, 114)

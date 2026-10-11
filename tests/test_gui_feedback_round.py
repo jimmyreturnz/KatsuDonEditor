@@ -27,7 +27,8 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
+from ui import common
 from tests.osu_fixtures import write_fixture
 
 _APP: QApplication | None = None
@@ -265,7 +266,7 @@ class FancyArrangerPageTests(unittest.TestCase):
         plain = QPushButton("Select", self.window)
         try:
             self.assertGreater(
-                gui.button_chrome_width(checkable), gui.button_chrome_width(plain),
+                common.button_chrome_width(checkable), common.button_chrome_width(plain),
             )
         finally:
             checkable.deleteLater()

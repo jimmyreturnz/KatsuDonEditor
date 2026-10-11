@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from osu_io.timing import TimingPoint
-from time_axis import SNAP_DIVISORS, TimeAxisMixin, snap_time
+from chart.time_axis import SNAP_DIVISORS, TimeAxisMixin, snap_time
 
 # wheelEvent reads QApplication.keyboardModifiers(); without an instance that
 # call returns nothing useful and the Shift case silently stops being tested.

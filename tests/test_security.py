@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from security_utils import UnsafeInputError, resolve_child_asset, read_limited
+from app.security_utils import UnsafeInputError, resolve_child_asset, read_limited
 
 class SecurityTests(unittest.TestCase):
     def test_asset_escape_is_rejected(self):

@@ -77,9 +77,6 @@ class DifficultyState:
         """Whether any note has moved from where it was parsed."""
         return self.applied_positions != self.original_positions
 
-    def reset_offsets(self) -> None:
-        self.preview_offsets = _zero_offsets()
-
     def sync_preview_to_applied(self) -> None:
         self.preview_positions = dict(self.applied_positions)
 

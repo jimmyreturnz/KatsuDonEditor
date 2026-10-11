@@ -37,6 +37,8 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.security_utils import resource_roots
+
 LOGGER = logging.getLogger(__name__)
 
 RELEASES_API = "https://api.github.com/repos/jimmyreturnz/TaikoFancyEditor/releases/latest"
@@ -60,14 +62,6 @@ APPLY_FLAG = "--apply-update"
 # --------------------------------------------------------------------------
 # Version
 # --------------------------------------------------------------------------
-
-def resource_roots() -> list[Path]:
-    """Trusted application roots, never the working directory (see gui.py)."""
-    roots = [Path(__file__).resolve().parent]
-    if hasattr(sys, "_MEIPASS"):
-        roots.insert(0, Path(sys._MEIPASS).resolve())
-    return roots
-
 
 def local_version() -> str:
     """The VERSION file bundled next to the executable, or "" if unreadable."""
@@ -218,7 +212,7 @@ def application_folder() -> Path:
     """The portable folder the app is running from (repo root when run from source)."""
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent
+    return Path(__file__).resolve().parents[1]
 
 
 def can_install_in_place() -> bool:
@@ -419,7 +413,7 @@ def cleanup_leftovers(folder: Path | None = None) -> str:
 
 from PySide6.QtCore import QThread, QUrl, Qt, Signal  # noqa: E402
 from PySide6.QtGui import QDesktopServices  # noqa: E402
-from smooth_scroll import smooth  # noqa: E402
+from ui.smooth_scroll import smooth  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QDialog,
@@ -432,7 +426,7 @@ from PySide6.QtWidgets import (  # noqa: E402
     QVBoxLayout,
 )
 
-from i18n import tr  # noqa: E402
+from app.i18n import tr  # noqa: E402
 
 
 class CheckThread(QThread):

@@ -17,7 +17,7 @@ from PySide6.QtCore import QEvent, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
 from osu_io.parser import OsuDocument
 from tests.test_gimmick_editor import _GimmickFixture, _StubTimingLineDialog
 

@@ -21,14 +21,15 @@ from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter, QPix
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
+from ui import gameplay_view
 from osu_io.timing import uninherited_points
 from osu_io.parser import parse_osu
-import skin
-import time_axis
+from library import skin
+from chart import time_axis
 from model.hit_object import TYPE_SPINNER, HitObject
 from osu_io.timing import TimingPoint
-from time_axis import TimeAxisMixin, snap_time, wheel_seek_time
+from chart.time_axis import TimeAxisMixin, snap_time, wheel_seek_time
 
 _APP: QApplication | None = None
 
@@ -110,13 +111,13 @@ class BeatPulseWalkBackTests(unittest.TestCase):
             # 2100.0, but not a "beat" by KIAI_PULSE_MIN_BEAT_MS's own rule.
             TimingPoint(time=2000.0, beat_length=1.0),
         ]
-        pulse = gui.beat_pulse(points, 2100.0)
+        pulse = gameplay_view.beat_pulse(points, 2100.0)
         # Walked back to the 500ms section: 1.0 - (2100/500 % 1.0) = 0.8.
         self.assertAlmostEqual(pulse, 0.8, places=9)
 
     def test_it_returns_zero_with_no_real_section_behind_it(self) -> None:
         points = [TimingPoint(time=0.0, beat_length=1.0)]
-        self.assertEqual(gui.beat_pulse(points, 2100.0), 0.0)
+        self.assertEqual(gameplay_view.beat_pulse(points, 2100.0), 0.0)
 
 
 class SnapDirectionTests(unittest.TestCase):

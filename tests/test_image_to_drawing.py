@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PySide6.QtGui import QColor, QImage
 
-from image_to_drawing import TraceOptions, trace_image
+from chart.image_to_drawing import TraceOptions, trace_image
 
 
 class FastImageTracingTests(unittest.TestCase):

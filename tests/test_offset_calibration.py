@@ -17,7 +17,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QPushButton
 
-from offset_calibration import (
+from audio.offset_calibration import (
     CLICK_INTERVAL_MS, LEAD_IN_MS, MAXIMUM_SPREAD_MS, MINIMUM_TAPS,
     SAMPLE_RATE, TRACK_SECONDS, WARMUP_TAPS, OffsetCalibrationDialog,
     click_error_ms, is_tap_key, suggest_offset, write_click_track,

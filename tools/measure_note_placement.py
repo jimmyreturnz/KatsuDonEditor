@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
 from tools.measure_gimmick_placement import _StubEntryDialog
 
 args = [a for a in sys.argv[1:] if not a.startswith("--")]

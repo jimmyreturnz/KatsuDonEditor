@@ -65,14 +65,6 @@ class SettingsManager:
         except (TypeError, ValueError):
             return default
 
-    def float_value(self, key: str, default: float = 0.0) -> float:
-        """Like bool_value: QSettings hands back a str on Windows, so coerce it."""
-        value = self._settings.value(key, default)
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return default
-
     def string_value(self, key: str, default: str = "") -> str:
         value = self._settings.value(key, default)
         return default if value is None else str(value)
@@ -183,12 +175,6 @@ class ShortcutRegistry:
     def set_sequence(self, action_id: str, sequence: str) -> None:
         normalized = normalize_sequence(sequence)
         self.settings.set_value(self.key(action_id), normalized or self.default_sequence(action_id))
-
-    def restore_default(self, action_id: str) -> None:
-        self.settings.set_value(self.key(action_id), self.default_sequence(action_id))
-
-    def all_sequences(self) -> dict[str, str]:
-        return {action_id: self.sequence(action_id) for action_id in self.definitions}
 
 
 def normalize_sequence(value: str | QKeySequence) -> str:

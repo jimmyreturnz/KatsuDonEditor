@@ -20,7 +20,8 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QMouseEvent, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
+from ui import dialogs
 from osu_io.parser import parse_osu
 from osu_io.timing import TimingPoint, active_uninherited_at
 from tests.osu_fixtures import write_fixture
@@ -812,7 +813,7 @@ class SVEditorIntegrationTests(unittest.TestCase):
             gui.SVFunctionDialog = original_dialog_class
 
         self.assertEqual(len(created_dialogs), 1)
-        self.assertEqual(created_dialogs[0].initial_rate_spin.decimals(), gui.SV_DECIMALS)
+        self.assertEqual(created_dialogs[0].initial_rate_spin.decimals(), dialogs.SV_DECIMALS)
         self.assertAlmostEqual(created_dialogs[0].initial_rate_spin.value(), 1.4286, places=3)
 
 
@@ -851,7 +852,7 @@ class SVPrecisionTests(unittest.TestCase):
         )
         dialog = gui.TimingLineDialog(point)
         try:
-            self.assertEqual(dialog.value_spin.decimals(), gui.SV_DECIMALS)
+            self.assertEqual(dialog.value_spin.decimals(), dialogs.SV_DECIMALS)
             self.assertEqual(f"{dialog.value_spin.value():.8f}", "1.00000001")
         finally:
             dialog.deleteLater()

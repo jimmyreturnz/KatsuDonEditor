@@ -15,10 +15,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
-import gui
+from ui import gui
 from osu_io.timing import TimingPoint
 from tests.osu_fixtures import write_fixture
-from time_axis import own_divisor, resnap_time
+from chart.time_axis import own_divisor, resnap_time
 
 _APP: QApplication | None = None
 

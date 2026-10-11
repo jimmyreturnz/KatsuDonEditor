@@ -1,26 +1,14 @@
 from __future__ import annotations
 
-import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, QTranslator
 
-from settings import SettingsManager
+from app.security_utils import resource_roots
+from app.settings import SettingsManager
 
 _TRANSLATOR: QTranslator | None = None
-
-
-def resource_roots() -> list[Path]:
-    roots: list[Path] = []
-    if hasattr(sys, "_MEIPASS"):
-        roots.append(Path(sys._MEIPASS).resolve())
-    roots.append(Path(__file__).resolve().parent)
-    unique: list[Path] = []
-    for root in roots:
-        if root not in unique:
-            unique.append(root)
-    return unique
 
 
 def translation_file(language_code: str, suffix: str) -> Path | None:
@@ -30,12 +18,6 @@ def translation_file(language_code: str, suffix: str) -> Path | None:
         if candidate.is_file():
             return candidate
     return None
-
-
-def translation_path(language_code: str) -> Path | None:
-    if language_code == "en":
-        return None
-    return translation_file(language_code, "qm")
 
 
 class TsTranslator(QTranslator):

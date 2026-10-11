@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from PySide6.QtWidgets import QApplication, QWidget
 
-import gui
+from ui import gui
 
 
 def chain(widget: QWidget, axis: str, depth: int = 0) -> None:

@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from osu_io.parser import parse_osu
 from osu_io.writer import write_osu
-from transformer import transform
+from chart.transformer import transform
 
 class TransformationTests(unittest.TestCase):
     def test_vertical_stays_in_playfield(self):
@@ -25,7 +25,7 @@ class ShapeCentreTests(unittest.TestCase):
     was 40 osu!pixels above Center, a star's 16."""
 
     def test_closed_shapes_are_centred_on_center(self):
-        import transformer
+        from chart import transformer
         for name in ("triangle", "star", "square", "diamond"):
             for center in ((256, 192), (100, 300)):
                 with self.subTest(shape=name, center=center):

@@ -102,6 +102,7 @@ from ui.dialogs import (
 )
 from ui.gameplay_view import GameplayViewerView
 from ui.song_select import LibraryPageController
+from ui.editor_keys import EditorKeys
 
 PLAYFIELD_WIDTH = 512
 PLAYFIELD_HEIGHT = 384
@@ -6154,6 +6155,7 @@ class MainWindow(QMainWindow):
         # After _build_ui: these are scoped to self.editor_page, which does
         # not exist until the pages are built.
         self._build_clipboard_shortcuts()
+        self._editor_keys = EditorKeys(self, self.editor_page, self.gimmick_page)
         self._rebuild_control_tabs()
         self._restore_mods()
         self._sync_mod_controls()
@@ -6481,12 +6483,17 @@ class MainWindow(QMainWindow):
             ("save_all", self.save_shortcut),
             ("copy", self.copy_shortcut),
             ("paste", self.paste_shortcut),
+            # The Gimmick page's pair was missing here, so a rebound copy or
+            # paste key reached the Editor page and not the Gimmick page.
+            ("copy", self.gimmick_copy_shortcut),
+            ("paste", self.gimmick_paste_shortcut),
             ("resnap", self.resnap_shortcut),
             ("hitsound_offset_earlier", self.hitsound_earlier_shortcut),
             ("hitsound_offset_later", self.hitsound_later_shortcut),
             *self.tool_shortcuts.items(),
         ):
             shortcut.setKey(QKeySequence(self.shortcuts.sequence(action_id)))
+        self._editor_keys.reload()
 
     def _nudge_hitsound_offset(self, step: int) -> None:
         """Calibrate the note-vs-music trim by ear, live.
@@ -11628,7 +11635,8 @@ class MainWindow(QMainWindow):
             tr("MainWindow", "Copied {count} notes.").format(count=len(notes) + len(lines))
         )
 
-    def _paste_notes(self) -> None:
+    def _paste_notes(self, at_time: float | None = None) -> None:
+        """Paste at the playhead, or at `at_time` (Ctrl+D's clone)."""
         view = self._active_chart_view
         if view is None or not (self._note_clipboard or self._timing_clipboard):
             return
@@ -11647,7 +11655,8 @@ class MainWindow(QMainWindow):
         # millisecond *ahead* of the cursor on every beat whose fractional part
         # was at least .5, which is why a pattern pasted a few beats along kept
         # ending up one millisecond off the grid it was copied from.
-        base = osu_snap_ms(max(0.0, snap_time(view.snap_points, view.current_time, view.snap_divisor)))
+        anchor = view.current_time if at_time is None else at_time
+        base = osu_snap_ms(max(0.0, snap_time(view.snap_points, anchor, view.snap_divisor)))
 
         divisor = getattr(self, "_clipboard_divisor", 0) or int(view.snap_divisor)
 

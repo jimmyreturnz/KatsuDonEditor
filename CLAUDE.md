@@ -7,7 +7,8 @@ repository root; every import is absolute from there (`from ui import gui`,
 - `ui/`: `gui.py` (still the largest, ~14.6k lines: the editor views and
   `MainWindow`), `song_select.py` (the library page), `gameplay_view.py`
   (the preview), `dialogs.py` (every dialog `MainWindow` opens),
-  `common.py` (what more than one of those needs), the Settings dialog,
+  `common.py` (what more than one of those needs), `editor_keys.py` (osu!'s
+  editor shortcuts on the Editor and Gimmick pages), the Settings dialog,
   `config_sheet`, `theme`, `motion`, `smooth_scroll`, the trace dialog.
 - `audio/`: `audio_engine` (the transport, see below), `offset_calibration`.
 - `chart/`: `gimmick_session` builds gimmick structures, `time_axis` is the

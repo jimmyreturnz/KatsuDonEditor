@@ -569,6 +569,7 @@ class LibraryPageTests(unittest.TestCase):
             "hitsound_offset_earlier": self.window.hitsound_earlier_shortcut,
             "hitsound_offset_later": self.window.hitsound_later_shortcut,
             **self.window.tool_shortcuts,
+            **self.window._editor_keys.shortcut_for,
         }
         # all_shortcut_definitions, not SHORTCUT_DEFINITIONS: every gimmick
         # layer registers its own toolbox keys at gui import time, and they

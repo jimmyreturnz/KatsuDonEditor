@@ -756,8 +756,11 @@ Gimmick pages, and the BPM stripe is a hidden seek bar.
 
 ### After v3.5.0 -- recorded, not started
 
-- **Left/Right steps the playhead one snap; Up/Down focuses the next view**,
-  on the Editor and Gimmick pages (owner, 2026-10-08).
+- ~~**Left/Right steps the playhead one snap; Up/Down focuses the next view**,
+  on the Editor and Gimmick pages (owner, 2026-10-08).~~ **Done 2026-10-11**
+  as part of osu!'s editor keys (`ui/editor_keys.py`): lazer's seeking split
+  (Ctrl = notes, Alt = bookmarks), Q/W/E/R, and stable's Shift+1-9, Ctrl+G,
+  Ctrl+X, Ctrl+D -- the owner's picks from both osu!s.
 - **Theme switching faster.** Measured 2026-10-08 (BREAKTHROUGH, Editor page,
   517 widgets): ~180ms in theme.switch -- the window's sheet 71ms, then nested
   sheets re-polish their subtrees again: the docks' QMainWindow 24ms, two shape

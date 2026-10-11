@@ -3374,6 +3374,114 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <source>Notes glide to their new places when a transform changes. Off jumps straight there, which is lighter on a dense map.</source>
             <translation>変形を変えたとき、ノーツが新しい位置へ滑らかに移動します。オフにするとすぐに移動し、密度の高い譜面で軽くなります。</translation>
         </message>
+        <message>
+            <source>Toggle new combo on the selection</source>
+            <translation>選択の新規コンボを切り替え</translation>
+        </message>
+        <message>
+            <source>Toggle whistle on the selection (kat)</source>
+            <translation>選択のホイッスルを切り替え（カツ）</translation>
+        </message>
+        <message>
+            <source>Toggle finish on the selection (big note)</source>
+            <translation>選択のフィニッシュを切り替え（大音符）</translation>
+        </message>
+        <message>
+            <source>Toggle clap on the selection (kat)</source>
+            <translation>選択のクラップを切り替え（カツ）</translation>
+        </message>
+        <message>
+            <source>Reverse the selection in time</source>
+            <translation>選択を時間方向に反転</translation>
+        </message>
+        <message>
+            <source>Cut</source>
+            <translation>切り取り</translation>
+        </message>
+        <message>
+            <source>Clone the selection one measure later</source>
+            <translation>選択を1小節後に複製</translation>
+        </message>
+        <message>
+            <source>Seek back one snap</source>
+            <translation>1スナップ戻る</translation>
+        </message>
+        <message>
+            <source>Seek forward one snap</source>
+            <translation>1スナップ進む</translation>
+        </message>
+        <message>
+            <source>Seek back four snaps</source>
+            <translation>4スナップ戻る</translation>
+        </message>
+        <message>
+            <source>Seek forward four snaps</source>
+            <translation>4スナップ進む</translation>
+        </message>
+        <message>
+            <source>Seek to the previous note</source>
+            <translation>前のノーツへ移動</translation>
+        </message>
+        <message>
+            <source>Seek to the next note</source>
+            <translation>次のノーツへ移動</translation>
+        </message>
+        <message>
+            <source>Seek to the previous bookmark</source>
+            <translation>前のブックマークへ移動</translation>
+        </message>
+        <message>
+            <source>Seek to the next bookmark</source>
+            <translation>次のブックマークへ移動</translation>
+        </message>
+        <message>
+            <source>Focus the view above</source>
+            <translation>上のビューにフォーカス</translation>
+        </message>
+        <message>
+            <source>Focus the view below</source>
+            <translation>下のビューにフォーカス</translation>
+        </message>
+        <message>
+            <source>Beat snap</source>
+            <translation>ビートスナップ</translation>
+        </message>
+        <message>
+            <source>Beat snap 1/1</source>
+            <translation>ビートスナップ 1/1</translation>
+        </message>
+        <message>
+            <source>Beat snap 1/2</source>
+            <translation>ビートスナップ 1/2</translation>
+        </message>
+        <message>
+            <source>Beat snap 1/3</source>
+            <translation>ビートスナップ 1/3</translation>
+        </message>
+        <message>
+            <source>Beat snap 1/4</source>
+            <translation>ビートスナップ 1/4</translation>
+        </message>
+        <message>
+            <source>Beat snap 1/5</source>
+            <translation>ビートスナップ 1/5</translation>
+        </message>
+        <message>
+            <source>Beat snap 1/6</source>
+            <translation>ビートスナップ 1/6</translation>
+        </message>
+        <message>
+            <source>Beat snap 1/7</source>
+            <translation>ビートスナップ 1/7</translation>
+        </message>
+        <message>
+            <source>Beat snap 1/8</source>
+            <translation>ビートスナップ 1/8</translation>
+        </message>
+        <message>
+            <source>Beat snap 1/9</source>
+            <translation>ビートスナップ 1/9</translation>
+        </message>
     </context>
     <context>
         <name>Transformations</name>

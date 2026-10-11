@@ -15,7 +15,7 @@ Taiko Fancy Arranger started as a tool for turning osu!taiko notes into visual p
 
 The editor does not support editing storyboards, breaks, colours, editor bookmarks yet.
 
-> **Current release:** v3.5.2  
+> **Current release:** v3.5.3  
 > **Platform:** Windows x64  
 > **Author:** [jimmyreturnz](https://osu.ppy.sh/users/11306153)
 
@@ -57,16 +57,17 @@ The main inspirations include Alchyr's ranked maps *13 Stairs* and *Helios*, whi
 
 ---
 
-## What is new in 3.5.2
+## What is new in 3.5.3
 
-An autoplay in the gameplay preview, plus drumroll hitsounds.
+A new NSO theme, osu!'s editor keys, and smoother, faster everything.
 
-- **Autoplay.** The skin's input drum plays in kddk full alt, semi alt, single tap, roll or ddkk, with 1234, 1324 or 4231 bindings and either dominant hand.
-- **Kiai glow.** The hit target also shows the grey note, as in osu!
-- **Drumrolls are heard.** A don sounds on every 1/4 beat tick.
-- **Semi alt is experimental.** Send me the pattern and how you would play it in 1234.
+- **NSO theme.** Needy Streamer Overload's desktop: light pink windows on the sticker wallpaper, with a rounded font that covers Japanese.
+- **osu!'s editor keys.** Snap stepping, note and bookmark jumps, Q W E R hitsound toggles, Shift+1..9 beat snap, Ctrl+G reverse, Ctrl+D clone.
+- **Settings redesign** with a search over every page.
+- **Smoother scrolling** at your display's refresh rate, and a faster launch and map open (76ms instead of 360ms on a repeat open).
+- **Import Image as Drawing** previews each option live.
 
-Details: [`docs/releases/v3.5.2.md`](docs/releases/v3.5.2.md)
+Details: [`docs/releases/v3.5.3.md`](docs/releases/v3.5.3.md)
 
 
 The full development log is in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md).
@@ -75,7 +76,7 @@ The full development log is in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLA
 
 ## Windows SmartScreen notice
 
-Taiko Fancy Arranger v3.5.2 is an unsigned Windows application. The release validates its input files, ships with automated tests, and publishes SHA-256 checksums.
+Taiko Fancy Arranger v3.5.3 is an unsigned Windows application. The release validates its input files, ships with automated tests, and publishes SHA-256 checksums.
 
 Windows Defender SmartScreen may still show an "unrecognized app" warning, because a new executable has no download reputation yet.
 
@@ -486,7 +487,7 @@ Do not upload copyrighted audio or private beatmap assets unless permission has 
 
 ## Project status
 
-Version 3.5.2 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
+Version 3.5.3 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
 
 Not yet implemented, and next in line:
 

@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+from PySide6.QtCore import QEvent, QEventLoop, QPoint, QPointF, Qt, QTimer
 from PySide6.QtGui import QImage, QKeyEvent, QMouseEvent, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QApplication
 
@@ -29,6 +29,24 @@ _APP: QApplication | None = None
 def setUpModule() -> None:
     global _APP
     _APP = QApplication.instance() or QApplication([])
+
+
+def _delete_window(window) -> None:
+    """Delete a test's window once the test is over. Closed only, every window
+    lived to the end of the run: 6.3GB at peak over 241 tests, and 47s after
+    OK for Qt to destroy them all at exit (measured 2026-10-11).
+
+    Registered with addCleanup *before* anything else in setUp, so it runs
+    last: a test's own cleanups (`dialog.deleteLater` on a dialog parented to
+    the window) must reach their objects before the window takes its
+    children with it, or they post a delete to freed memory and the next
+    event loop pass crashes. `processEvents` never runs deleteLater, so a
+    short real loop does; `sendPostedEvents(None, DeferredDelete)` outside
+    one deleted the window too, and the next test's first paint crashed."""
+    window.deleteLater()
+    loop = QEventLoop()
+    QTimer.singleShot(0, loop.quit)
+    loop.exec()
 
 
 class _StubDialog:
@@ -82,6 +100,7 @@ class _GimmickFixture:
         self.index_path = directory / "gimmick_index.json"
 
         self.window = gui.MainWindow()
+        self.addCleanup(_delete_window, self.window)
         self.window._gimmick_index_path = lambda: self.index_path
         self.window._gimmick_pairings = {}
         self.window.show()
@@ -3443,6 +3462,7 @@ class LibraryRescanTests(unittest.TestCase):
     def setUp(self) -> None:
         self._temp = tempfile.TemporaryDirectory()
         self.window = gui.MainWindow()
+        self.addCleanup(_delete_window, self.window)
         self.cache = Path(self._temp.name) / "song_index.json"
         self.window._library_cache_path = lambda: self.cache
 

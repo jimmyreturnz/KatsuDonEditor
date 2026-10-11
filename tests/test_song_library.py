@@ -11,7 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeyEvent, QKeySequence
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
 
 from tests.osu_fixtures import write_fixture
 
@@ -256,7 +256,11 @@ class LibraryPageTests(unittest.TestCase):
 
     def tearDown(self):
         self.window.scan_timer.stop()
-        self.window.close()
+        # The class's close, not the instance's: the Esc-to-exit tests replace
+        # `window.close` with a recorder, and a window left open at exit keeps
+        # the audio thread alive into interpreter shutdown, which exits 127
+        # after printing OK.
+        QMainWindow.close(self.window)
         self.window.deleteLater()
         self._temp.cleanup()
 

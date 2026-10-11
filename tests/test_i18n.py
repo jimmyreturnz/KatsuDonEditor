@@ -306,6 +306,9 @@ class StableIdentifierTests(unittest.TestCase):
         # hid the Swap button this test looks for. Start from the default.
         settings.SettingsManager().set_value("fancy/dock_state", "")
         window = gui.MainWindow()
+        # Closed after the test: a window still open at exit keeps the audio
+        # thread alive into interpreter shutdown, which exits 127 after OK.
+        self.addCleanup(window.close)
         window.show()
         return window
 

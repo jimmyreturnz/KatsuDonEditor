@@ -8,6 +8,7 @@ import csv
 import shutil
 import sys
 from bisect import bisect_left, bisect_right
+from collections import deque
 from functools import lru_cache
 from contextlib import contextmanager
 from itertools import count as count_from
@@ -6083,6 +6084,12 @@ class MainWindow(QMainWindow):
         self.latest_audio_position = 0.0
         self._source_report_clock = QElapsedTimer()
         self._source_report_clock.start()
+        # Seeks sent to the engine whose report has not come back yet, oldest
+        # first. The engine reports every seek with its exact target, in order,
+        # so a report matching the oldest is that seek's echo -- and stale if a
+        # newer seek is still waiting (see _player_position_changed). Bounded
+        # so a report that never comes back cannot grow it without limit.
+        self._unechoed_seeks: deque[int] = deque(maxlen=64)
         # Monotonic floor for _predicted_audio_position's own sub-frame
         # extrapolation -- reset alongside the clocks above so a legitimate
         # backwards seek is never clamped away.
@@ -14050,6 +14057,7 @@ class MainWindow(QMainWindow):
                 self.player.set_seek_hold_ms(hold_ms)
                 self._seek_hold_until_ns = (
                     self.gameplay_frame_clock.nsecsElapsed() + hold_ms * 1_000_000)
+        self._unechoed_seeks.append(round(position))
         self.player.setPosition(round(position))
         # Playing, the frame loop carries the new position to every view on its
         # next frame -- it reads the anchor reset above -- so a broadcast here
@@ -14234,6 +14242,16 @@ class MainWindow(QMainWindow):
         method stores) currently says. This is deliberately the only place
         that touches `latest_audio_position` and its report clock.
         """
+        pending = self._unechoed_seeks
+        if pending and position == pending[0]:
+            pending.popleft()
+            if pending:
+                # The echo of a seek a newer one has already replaced. Adopted,
+                # it put the playhead back where it was until the newer echo
+                # landed ~90ms later: seeking just after opening a map showed
+                # the map's start again for that long (2026-10-11, the flaky
+                # test_a_seek_while_paused_lands_where_it_was_put).
+                return
         if self.player.playbackState() != QMediaPlayer.PlayingState:
             # Qt reports whole milliseconds, so its echo of a seek we just made
             # would round the fractional playhead away again. Only a real move

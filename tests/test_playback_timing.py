@@ -565,6 +565,19 @@ class OutputOffsetSeekTests(unittest.TestCase):
         for view in self.window._chart_views:
             self.assertAlmostEqual(view.current_time, 4000.0, delta=1.0)
 
+    def test_a_stale_seek_report_does_not_pull_the_playhead_back(self):
+        """Two seeks while paused, and the first one's report arriving after
+        the second: what made the test above fail one run in three. Driven
+        directly, so it does not depend on when the audio thread answers."""
+        self.window._unechoed_seeks.clear()
+        self.window.seek_audio(1000.0)
+        self.window.seek_audio(4000.0)
+        self.window._player_position_changed(1000.0)
+        self.assertEqual(self.window.audio_anchor_position, 4000.0)
+        self.window._player_position_changed(4000.0)
+        self.assertEqual(self.window.audio_anchor_position, 4000.0)
+        self.assertFalse(self.window._unechoed_seeks)
+
     def test_repeated_small_seeks_never_go_backwards(self):
         """The reported symptom, in the shape it was reported: on a high-BPM
         section a notch is a few milliseconds, which the offset outweighed."""

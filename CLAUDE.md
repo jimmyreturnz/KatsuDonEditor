@@ -158,7 +158,14 @@ recovery -- two real bugs inherited from reading a stale copy.
   cold (2026-10-11). Settings (~260ms) and a theme switch (~230ms) are now
   Qt building and restyling widgets: setting the dialog's sheet after its
   widgets made it 180 -> 285ms, and the order sheets are re-set in on a
-  theme switch changes nothing. **Process deleteLater** in a harness
+  theme switch changes nothing. Nor does the sheet's size (MainWindow's 8KB
+  restyles in 110ms, an empty sheet in 90ms): the cost is per widget, and a
+  switch restyles each about twice, because every one of the ~100 themed
+  sheets repolishes its whole subtree under MainWindow's own pass. With
+  Settings open that is 669ms (main 282, the dialog's own 145). Hoisting
+  the big nested sheets' colours into MainWindow's would save ~35%, at the
+  price of Qt's own-sheet-wins precedence; the owner chose to leave it
+  (2026-10-11). **Process deleteLater** in a harness
   (`sendPostedEvents(None, QEvent.DeferredDelete)`): `processEvents` never
   does, so closed dialogs lived on and inflated every theme switch to 1.4s.
 - `tools/play_with_hitsounds.py <map.osu> [rate] [seconds] [start_ms]` — the

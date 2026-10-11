@@ -30,6 +30,8 @@ from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
 
 from ui import gui
+from ui import sv_editor
+from ui import chart_views
 from ui import dialogs
 from osu_io.timing import TimingPoint
 from tests.osu_fixtures import write_fixture
@@ -184,19 +186,19 @@ class AutoscaleTests(unittest.TestCase):
         """Nothing near the ceiling and a fixed floor: 0.1x-2.5x."""
         view = self._view([1.0, 1.0, 1.0])
         low, high = view.update_scale()
-        self.assertAlmostEqual(low, gui.SV_VISUAL_MIN, places=6)
-        self.assertAlmostEqual(high, gui.SV_VISUAL_MAX, places=6)
+        self.assertAlmostEqual(low, sv_editor.SV_VISUAL_MIN, places=6)
+        self.assertAlmostEqual(high, sv_editor.SV_VISUAL_MAX, places=6)
 
     def test_a_narrow_band_still_keeps_the_default_range(self):
         view = self._view([0.9, 1.05, 1.1])
         low, high = view.update_scale()
-        self.assertAlmostEqual(low, gui.SV_VISUAL_MIN, places=6)
-        self.assertAlmostEqual(high, gui.SV_VISUAL_MAX, places=6)
+        self.assertAlmostEqual(low, sv_editor.SV_VISUAL_MIN, places=6)
+        self.assertAlmostEqual(high, sv_editor.SV_VISUAL_MAX, places=6)
 
     def test_a_very_slow_section_sits_on_the_floor_instead_of_moving_it(self):
         view = self._view([0.02, 1.0])
         low, _high = view.update_scale()
-        self.assertAlmostEqual(low, gui.SV_VISUAL_MIN, places=6)
+        self.assertAlmostEqual(low, sv_editor.SV_VISUAL_MIN, places=6)
         top, bottom = view._graph_top(), view._graph_bottom()
         self.assertAlmostEqual(view._sv_to_y(0.02, top, bottom), bottom, places=6)
 
@@ -236,23 +238,23 @@ class AutoscaleTests(unittest.TestCase):
 
 class BoundLadderTests(unittest.TestCase):
     def test_bounds_are_round_numbers_around_a_value(self):
-        self.assertAlmostEqual(gui.sv_bound_below(0.9), 0.5, places=6)
-        self.assertAlmostEqual(gui.sv_bound_above(1.1), 1.5, places=6)
+        self.assertAlmostEqual(sv_editor.sv_bound_below(0.9), 0.5, places=6)
+        self.assertAlmostEqual(sv_editor.sv_bound_above(1.1), 1.5, places=6)
 
     def test_a_value_sitting_exactly_on_a_step_is_still_enclosed(self):
         """Strictly outside, so the line is never drawn along the graph edge."""
-        self.assertLess(gui.sv_bound_below(1.5), 1.5)
-        self.assertGreater(gui.sv_bound_above(1.5), 1.5)
-        self.assertLess(gui.sv_bound_below(0.5), 0.5)
+        self.assertLess(sv_editor.sv_bound_below(1.5), 1.5)
+        self.assertGreater(sv_editor.sv_bound_above(1.5), 1.5)
+        self.assertLess(sv_editor.sv_bound_below(0.5), 0.5)
 
     def test_the_step_gets_finer_near_zero(self):
-        self.assertGreater(gui.sv_bound_below(0.3), 0.0)
-        self.assertGreater(gui.sv_bound_below(0.05), 0.0)
-        self.assertGreaterEqual(gui.sv_bound_below(0.02), gui.SV_SCALE_FLOOR)
+        self.assertGreater(sv_editor.sv_bound_below(0.3), 0.0)
+        self.assertGreater(sv_editor.sv_bound_below(0.05), 0.0)
+        self.assertGreaterEqual(sv_editor.sv_bound_below(0.02), sv_editor.SV_SCALE_FLOOR)
 
     def test_bounds_stay_within_the_absolute_limits(self):
-        self.assertLessEqual(gui.sv_bound_above(500.0), gui.SV_SCALE_CEILING)
-        self.assertGreaterEqual(gui.sv_bound_below(0.001), gui.SV_SCALE_FLOOR)
+        self.assertLessEqual(sv_editor.sv_bound_above(500.0), sv_editor.SV_SCALE_CEILING)
+        self.assertGreaterEqual(sv_editor.sv_bound_below(0.001), sv_editor.SV_SCALE_FLOOR)
 
 
 class StableAxisTests(unittest.TestCase):
@@ -291,14 +293,14 @@ class StableAxisTests(unittest.TestCase):
 
     def test_an_edit_that_raises_the_maximum_raises_the_ceiling(self):
         view = self._view([1.0, 1.2])
-        self.assertAlmostEqual(view.update_scale()[1], gui.SV_VISUAL_MAX, places=6)
+        self.assertAlmostEqual(view.update_scale()[1], sv_editor.SV_VISUAL_MAX, places=6)
         view.timing_points[1].set_sv(6.0)
         view.set_timing_points(view.timing_points)
         self.assertGreater(view.update_scale()[1], 6.0)
 
     def test_the_ceiling_never_drops_below_the_default(self):
         view = self._view([0.2, 0.3])
-        self.assertAlmostEqual(view.update_scale()[1], gui.SV_VISUAL_MAX, places=6)
+        self.assertAlmostEqual(view.update_scale()[1], sv_editor.SV_VISUAL_MAX, places=6)
 
     def test_which_points_get_a_value_label_does_not_depend_on_scrolling(self):
         """Chaining the spacing rule from the last *labelled* point made the
@@ -320,7 +322,7 @@ class StableAxisTests(unittest.TestCase):
             return {
                 round(time_ms)
                 for i, (time_ms, _sv) in enumerate(series)
-                if i and xs[i] - xs[i - 1] >= gui.SV_LABEL_MIN_SPACING_PX
+                if i and xs[i] - xs[i - 1] >= chart_views.SV_LABEL_MIN_SPACING_PX
             }
 
         self.assertEqual(labelled(1500.0), labelled(2300.0))

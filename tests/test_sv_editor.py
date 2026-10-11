@@ -21,6 +21,7 @@ from PySide6.QtGui import QMouseEvent, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
 
 from ui import gui
+from ui import sv_editor
 from ui import dialogs
 from osu_io.parser import parse_osu
 from osu_io.timing import TimingPoint, active_uninherited_at
@@ -225,8 +226,8 @@ class SVEasingTests(unittest.TestCase):
 
 class SVVisualScaleTests(unittest.TestCase):
     def test_default_visual_range_is_0_1x_to_2_5x(self):
-        self.assertEqual(gui.SV_VISUAL_MIN, 0.1)
-        self.assertEqual(gui.SV_VISUAL_MAX, 2.5)
+        self.assertEqual(sv_editor.SV_VISUAL_MIN, 0.1)
+        self.assertEqual(sv_editor.SV_VISUAL_MAX, 2.5)
 
 
 class SVVisualMappingTests(unittest.TestCase):
@@ -248,15 +249,15 @@ class SVVisualMappingTests(unittest.TestCase):
         drag -- and the autoscaling ceiling put anything faster than the map's
         own maximum out of reach the same way."""
         view = gui.SVEditorView()
-        view.scale_min, view.scale_max = gui.SV_VISUAL_MIN, gui.SV_VISUAL_MAX
+        view.scale_min, view.scale_max = sv_editor.SV_VISUAL_MIN, sv_editor.SV_VISUAL_MAX
         top, bottom = 20.0, 160.0
-        self.assertAlmostEqual(view._y_to_sv(10_000.0, top, bottom), gui.SV_SCALE_FLOOR)
-        self.assertAlmostEqual(view._y_to_sv(-10_000.0, top, bottom), gui.SV_SCALE_CEILING)
+        self.assertAlmostEqual(view._y_to_sv(10_000.0, top, bottom), sv_editor.SV_SCALE_FLOOR)
+        self.assertAlmostEqual(view._y_to_sv(-10_000.0, top, bottom), sv_editor.SV_SCALE_CEILING)
         # A drag a little below the graph lands between the two floors, not on
         # either -- the scale carries on rather than snapping to the limit.
         just_below = view._y_to_sv(bottom + 20.0, top, bottom)
-        self.assertLess(just_below, gui.SV_VISUAL_MIN)
-        self.assertGreater(just_below, gui.SV_SCALE_FLOOR)
+        self.assertLess(just_below, sv_editor.SV_VISUAL_MIN)
+        self.assertGreater(just_below, sv_editor.SV_SCALE_FLOOR)
 
     def test_volume_stays_clamped_to_its_own_axis(self):
         """0-100% is the whole range, not a window on one."""
@@ -538,7 +539,7 @@ class SVEditorIntegrationTests(unittest.TestCase):
         x = view.x_for_time(inherited.time)
         dot_y = view._sv_to_y(inherited.sv_multiplier, view._graph_top(), view._graph_bottom())
         original_time, original_sv = inherited.time, inherited.sv_multiplier
-        far_y = dot_y + gui.SV_DOT_HIT_RADIUS_PX + 40.0
+        far_y = dot_y + sv_editor.SV_DOT_HIT_RADIUS_PX + 40.0
 
         _press(view, x, y=far_y)
         self.assertEqual(view._drag_axis, "time")

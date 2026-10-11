@@ -28,6 +28,7 @@ from PySide6.QtGui import QKeyEvent, QMouseEvent, QWheelEvent
 from PySide6.QtWidgets import QApplication, QLabel
 
 from ui import gui
+from ui import sv_editor
 from ui import chart_views
 from ui import common
 from tests.osu_fixtures import write_fixture
@@ -331,8 +332,8 @@ class GreenLineModeTests(WindowTestCase):
             ghost = view._hover_sv
             _press(view, x, y=y)
             self.assertAlmostEqual(added[-1], ghost, places=9)
-            self.assertAlmostEqual(added[-1] / gui.SV_DRAG_STEP,
-                                   round(added[-1] / gui.SV_DRAG_STEP), places=6)
+            self.assertAlmostEqual(added[-1] / sv_editor.SV_DRAG_STEP,
+                                   round(added[-1] / sv_editor.SV_DRAG_STEP), places=6)
 
     def test_hover_sets_the_ghost_time_and_paints_without_raising(self):
         view = self._sv_view()

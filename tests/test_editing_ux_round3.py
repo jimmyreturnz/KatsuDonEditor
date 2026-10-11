@@ -28,6 +28,8 @@ from PySide6.QtGui import QKeyEvent, QMouseEvent, QWheelEvent
 from PySide6.QtWidgets import QApplication, QLabel
 
 from ui import gui
+from ui import chart_views
+from ui import common
 from tests.osu_fixtures import write_fixture
 
 _APP: QApplication | None = None
@@ -149,9 +151,9 @@ class DifficultyLabelTests(WindowTestCase):
         for frame in self.window._editor_views:
             self.assertIs(frame.layout().itemAt(0).widget(), frame.header)
             self.assertTrue(frame.header.isAncestorOf(frame.difficulty_name_label))
-            # Less the break points a too-long word gets (gui.breakable_words).
+            # Less the break points a too-long word gets (chart_views.breakable_words).
             self.assertEqual(
-                frame.difficulty_name_label.text().replace(gui.ZERO_WIDTH_SPACE, ""),
+                frame.difficulty_name_label.text().replace(chart_views.ZERO_WIDTH_SPACE, ""),
                 self.state.document.version)
 
     def test_focusing_a_view_rims_its_frame_only(self):
@@ -973,7 +975,7 @@ class NoteSizeTests(WindowTestCase):
             self.assertLessEqual(normal, gui.TimelineGameplay.NOTE_RADIUS_MAX)
             # 75%, then the finisher a third bigger again (owner, 2026-10-08).
             self.assertAlmostEqual(
-                finisher, normal * gui.EDITOR_STRONG_SCALE * gui.TimelineGameplay.FINISHER_ENLARGE)
+                finisher, normal * chart_views.EDITOR_STRONG_SCALE * gui.TimelineGameplay.FINISHER_ENLARGE)
 
     def test_the_floor_is_eighty_and_a_note_still_fits_in_it(self):
         view = self._chart_view()
@@ -993,7 +995,7 @@ class NoteSizeTests(WindowTestCase):
         self.assertNotAlmostEqual(finisher, before[1])
         self.assertAlmostEqual(normal, 88 * 0.22)
         self.assertAlmostEqual(
-            finisher, normal * gui.TAIKO_STRONG_SCALE * gui.TimelineGameplay.FINISHER_ENLARGE)
+            finisher, normal * common.TAIKO_STRONG_SCALE * gui.TimelineGameplay.FINISHER_ENLARGE)
 
 
 class TimingBarMarkerTests(WindowTestCase):

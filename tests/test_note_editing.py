@@ -21,6 +21,7 @@ from PySide6.QtGui import QMouseEvent, QPixmap
 from PySide6.QtWidgets import QApplication
 
 from ui import gui
+from ui import chart_views
 from osu_io.parser import parse_osu
 from tests.osu_fixtures import write_fixture
 
@@ -350,7 +351,7 @@ class ShiftMustBeHeldTests(unittest.TestCase):
             gui.QApplication, "queryKeyboardModifiers",
             staticmethod(lambda: Qt.KeyboardModifier.ShiftModifier),
         ):
-            self.assertTrue(gui.shift_is_held())
+            self.assertTrue(chart_views.shift_is_held())
         with patch.object(
             gui.QApplication, "queryKeyboardModifiers",
             staticmethod(lambda: Qt.KeyboardModifier.NoModifier),
@@ -360,14 +361,14 @@ class ShiftMustBeHeldTests(unittest.TestCase):
                 gui.QApplication, "keyboardModifiers",
                 staticmethod(lambda: Qt.KeyboardModifier.ShiftModifier),
             ):
-                self.assertFalse(gui.shift_is_held())
+                self.assertFalse(chart_views.shift_is_held())
 
     def test_the_ghost_follows_shift_being_held(self):
         self.view.set_tool("don")
         self.view._hover_time = 28000.0
         radii = {}
         for held in (False, True):
-            with patch.object(gui, "shift_is_held", staticmethod(lambda h=held: h)):
+            with patch.object(chart_views, "shift_is_held", staticmethod(lambda h=held: h)):
                 pixmap = QPixmap(self.view.size())
                 self.view.render(pixmap)
                 radii[held] = self.view.note_radii()[1 if held else 0]

@@ -30,6 +30,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication
 
 from ui import gui
+from ui import common
 from osu_io.parser import parse_osu
 
 _APP: QApplication | None = None
@@ -109,25 +110,25 @@ class SliderDurationArithmeticTests(unittest.TestCase):
     """The conversion itself, with no view or document involved."""
 
     def test_the_mappers_drumroll_ends_where_osu_puts_it(self) -> None:
-        duration = gui.duration_for_slider_length(25.75 * 14, BEAT_LENGTH_223, 1.0, 2.0)
+        duration = common.duration_for_slider_length(25.75 * 14, BEAT_LENGTH_223, 1.0, 2.0)
         self.assertAlmostEqual(84853 + duration, SLIDER_END_MS, delta=0.05)
 
     def test_sv_and_the_multiplier_are_interchangeable_in_the_product(self) -> None:
         """`SliderMultiplier * SV` is what the formula divides by, so the same
         object on a 1.0x map with a 2.0x green line on it plays identically."""
-        duration = gui.duration_for_slider_length(25.75 * 14, BEAT_LENGTH_223, 2.0, 1.0)
+        duration = common.duration_for_slider_length(25.75 * 14, BEAT_LENGTH_223, 2.0, 1.0)
         self.assertAlmostEqual(84853 + duration, SLIDER_END_MS, delta=0.05)
 
     def test_the_old_hardcoded_multiplier_was_late_by_a_fifth_of_a_second(self) -> None:
         """What the bug looked like: 1.4/2.0 of the real speed, so 208 ms long."""
-        assumed = gui.duration_for_slider_length(25.75 * 14, BEAT_LENGTH_223, 1.0)
-        real = gui.duration_for_slider_length(25.75 * 14, BEAT_LENGTH_223, 1.0, 2.0)
+        assumed = common.duration_for_slider_length(25.75 * 14, BEAT_LENGTH_223, 1.0)
+        real = common.duration_for_slider_length(25.75 * 14, BEAT_LENGTH_223, 1.0, 2.0)
         self.assertAlmostEqual(assumed - real, 207.85, delta=0.5)
 
     def test_the_round_trip_through_length_is_exact(self) -> None:
         length = gui.slider_length_for_duration(485.0, BEAT_LENGTH_223, 1.5, 2.0)
         self.assertAlmostEqual(
-            gui.duration_for_slider_length(length, BEAT_LENGTH_223, 1.5, 2.0),
+            common.duration_for_slider_length(length, BEAT_LENGTH_223, 1.5, 2.0),
             485.0,
             places=6,
         )

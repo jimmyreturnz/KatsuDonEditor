@@ -18,6 +18,7 @@ from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
 
 from ui import gui
+from ui import chart_views
 from osu_io.parser import OsuDocument
 from tests.test_gimmick_editor import _GimmickFixture, _StubTimingLineDialog
 
@@ -400,11 +401,11 @@ class BigVariantTests(_Layer2, unittest.TestCase):
         self.layer.current_time = float(self.SNAP)
         self.layer._hover_time = float(self.SNAP)
         with patch.object(
-            gui, "shift_is_held", staticmethod(lambda: True)
+            chart_views, "shift_is_held", staticmethod(lambda: True)
         ):
             big = self._ghost_radius()
         with patch.object(
-            gui, "shift_is_held", staticmethod(lambda: False)
+            chart_views, "shift_is_held", staticmethod(lambda: False)
         ):
             small = self._ghost_radius()
         self.assertGreater(big, small)
@@ -437,7 +438,7 @@ class BigVariantTests(_Layer2, unittest.TestCase):
         self.layer.current_time = float(self.SNAP)
         self.layer._hover_time = float(self.SNAP)
         with patch.object(
-            gui, "shift_is_held", staticmethod(lambda: False)
+            chart_views, "shift_is_held", staticmethod(lambda: False)
         ):
             ghosts = self._multi_ghosts()
         self.assertEqual(len(ghosts), 9, "0..16 step 2 is nine structures")
@@ -453,11 +454,11 @@ class BigVariantTests(_Layer2, unittest.TestCase):
         self.layer.current_time = float(self.SNAP)
         self.layer._hover_time = float(self.SNAP)
         with patch.object(
-            gui, "shift_is_held", staticmethod(lambda: True)
+            chart_views, "shift_is_held", staticmethod(lambda: True)
         ):
             big = self._multi_ghosts()
         with patch.object(
-            gui, "shift_is_held", staticmethod(lambda: False)
+            chart_views, "shift_is_held", staticmethod(lambda: False)
         ):
             small = self._multi_ghosts()
         self.assertEqual(len(big), len(small))

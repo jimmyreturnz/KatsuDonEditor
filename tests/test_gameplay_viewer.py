@@ -155,8 +155,8 @@ class TaikoProportionTests(unittest.TestCase):
     def test_a_finisher_is_the_rulesets_strong_scale(self):
         """`TaikoStrongableHitObject.STRONG_SCALE = 1 / 0.65f`. 1.4 was assumed
         here before, which drew every big note about 10% small."""
-        self.assertAlmostEqual(gui.TAIKO_STRONG_SCALE, 1.0 / 0.65, places=6)
-        self.assertGreater(gui.TAIKO_STRONG_SCALE, 1.5)
+        self.assertAlmostEqual(common.TAIKO_STRONG_SCALE, 1.0 / 0.65, places=6)
+        self.assertGreater(common.TAIKO_STRONG_SCALE, 1.5)
 
 
 class SkinnedCircleElementTests(unittest.TestCase):

@@ -30,6 +30,7 @@ from chart.time_axis import wheel_seek_time
 from model.commands import CompositeCommand, SetNoteFields
 from model.hit_object import HITSOUND_CLAP, HITSOUND_FINISH, HITSOUND_WHISTLE, TYPE_NEW_COMBO
 from osu_io.timing import active_uninherited_at
+from ui.chart_views import editor_timeline_metadata
 
 # What osu! steps by with Shift held (`Editor.seek`: amount 4 instead of 1).
 SHIFT_SEEK_STEPS = 4
@@ -191,7 +192,6 @@ class EditorKeys(QObject):
         self._seek_to_neighbour(view, times, direction)
 
     def _seek_bookmark(self, direction: int) -> None:
-        from ui.gui import editor_timeline_metadata  # gui imports this module
         view = self._view()
         state = self._state_for(view)
         if state is None:

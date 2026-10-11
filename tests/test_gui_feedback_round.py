@@ -28,6 +28,7 @@ from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
 
 from ui import gui
+from ui import chart_views
 from ui import common
 from tests.osu_fixtures import write_fixture
 
@@ -745,24 +746,24 @@ class DensityTests(unittest.TestCase):
             TimingPoint(0, 240.0), TimingPoint(30000, 150.0), TimingPoint(40000, 240.0),
             TimingPoint(90000, 60000 / 140), TimingPoint(100000, 240.0),
         ]
-        self.assertEqual(gui.most_common_beat_length(points, 150000), 240.0)
+        self.assertEqual(common.most_common_beat_length(points, 150000), 240.0)
         # A line after the last object counts for nothing.
         points.append(TimingPoint(200000, 150.0))
-        self.assertEqual(gui.most_common_beat_length(points, 150000), 240.0)
+        self.assertEqual(common.most_common_beat_length(points, 150000), 240.0)
 
     def test_sixteen_notes_in_four_beats_is_a_full_bar(self):
         beat = 250.0  # 240 BPM; 4 beats are 1000ms
         duration = 100000.0  # so each 1% bar is exactly 1000ms
         stream = [1000 * 10 + i * 62.5 for i in range(16)]  # 16 in bar 10
         half = [1000 * 20 + i * 125.0 for i in range(8)]     # 8 in bar 20
-        bars = gui.density_bars(sorted(stream + half), duration, beat)
-        self.assertEqual(len(bars), gui.DENSITY_BARS)
+        bars = chart_views.density_bars(sorted(stream + half), duration, beat)
+        self.assertEqual(len(bars), chart_views.DENSITY_BARS)
         self.assertEqual(bars[10][2], 1.0)
         self.assertAlmostEqual(bars[20][2], 0.5)
         self.assertEqual(bars[30][2], 0.0)
         # More than full is still full.
         burst = [1000 * 40 + i * 30.0 for i in range(30)]
-        self.assertEqual(gui.density_bars(burst, duration, beat)[40][2], 1.0)
+        self.assertEqual(chart_views.density_bars(burst, duration, beat)[40][2], 1.0)
 
 
 if __name__ == "__main__":

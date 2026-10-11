@@ -9,6 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication, QPushButton
 
 from ui import gui
+from ui import chart_views
 from ui import theme
 from ui.settings_dialog import SettingsDialog
 
@@ -143,11 +144,11 @@ class ChromeTests(unittest.TestCase):
         from PySide6.QtGui import QFont, QFontMetrics
         metrics = QFontMetrics(QFont())
         width = metrics.horizontalAdvance("Inner Oni")
-        self.assertEqual(gui.breakable_words("Inner Oni", metrics, width), "Inner Oni")
-        long = gui.breakable_words("worldwidesuperstar x", metrics, width)
-        self.assertIn(gui.ZERO_WIDTH_SPACE, long)
+        self.assertEqual(chart_views.breakable_words("Inner Oni", metrics, width), "Inner Oni")
+        long = chart_views.breakable_words("worldwidesuperstar x", metrics, width)
+        self.assertIn(chart_views.ZERO_WIDTH_SPACE, long)
         self.assertTrue(long.endswith(" x"))
-        self.assertEqual(long.replace(gui.ZERO_WIDTH_SPACE, ""), "worldwidesuperstar x")
+        self.assertEqual(long.replace(chart_views.ZERO_WIDTH_SPACE, ""), "worldwidesuperstar x")
 
     def test_control_strip_paints_its_own_ground(self) -> None:
         from PySide6.QtCore import Qt

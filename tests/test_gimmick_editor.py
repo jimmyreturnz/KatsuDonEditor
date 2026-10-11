@@ -19,6 +19,7 @@ from PySide6.QtGui import QImage, QKeyEvent, QMouseEvent, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QApplication
 
 from ui import gui
+from ui import common
 from chart import gimmick_session
 from osu_io.parser import parse_osu
 from tests.osu_fixtures import write_fixture
@@ -1251,7 +1252,7 @@ class GimmickPageChromeTests(_GimmickFixture, unittest.TestCase):
         view.resize(800, 90)
         view.grab()  # paints; must not raise
         self.assertLessEqual(
-            min(31.0, view.height() * 0.22) * gui.TAIKO_STRONG_SCALE * 2, view.height(),
+            min(31.0, view.height() * 0.22) * common.TAIKO_STRONG_SCALE * 2, view.height(),
         )
 
     def test_the_snap_combo_drives_every_layer(self):

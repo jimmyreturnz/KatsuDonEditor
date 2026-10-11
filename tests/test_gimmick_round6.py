@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QApplication
 
 from chart import gimmick_session as gs
 from ui import gui
+from ui import chart_views
 from ui import dialogs
 from tests.test_gimmick_editor import _GimmickFixture
 
@@ -879,7 +880,7 @@ class ShinyNoteTests(_Session, unittest.TestCase):
             layer._drag_y = y
             # `shift_is_held` asks the platform for the live key state: Qt's
             # cached modifiers go stale and a tap used to stick. See gui.py.
-            with patch.object(gui, "shift_is_held", return_value=shift):
+            with patch.object(chart_views, "shift_is_held", return_value=shift):
                 layer._update_drag_selection()
                 span = layer._row_span(y)
             return {round(n.time) for n in layer.selected_notes()}, span

@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from PySide6.QtCore import (
-    QByteArray, QElapsedTimer, QEvent, QVariantAnimation, QPoint, QPointF, QPropertyAnimation,
+    QByteArray, QElapsedTimer, QEvent, QObject, QVariantAnimation, QPoint, QPointF, QPropertyAnimation,
     QRectF, QSize, QStandardPaths, Qt, QEasingCurve, QTimer, QUrl, Signal,
 )
 from PySide6.QtGui import (
@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
     QPushButton, QScrollArea, QTextEdit, QSlider, QSpinBox, QStackedWidget, QTabWidget,
     QToolButton, QVBoxLayout, QWidget, QDockWidget, QMenu, QDialog, QDialogButtonBox,
-    QFontComboBox, QSizePolicy,
+    QFontComboBox, QSizePolicy, QStyle, QStyleOptionFrame,
 )
 
 from ui.motion import (
@@ -57,7 +57,7 @@ from app.settings import (
     register_shortcut_definitions, should_ignore_shortcut_focus,
 )
 from ui.settings_dialog import SettingsDialog
-from ui import theme
+from ui import theme, windose
 from app import updater
 from osu_io.parser import parse_osu, read_version
 from osu_io.timing import (
@@ -204,19 +204,62 @@ UI_FONT_FAMILY = "Exo 2"
 UI_FONT_FALLBACKS = ("Yu Gothic UI", "Meiryo", "Segoe UI")
 
 
-def ui_font_family() -> str | None:
-    """Register the bundled Exo 2 once and return its family, or None when the
+_registered_fonts: dict[Path, str | None] = {}
+
+
+def ui_font_family(font_file: Path = UI_FONT_FILE) -> str | None:
+    """Register a bundled face once and return its family, or None when the
     file is missing (a source checkout without assets) -- the system font then
     stays, which is what the app used before."""
+    if font_file in _registered_fonts:
+        return _registered_fonts[font_file]
+    family = None
     for root in resource_roots():
-        candidate = root / UI_FONT_FILE
+        candidate = root / font_file
         if candidate.is_file():
             font_id = QFontDatabase.addApplicationFont(str(candidate))
             families = QFontDatabase.applicationFontFamilies(font_id) if font_id >= 0 else []
             if families:
                 QFont.insertSubstitutions(families[0], list(UI_FONT_FALLBACKS))
-                return families[0]
-    return None
+                family = families[0]
+                break
+    _registered_fonts[font_file] = family
+    return family
+
+
+def apply_ui_font() -> None:
+    """The application font: the active theme's face (theme.FONTS) or Exo 2,
+    at the system font's size two points up. Run at startup and again on a
+    theme switch, since a face is part of a theme.
+
+    Two points up because the default reads small on the dense editor pages,
+    and raising the application font (rather than a stylesheet px size) keeps
+    every dialog and DPI scaling in step. Without the bundled file, the
+    system face.
+    """
+    base_font = QFontDatabase.systemFont(QFontDatabase.GeneralFont)
+    themed = theme.FONTS.get(theme.active())
+    if themed:
+        # Its bold too, or Qt fakes one wider than the measured labels.
+        ui_font_family(Path("assets/fonts") / themed.replace("-Regular", "-Bold"))
+    family = ui_font_family(Path("assets/fonts") / themed) if themed else ui_font_family()
+    if family:
+        base_font.setFamily(family)
+        # Exo 2 carries no hinting instructions, and Windows' default is
+        # full (GDI-style) hinting, which snaps every glyph to whole pixels:
+        # the letters came out unevenly spaced ("m a pp e d"). Vertical
+        # hinting keeps baselines crisp and places glyphs fractionally.
+        base_font.setHintingPreference(QFont.PreferVerticalHinting)
+        # Grayscale, as osu! draws it. Only the FreeType engine honours
+        # this -- see main() for why that is the engine.
+        base_font.setStyleStrategy(QFont.NoSubpixelAntialias)
+    if base_font.pointSizeF() > 0:
+        base_font.setPointSizeF(base_font.pointSizeF() + UI_FONT_POINT_BOOST)
+    elif base_font.pixelSize() > 0:
+        # A pixel-defined system font reports pointSizeF() as -1; adding to
+        # that would set a 1pt font instead of a slightly larger one.
+        base_font.setPixelSize(base_font.pixelSize() + 3)
+    QApplication.instance().setFont(base_font)
 
 
 def slider_length_for_duration(
@@ -229,13 +272,13 @@ def slider_length_for_duration(
     return max(1.0, duration_ms * slider_multiplier * 100.0 * sv / beat_length)
 
 
-PARAMETERS.setdefault("drawn_path", [{"key":"chunk_size","label":"Notes per Drawing","type":"int","min":2,"max":4096,"default":256},{"key":"reverse","label":"Direction","type":"choice","choices":[("Top to Bottom / Left to Right",False),("Top to Bottom / Right to Left",True)],"default":False}])
+PARAMETERS.setdefault("drawn_path", [{"key":"chunk_size","label":"Notes per Drawing","type":"int","min":2,"max":4096,"default":256},{"key":"reverse","label":"Direction","type":"choice","choices":[("Left to Right",False),("Right to Left",True)],"default":False}])
 if not any(item.get("key")=="font_family" for item in PARAMETERS.get("text",[])):
     text_parameters=PARAMETERS.setdefault("text",[])
     insert_at=next((index+1 for index,item in enumerate(text_parameters) if item.get("key")=="text"),0)
     text_parameters.insert(insert_at,{"key":"font_family","label":"Font","type":"font","default":"Segoe UI"})
 if not any(item.get("key")=="reverse" for item in PARAMETERS.get("text",[])):
-    PARAMETERS["text"].append({"key":"reverse","label":"Direction","type":"choice","choices":[("Top to Bottom / Left to Right",False),("Top to Bottom / Right to Left",True)],"default":False})
+    PARAMETERS["text"].append({"key":"reverse","label":"Direction","type":"choice","choices":[("Left to Right",False),("Right to Left",True)],"default":False})
 GUI_TRANSFORMATIONS=[name for name in ("text","drawn_path","equation") if name in PARAMETERS]+[name for name in available_transformations() if name in PARAMETERS and name not in {"text","drawn_path","equation"}]
 
 
@@ -668,7 +711,7 @@ class ParameterControl(QWidget):
                 self.choice_group.addButton(button); self.choice_buttons[value] = button; buttons.append(button)
             self.choice_buttons[definition["default"]].setChecked(True)
             self.choice_group.buttonClicked.connect(self.changed)
-            pills = segmented(buttons)
+            self.pills = pills = segmented(buttons)
             row = QHBoxLayout(); row.setContentsMargins(0, 0, 0, 0)
             row.addWidget(pills); row.addStretch(1)
             outer.addLayout(row)
@@ -710,6 +753,22 @@ class ParameterControl(QWidget):
             row.addWidget(self.slider, 1); row.addWidget(self.spin)
             outer.addLayout(row)
         self.slider.valueChanged.connect(self._from_slider); self.spin.valueChanged.connect(self._from_spin); self.set_value(definition["default"])
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        pills = getattr(self, "pills", None)
+        if pills is None:
+            return
+        # A pill row wider than the column squeezed its buttons over one
+        # another (Drawing's Direction, 450px of labels in 324px). Stacked,
+        # each choice keeps its whole label; tools/check_overlaps.py.
+        row = pills.layout()
+        side_by_side = row.direction() == QBoxLayout.LeftToRight
+        wide = sum(button.minimumWidth() or button.sizeHint().width() for button in self.choice_group.buttons())
+        wide += row.spacing() * (len(self.choice_group.buttons()) - 1) + 6
+        fits = wide <= event.size().width()
+        if fits != side_by_side:
+            row.setDirection(QBoxLayout.LeftToRight if fits else QBoxLayout.TopToBottom)
 
     def _from_slider(self, raw):
         self.spin.blockSignals(True); self.spin.setValue(raw / self.scale); self.spin.blockSignals(False); self.changed.emit()
@@ -800,6 +859,30 @@ class DifficultyValueControl(QWidget):
             lambda position: self.value_box.setValue(position / self.SLIDER_STEPS_PER_UNIT))
         self.value_box.valueChanged.connect(self._box_changed); self.set_value(default)
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self.fit_value_box()
+
+    def fit_value_box(self) -> None:
+        """The box as wide as "10.00" needs in the font in force, and never
+        narrower than the 84 it was typed at.
+
+        Measured down the chain that clipped it: the box keeps the arrows and
+        its border, the sheet's padding comes off the edit inside it, and
+        QLineEdit keeps 2px a side and a pixel of cursor -- 36px of a 49px
+        edit for NSO's 40px "10.00", which drew as "10.0C" (Exo 2's narrower
+        digits fitted). Run once laid out, and again on a theme switch.
+        """
+        box, edit = self.value_box, self.value_box.lineEdit()
+        if edit.width() <= 0:
+            return
+        option = QStyleOptionFrame()
+        edit.initStyleOption(option)
+        contents = edit.style().subElementRect(QStyle.SE_LineEditContents, option, edit).width()
+        room = contents - 2 * 2 - 1
+        need = edit.fontMetrics().horizontalAdvance("10.00")
+        box.setFixedWidth(max(84, box.width() + max(0, need - room)))
+
     def _box_changed(self, value: float) -> None:
         self.slider.blockSignals(True)
         self.slider.setValue(round(value * self.SLIDER_STEPS_PER_UNIT))
@@ -829,7 +912,7 @@ class DrawingSurface(QWidget):
             if self.active is not None and (point-self.active[-1]).manhattanLength()>=1:self.active.append(point)
             self.active=None;event.accept();self.update()
     def paintEvent(self,event):
-        painter=QPainter(self);painter.fillRect(self.rect(),theme.color("#11151c"));painter.setRenderHint(QPainter.Antialiasing,True);painter.setPen(QPen(theme.color("#f3a6bd"),4,Qt.SolidLine,Qt.RoundCap,Qt.RoundJoin))
+        painter=QPainter(self);painter.fillRect(self.rect(),theme.screen("#11151c"));painter.setRenderHint(QPainter.Antialiasing,True);painter.setPen(QPen(theme.screen("#f3a6bd"),4,Qt.SolidLine,Qt.RoundCap,Qt.RoundJoin))
         for stroke in self.strokes:
             if len(stroke)==1:painter.drawPoint(stroke[0])
             for a,b in zip(stroke,stroke[1:]):painter.drawLine(a,b)
@@ -905,6 +988,7 @@ def shape_icon(name: str) -> QIcon:
     """
     icon = QIcon()
     for colour, state in (("#aeb8c5", QIcon.Off), ("#f3a6bd", QIcon.On)):
+        colour = theme.color(colour).name()
         pixmap = QPixmap(64, 44)
         pixmap.setDevicePixelRatio(2.0)
         pixmap.fill(Qt.transparent)
@@ -1015,16 +1099,106 @@ def _draw_shape_glyph(painter: QPainter, name: str, colour: str) -> None:
 
 TILE_GRID_STYLE = """
 QToolButton#shapeTile {
-    background: #222a36; color: #aeb8c5; border: 1px solid #303947; border-radius: 6px;
+    background: #222a36; color: #aeb8c5; border: 1px solid #303947; border-radius: 8px;
     padding: 5px 2px 4px; font-size: 11px; font-weight: 600;
 }
 QToolButton#shapeTile:hover { background: #2a3341; color: #e8edf3; }
 QToolButton#shapeTile:checked { background: #2a2230; color: #ffffff; border: 1px solid #ff66aa; }
 QLabel#sectionCaption { color: #7d8794; font-size: 10.5px; font-weight: 700; letter-spacing: 1px; background: transparent; }
+QFrame#inspectorCard { background: #1d2431; border: 0; border-radius: 12px; }
+QLabel#inspectorTitle { color: #aeb8c5; font-size: 12.5px; font-weight: 600; background: transparent; }
+QLabel#shapeNote { color: #aeb8c5; font-size: 12px; background: transparent; }
 QLabel#kbd { background: #252d39; border: 1px solid #3a4554; border-bottom: 2px solid #3a4554; border-radius: 3px;
     color: #aeb8c5; font-size: 10.5px; font-weight: 600; padding: 0 4px; }
 QLabel#kbdText { color: #7d8794; font-size: 11.5px; background: transparent; }
 """
+
+
+class TileLabelFitter(QObject):
+    """Shape tile labels that fit their tiles: one wider than its tile breaks
+    at the space nearest its middle instead of eliding, and every tile takes
+    the tallest one's height so the grid stays even.
+
+    "DVD Bouncing" was elided by a pixel in the default theme, and NSO's wider
+    pixel face elided four ("Vert...aiko"). Run on a tile's resize: they all
+    share one width, and that is the moment the room is known.
+    """
+
+    def __init__(self, tiles: list[QToolButton]) -> None:
+        super().__init__(tiles[0])
+        self.tiles = tiles
+        for tile in tiles:
+            tile.setProperty("fullText", tile.text())
+        tiles[0].installEventFilter(self)
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() in (QEvent.Resize, QEvent.FontChange, QEvent.StyleChange):
+            self.fit()
+        return False
+
+    def fit(self) -> None:
+        for tile in self.tiles:
+            full = str(tile.property("fullText"))
+            text = full
+            room = tile.contentsRect().width() - 8
+            if tile.fontMetrics().horizontalAdvance(full) > room and " " in full:
+                spaces = [i for i, ch in enumerate(full) if ch == " "]
+                cut = min(spaces, key=lambda i: abs(i - len(full) / 2))
+                text = full[:cut] + "\n" + full[cut + 1:]
+            if tile.text() != text:
+                tile.setText(text)
+        height = max(tile.sizeHint().height() for tile in self.tiles)
+        for tile in self.tiles:
+            if tile.height() != height:
+                tile.setFixedHeight(height)
+
+
+def inspector_card(layout: QVBoxLayout, title: str) -> QVBoxLayout:
+    """A titled rounded card, the Settings window's and the trace dialog's:
+    a sentence-case heading above, the controls grouped inside."""
+    heading = QLabel(title)
+    heading.setObjectName("inspectorTitle")
+    heading.setContentsMargins(2, 4, 2, 0)
+    card = QFrame()
+    card.setObjectName("inspectorCard")
+    inner = QVBoxLayout(card)
+    inner.setContentsMargins(12, 12, 12, 12)
+    inner.setSpacing(10)
+    layout.addWidget(heading)
+    layout.addWidget(card)
+    return inner
+
+
+def shape_description(name: str) -> str:
+    """What a transformation does to the notes, in a sentence, under the
+    tiles: an icon says which shape, not what happens to a chunk or a seed."""
+    descriptions = {
+        "": tr("MainWindow", "Notes keep the positions they have now."),
+        "text": tr("MainWindow", "Spells your text out in notes. Each chunk of notes writes the text once."),
+        "drawn_path": tr("MainWindow", "Places notes along a shape you draw, or trace from a picture, in the Drawing window."),
+        "equation": tr("MainWindow", "Places notes along the graph of an equation you type, such as y = sin(x)."),
+        "pinwheel": tr("MainWindow", "Curled blades spinning out from a centre, with an optional ring of notes inside."),
+        "horizontal": tr("MainWindow", "Rows across the playfield, each filled before the next one starts."),
+        "vertical": tr("MainWindow", "Columns down the playfield, each filled before the next one starts."),
+        "taiko": tr("MainWindow", "Rows of a fixed number of beats, notes spaced by their real timing, like a taiko lane."),
+        "vertical_taiko": tr("MainWindow", "The Taiko layout on its side: columns of fixed beats, spaced by timing."),
+        "dvd_bouncing": tr("MainWindow", "Travels in straight lines and bounces off the playfield edges, like the DVD logo."),
+        "circle": tr("MainWindow", "Notes evenly spaced around a circle. Each chunk of notes draws one circle."),
+        "ellipse": tr("MainWindow", "Notes evenly spaced around an ellipse. Each chunk of notes draws one ellipse."),
+        "square": tr("MainWindow", "Notes evenly spaced around a square. Each chunk of notes draws one square."),
+        "triangle": tr("MainWindow", "Notes evenly spaced around a triangle. Each chunk of notes draws one triangle."),
+        "diamond": tr("MainWindow", "Notes evenly spaced around a diamond. Each chunk of notes draws one diamond."),
+        "infinity": tr("MainWindow", "Notes around a figure eight. Each chunk of notes draws one loop of it."),
+        "star": tr("MainWindow", "Notes around a star, in and out between its points. Each chunk draws one star."),
+        "spiral": tr("MainWindow", "Notes winding outward from the start radius to the end radius."),
+        "arc": tr("MainWindow", "Notes along part of an ellipse, from the start angle through the sweep."),
+        "straight_line": tr("MainWindow", "Notes evenly spaced along one straight line."),
+        "wave": tr("MainWindow", "Notes along a sine wave: width, height and number of cycles are yours."),
+        "zigzag": tr("MainWindow", "Notes along a zigzag of sharp turns."),
+        "random_walk": tr("MainWindow", "Each note steps on from the last in a slowly turning direction, bouncing off the edges."),
+        "random": tr("MainWindow", "Every note at a random spot. The same seed brings the same layout back."),
+    }
+    return descriptions.get(name, "")
 
 
 def section_caption(text: str) -> QLabel:
@@ -1208,11 +1382,11 @@ class TransformCanvas(QWidget):
         self._update_view_geometry()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.fillRect(self.rect(), theme.color("#11151c"))
+        painter.fillRect(self.rect(), theme.screen("#11151c"))
         backdrop = self._scaled_background()
         if backdrop is not None:
             painter.drawPixmap(self.render_rect.topLeft(), backdrop)
-        painter.setPen(QPen(theme.color("#465164"), 1))
+        painter.setPen(QPen(theme.screen("#465164"), 1))
         painter.drawRect(
             self.playfield_rect
         )
@@ -1426,10 +1600,13 @@ def mod_pill_style(mod: str) -> str:
             round(base.green() + (own.green() - base.green()) * amount),
             round(base.blue() + (own.blue() - base.blue()) * amount),
         ).name()
+    # White on a light theme's faint tint was unreadable: there an unlit
+    # pill takes the theme's text, and only the lit one stays white.
+    text = "#ffffff" if base.lightness() < 128 else theme.color("#e8edf3").name()
     return (
-        f"QPushButton {{ background: {mix(0.16)}; color: #ffffff;"
+        f"QPushButton {{ background: {mix(0.16)}; color: {text};"
         f" border-bottom: 2px solid {mix(0.7)}; }}"
-        f"QPushButton:hover {{ background: {MOD_HOVERS.get(mod) or mix(0.32)}; color: #ffffff; }}"
+        f"QPushButton:hover {{ background: {MOD_HOVERS.get(mod) or mix(0.32)}; color: {text}; }}"
         f"QPushButton:checked {{ background: {MOD_FILLS.get(mod, colour)}; color: #ffffff; font-weight: 700;"
         " border-bottom: 2px solid #ffffff; }"
     )
@@ -1660,7 +1837,9 @@ class MapBackdrop(QWidget):
     @staticmethod
     def ground() -> QColor:
         # Read as it paints, so a theme switch reaches it (theme.switch).
-        return theme.color("#191f29")
+        # Through `screen`: NSO's editor floor is its pastel pink, and the
+        # sticker wallpaper is the Songs page's alone (owner, 2026-10-12).
+        return theme.screen("#191f29")
 
     def __init__(self) -> None:
         super().__init__()
@@ -1690,12 +1869,12 @@ class MapBackdrop(QWidget):
         size = self.size()
         baked = QPixmap(size)
         baked.fill(self.ground())
+        painter = QPainter(baked)
         if self._source is not None and self._percent > 0:
             cover = self._source.scaled(size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-            painter = QPainter(baked)
             painter.setOpacity(self._percent / 100.0)
             painter.drawPixmap((size.width() - cover.width()) // 2, (size.height() - cover.height()) // 2, cover)
-            painter.end()
+        painter.end()
         return baked
 
     def paintEvent(self, event) -> None:
@@ -2287,29 +2466,7 @@ class MainWindow(QMainWindow):
         self.app_name="Taiko Fancy Arranger";self.setWindowTitle(self.app_name)
         icon=application_icon()
         if not icon.isNull():self.setWindowIcon(icon)
-        # Exo 2 at the system font's size, two points up: the default reads
-        # small on the dense editor pages, and raising the application font
-        # (rather than a stylesheet px size) keeps every dialog and DPI scaling
-        # in step. Without the bundled file, the system face.
-        base_font = QFontDatabase.systemFont(QFontDatabase.GeneralFont)
-        family = ui_font_family()
-        if family:
-            base_font.setFamily(family)
-            # Exo 2 carries no hinting instructions, and Windows' default is
-            # full (GDI-style) hinting, which snaps every glyph to whole pixels:
-            # the letters came out unevenly spaced ("m a pp e d"). Vertical
-            # hinting keeps baselines crisp and places glyphs fractionally.
-            base_font.setHintingPreference(QFont.PreferVerticalHinting)
-            # Grayscale, as osu! draws it. Only the FreeType engine honours
-            # this -- see main() for why that is the engine.
-            base_font.setStyleStrategy(QFont.NoSubpixelAntialias)
-        if base_font.pointSizeF() > 0:
-            base_font.setPointSizeF(base_font.pointSizeF() + UI_FONT_POINT_BOOST)
-        elif base_font.pixelSize() > 0:
-            # A pixel-defined system font reports pointSizeF() as -1; adding to
-            # that would set a 1pt font instead of a slightly larger one.
-            base_font.setPixelSize(base_font.pixelSize() + 3)
-        QApplication.instance().setFont(base_font)
+        apply_ui_font()
         self.resize(1360, 900)
 
         self.settings = SettingsManager()
@@ -3010,7 +3167,7 @@ class MainWindow(QMainWindow):
     def open_settings(self) -> None:
         dialog = SettingsDialog(self.settings, self.shortcuts, self)
         # Applied from here because settings_dialog cannot import gui -- gui
-        # imports it. Same route ImageTraceDialog's spin boxes take.
+        # imports it. Same route ImageTraceDialog's result takes.
         # The volume sliders are heard while they move; nothing is written
         # until OK, and the re-apply below puts a cancelled change back.
         def live_volumes(_value=None):
@@ -3056,6 +3213,7 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         central = QWidget()
+        central.setObjectName("appRoot")
         root = QVBoxLayout(central)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(7)
@@ -3066,7 +3224,12 @@ class MainWindow(QMainWindow):
         # themselves (top-right). Difficulty/Play/Reset/AR/CS and the old
         # file-dialog export are Fancy-Arranger-specific and live on that
         # page instead -- see _build_fancy_arranger_page.
-        header = QHBoxLayout()
+        # In a frame of its own, which NSO draws as a window on its wallpaper
+        # (windose.app_chrome); every other theme sees the plain ground.
+        self.app_header = QFrame()
+        self.app_header.setObjectName("appHeader")
+        header = QHBoxLayout(self.app_header)
+        header.setContentsMargins(0, 0, 0, 0)
 
         open_button = QPushButton(tr("MainWindow", "Open .osu"))
         open_button.clicked.connect(self.open_map)
@@ -3182,7 +3345,8 @@ class MainWindow(QMainWindow):
         self._tab_glide = SegmentGlide(self.page_tabs, page_buttons)
         header.addWidget(self.page_tabs)
 
-        root.addLayout(header)
+        root.addWidget(self.app_header)
+        self._style_app_root()
 
         self.page_stack = QStackedWidget()
         self.library_page = self._library.build_page()
@@ -3475,13 +3639,8 @@ class MainWindow(QMainWindow):
         # The Transform dock takes the full height beside the canvas, as in
         # the mockup, rather than stopping at the timeline.
         docks.setCorner(Qt.BottomRightCorner, Qt.RightDockWidgetArea)
-        docks.setStyleSheet(
-            "QDockWidget { color: #7d8794; font-weight: 700; }"
-            "QDockWidget::title { background: #1e2530; padding: 4px 8px; border-bottom: 1px solid #303947; }"
-            "QMainWindow::separator { background: transparent; width: 8px; height: 8px; }"
-            "QMainWindow::separator:hover { background: #ff66aa; }"
-        )
         self.fancy_docks = docks
+        self._style_fancy_docks()
         page_layout.addWidget(docks, 1)
 
         self.canvas = TransformCanvas()
@@ -3715,6 +3874,7 @@ class MainWindow(QMainWindow):
         self.fancy_timeline_dock.setMinimumHeight(120)
         docks.addDockWidget(Qt.BottomDockWidgetArea, self.fancy_timeline_dock)
 
+        windose.dress_docks((self.fancy_transform_dock, self.fancy_timeline_dock))
         self._fancy_default_dock_state = docks.saveState()
         saved = self.settings.value("fancy/dock_state")
         if isinstance(saved, (QByteArray, bytes)) and saved:
@@ -3844,6 +4004,11 @@ class MainWindow(QMainWindow):
             # Arrows step through the songs straight away, no click first.
             self._library.song_list.setFocus()
             state = getattr(self, "state", None)
+            if leaving != PAGE_LIBRARY and state is not None and state.source_path is not None:
+                # The list back on the chart being edited: a song picked here
+                # and then left by the Editor tab stayed selected, under the
+                # edited song's music.
+                self._library.select_chart(state.source_path)
             if leaving != PAGE_LIBRARY and state is not None and state.audio_path is not None:
                 # The song goes on from the playhead, on the library's own
                 # player: 1.00x and the track's own pitch whatever speed or
@@ -4202,10 +4367,29 @@ class MainWindow(QMainWindow):
             for widget in self.findChildren(kind)
         ])
 
+    def _style_fancy_docks(self) -> None:
+        """The Fancy page's dock area, with NSO's window outline under a
+        theme that draws window chrome (re-run on a theme switch)."""
+        self.fancy_docks.setStyleSheet(
+            "QDockWidget { color: #7d8794; font-weight: 700; }"
+            "QDockWidget::title { background: #1e2530; padding: 4px 8px; border-bottom: 1px solid #303947; }"
+            "QMainWindow::separator { background: transparent; width: 8px; height: 8px; }"
+            "QMainWindow::separator:hover { background: #ff66aa; }"
+            + (windose.DOCK_CHROME if windose.active() else "")
+        )
+
+    def _style_app_root(self) -> None:
+        """NSO's desktop behind the whole window and its colours on the
+        window's own title bar; nothing under any other theme."""
+        self.centralWidget().setStyleSheet(windose.app_chrome() if windose.active() else "")
+        windose.dress_title_bar(self)
+
     def retheme(self) -> None:
         """Redo what a theme switch does not reach on its own (theme.switch
         re-translates every stylesheet; paint code reads theme.color as it
         paints): sheets built from a computed colour, and cached layers."""
+        apply_ui_font()
+        self._style_app_root()
         for buttons in getattr(self, "_mod_buttons", ()):
             for mod, button in buttons.items():
                 button.setStyleSheet(mod_pill_style(mod))
@@ -4214,6 +4398,19 @@ class MainWindow(QMainWindow):
             bar.static_layer_dirty = True
         for backdrop in getattr(self, "_backdrops", ()):
             backdrop._baked = None
+        for control in self.findChildren(DifficultyValueControl):
+            control.fit_value_box()
+        # Pens the views build once, some of them in screen colours.
+        for view in (*self.findChildren(TimelineGameplay), *self.findChildren(SVEditorView),
+                     *self.findChildren(GameplayViewerView)):
+            view.restyle_pens()
+        self._library.restyle()
+        if hasattr(self, "fancy_docks"):
+            self._style_fancy_docks()
+            windose.dress_docks((self.fancy_transform_dock, self.fancy_timeline_dock))
+        # Drawn once into pixmaps, in the colours of the theme they were made in.
+        for tile in self.findChildren(QToolButton, "shapeTile"):
+            tile.setIcon(shape_icon(tile.property("shapeName")))
         for widget in QApplication.allWidgets():
             widget.update()
 
@@ -9239,6 +9436,9 @@ class MainWindow(QMainWindow):
         super().showEvent(event)
         self._follow_screen()
         self._apply_selected_toggle_style()
+        # Checked whenever one plays, so it is sized for its bold label.
+        for button, _actions in getattr(self, "_autoplay_menus", ()):
+            fit_button_width(button)
         # One size for every tool button, across both rows: they swap in and out
         # of the same spot, so per-label widths made the row re-flow on every
         # switch. Here rather than at build time because the toggle style above
@@ -9375,11 +9575,14 @@ class MainWindow(QMainWindow):
         combo.addItem(tr("MainWindow", "None"), "")
         for name in GUI_TRANSFORMATIONS: combo.addItem(display_name(name), name)
 
-        layout.addWidget(section_caption(tr("MainWindow", "Shape")))
+        shape_card = inspector_card(layout, tr("MainWindow", "Shape"))
+        # Tight sides: every pixel of the card's padding comes off four tiles,
+        # and at 12px "Vertical Taiko" and "Random Walk" were elided.
+        shape_card.setContentsMargins(4, 10, 4, 12)
         tiles = QWidget()
         grid = QGridLayout(tiles)
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(6)
+        grid.setSpacing(4)
         tile_group = QButtonGroup(page)
         tile_group.setExclusive(True)
         columns = 4
@@ -9389,7 +9592,8 @@ class MainWindow(QMainWindow):
             tile.setCheckable(True)
             tile.setFocusPolicy(Qt.NoFocus)
             tile.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-            tile.setIcon(shape_icon(str(combo.itemData(index) or "none")))
+            tile.setProperty("shapeName", str(combo.itemData(index) or "none"))
+            tile.setIcon(shape_icon(tile.property("shapeName")))
             tile.setIconSize(QSize(32, 22))
             tile.setText(combo.itemText(index))
             tile.setToolTip(combo.itemText(index))
@@ -9399,17 +9603,24 @@ class MainWindow(QMainWindow):
             grid.addWidget(tile, index // columns, index % columns)
         for column in range(columns):
             grid.setColumnStretch(column, 1)
+        TileLabelFitter(tile_group.buttons())
         tile_group.idClicked.connect(combo.setCurrentIndex)
         combo.currentIndexChanged.connect(lambda index: tile_group.button(index).setChecked(True))
         tile_group.button(0).setChecked(True)
-        layout.addWidget(tiles)
+        shape_card.addWidget(tiles)
+        shape_note = QLabel(shape_description(""))
+        shape_note.setObjectName("shapeNote")
+        shape_note.setWordWrap(True)
+        shape_note.setContentsMargins(6, 0, 6, 0)
+        combo.currentIndexChanged.connect(lambda _index: shape_note.setText(shape_description(str(combo.currentData() or ""))))
+        shape_card.addWidget(shape_note)
 
-        layout.addWidget(section_caption(tr("MainWindow", "Parameters")))
+        parameter_card = inspector_card(layout, tr("MainWindow", "Parameters"))
         form_widget = QWidget()
         form = QVBoxLayout(form_widget)
         form.setContentsMargins(0, 0, 0, 0)
-        form.setSpacing(10)
-        layout.addWidget(form_widget)
+        form.setSpacing(12)
+        parameter_card.addWidget(form_widget)
         equation_keyboard_button = QPushButton("⌨")
         equation_keyboard_button.setToolTip(tr("MainWindow", "Show or hide equation keyboard"))
         equation_keyboard_button.setCheckable(True)
@@ -9864,15 +10075,39 @@ class MainWindow(QMainWindow):
         }
 
     def _apply_preview_offsets(self, positions: dict[int, tuple[int, int]]) -> dict[int, tuple[int, int]]:
+        """The Position X/Y offset on top of each group's shape, kept on the
+        osu! editing canvas.
+
+        The offset is clamped when the slider or a canvas drag sets it, but
+        against the shape *of that moment*; it is then stored and re-added to
+        whatever shape later parameters build. A circle offset right and then
+        given Radius 250 committed a note at x=552 -- off the playfield the
+        editor can show or reach. So the translation is fitted here, where
+        preview and Apply both pass, and a shape bigger than the playfield
+        is clamped point by point as the last word.
+
+        ponytail: an oversized shape is clamped flat against the edge, not
+        scaled to fit; scale it in the transformer if that ever matters.
+        """
         output = dict(positions)
         note_by_index = {note.original_index: note for note in self.document.hit_objects}
+        groups: dict[str, list[int]] = {}
         for index in self.selected:
-            group = "kat" if note_by_index[index].is_kat else "don"
-            offset_key = "all" if not self._is_split_mode() else group
-            dx, dy = self.preview_offsets[offset_key]
             if index in output:
+                group = "kat" if note_by_index[index].is_kat else "don"
+                groups.setdefault("all" if not self._is_split_mode() else group, []).append(index)
+        for offset_key, indexes in groups.items():
+            dx, dy = self.preview_offsets[offset_key]
+            xs = [output[index][0] for index in indexes]
+            ys = [output[index][1] for index in indexes]
+            dx = max(-min(xs), min(PLAYFIELD_WIDTH - max(xs), dx))
+            dy = max(-min(ys), min(PLAYFIELD_HEIGHT - max(ys), dy))
+            for index in indexes:
                 x, y = output[index]
-                output[index] = (round(x + dx), round(y + dy))
+                output[index] = (
+                    min(max(round(x + dx), 0), round(PLAYFIELD_WIDTH)),
+                    min(max(round(y + dy), 0), round(PLAYFIELD_HEIGHT)),
+                )
         return output
 
     def _position_slider_changed(self, group: str) -> None:

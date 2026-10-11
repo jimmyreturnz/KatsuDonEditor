@@ -100,15 +100,10 @@ class WindowTestCase(unittest.TestCase):
 
 class HeaderStatusPositionTests(WindowTestCase):
     def _header_order(self):
-        layout = self.window.settings_button.parentWidget().layout()
-        for i in range(layout.count()):
-            sub = layout.itemAt(i).layout()
-            if sub is None:
-                continue
-            widgets = [sub.itemAt(j).widget() for j in range(sub.count())]
-            if self.window.settings_button in widgets:
-                return {widget: j for j, widget in enumerate(widgets) if widget is not None}
-        self.fail("global header row not found")
+        # The header is a frame of its own (NSO draws it as a window).
+        row = self.window.settings_button.parentWidget().layout()
+        widgets = [row.itemAt(j).widget() for j in range(row.count())]
+        return {widget: j for j, widget in enumerate(widgets) if widget is not None}
 
     def test_status_message_is_in_the_status_bar(self):
         # Not the header: a message there read as a caption of the buttons

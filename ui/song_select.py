@@ -78,7 +78,7 @@ from ui.smooth_scroll import SmoothScroller, reduced_motion
 from ui.config_sheet import segmented
 from library.skin import UI_SOUNDS
 from app.i18n import tr
-from ui import theme
+from ui import theme, windose
 from osu_io.parser import parse_osu
 from library.song_library import (
     group_by_song,
@@ -503,8 +503,11 @@ class DifficultyRowDelegate(QStyledItemDelegate):
         pill_font.setPointSizeF(pill_font.pointSizeF() * 0.82)
         pill_text = f"★ {stars:.2f}" if stars is not None else "★ –"
         pill_metrics = QFontMetrics(pill_font)
-        pill = QRectF(inner.left(), inner.top(), max(52, pill_metrics.horizontalAdvance(pill_text) + 16),
-                      pill_metrics.height() + 4)
+        # Centred: the row's second line was the mapper, which the song row
+        # above already names (owner, 2026-10-12).
+        pill_height = pill_metrics.height() + 4
+        pill = QRectF(inner.left(), inner.center().y() - pill_height / 2,
+                      max(52, pill_metrics.horizontalAdvance(pill_text) + 16), pill_height)
         painter.setOpacity(0.5 if row.get("stale") else 1.0)
         painter.setPen(QPen(QColor(255, 255, 255, 102), 1, Qt.DashLine) if row.get("stale") else Qt.NoPen)
         painter.setBrush(star_colour(stars))
@@ -522,14 +525,6 @@ class DifficultyRowDelegate(QStyledItemDelegate):
         painter.setPen(theme.color(ROW_INK))
         painter.drawText(QRectF(text_left, pill.top(), max(0, width), pill.height()), Qt.AlignLeft | Qt.AlignVCenter,
                          QFontMetrics(name_font).elidedText(index.data() or "", Qt.ElideRight, max(0, width)))
-        by_font = QFont(option.font)
-        by_font.setPointSizeF(by_font.pointSizeF() * 0.86)
-        painter.setFont(by_font)
-        painter.setPen(theme.color(ROW_INK_3))
-        painter.drawText(QRectF(inner.left(), inner.top(), inner.width() - stats_width - 12, inner.height()),
-                         Qt.AlignLeft | Qt.AlignBottom,
-                         QFontMetrics(by_font).elidedText(row.get("by", ""), Qt.ElideRight,
-                                                          int(inner.width() - stats_width - 12)))
         painter.restore()
 
 
@@ -894,11 +889,13 @@ class SongBanner(QWidget):
             painter.setOpacity(self._text_in)
             painter.translate(0, self.TEXT_RISE_PX * (1.0 - self._text_in))
         painter.setFont(sub_font)
-        painter.setPen(theme.color("#d5dce5"))
+        # White in every theme: the wash under it is a fixed near-black, and
+        # NSO's ink once drew the title navy on it (owner, 2026-10-12).
+        painter.setPen(QColor("#d5dce5"))
         painter.drawText(text, Qt.AlignLeft | Qt.AlignBottom,
                          QFontMetrics(sub_font).elidedText(self.subtitle, Qt.ElideRight, int(text.width())))
         painter.setFont(title_font)
-        painter.setPen(theme.color(ROW_INK))
+        painter.setPen(QColor("#ffffff"))
         painter.drawText(text.adjusted(0, 0, 0, -sub_height), Qt.AlignLeft | Qt.AlignBottom | Qt.TextWordWrap,
                          self.title)
         painter.restore()
@@ -1356,11 +1353,13 @@ class LibraryPageController:
         # the box that filters it; the pills head the right, and the detail
         # pane rises to sit right under them.
         left = QWidget()
+        left.setObjectName("libraryColumn")
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(8)
         left_layout.addWidget(self.library_search)
         right = QWidget()
+        right.setObjectName("libraryColumn")
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
@@ -1368,6 +1367,7 @@ class LibraryPageController:
 
         # Continue: the last charts opened here, one click from reopening.
         self.continue_row = QWidget()
+        self.continue_row.setObjectName("continueRow")
         continue_layout = QHBoxLayout(self.continue_row)
         continue_layout.setContentsMargins(0, 0, 0, 0)
         continue_layout.setSpacing(8)
@@ -1389,6 +1389,7 @@ class LibraryPageController:
         left_layout.addWidget(self.continue_row)
 
         split = QSplitter(Qt.Horizontal)
+        split.setObjectName("librarySplit")
         split.setChildrenCollapsible(False)
         self.song_list = QListWidget()
         song_rows = SongRowDelegate(self.song_list)
@@ -1511,6 +1512,7 @@ class LibraryPageController:
         split.setStretchFactor(1, 100)
         split.setSizes([740, 510])
         layout.addWidget(split, 1)
+        self._split, self._handle_width = split, split.handleWidth()
 
         footer = QHBoxLayout()
         self.library_status = QLabel(tr("MainWindow", "No songs folder selected yet."))
@@ -1534,7 +1536,24 @@ class LibraryPageController:
         for widget in (self.library_search, self.song_list, self.difficulty_list):
             widget.installEventFilter(self.keys)
 
-        page.setStyleSheet(
+        self.page = page
+        self.restyle()
+        self.refresh_continue_row()
+        self.update_open_button()
+        return page
+
+    def restyle(self) -> None:
+        """The page's sheet, with NSO's desktop under a theme that draws
+        window chrome. Again on a theme switch (MainWindow.retheme)."""
+        desktop = windose.active()
+        self.page.setStyleSheet(self._sheet() + (windose.library_chrome() if desktop else ""))
+        # Room around the two windows for the wallpaper to read as a desktop:
+        # at the page's own 12px it was a striped border, not a floor.
+        self.page.layout().setContentsMargins(*((28, 20, 28, 12) if desktop else (12, 10, 12, 6)))
+        self._split.setHandleWidth(20 if desktop else self._handle_width)
+
+    def _sheet(self) -> str:
+        return (
             f"""
             QListWidget {{ background: #222a36; border: 1px solid #303947; border-radius: 6px; padding: 4px; outline: 0; }}
             QFrame#songDetail {{ background: #222a36; border: 1px solid #303947; border-radius: 6px; }}
@@ -1559,9 +1578,6 @@ class LibraryPageController:
             QProgressBar::chunk {{ background: #f3a6bd; border-radius: 2px; }}
             """
         )
-        self.refresh_continue_row()
-        self.update_open_button()
-        return page
 
     def set_folder_text(self, folder: str) -> None:
         metrics = self.library_folder_label.fontMetrics()
@@ -1711,6 +1727,16 @@ class LibraryPageController:
         sibling meant opening, backing out and choosing again. Enter or a
         double click opens it from here, as for any other selection.
         """
+        if not self.select_chart(path):
+            # Not in the library at all (a chart outside the Songs folder):
+            # there is nothing to select, so opening is the only thing to do.
+            self.open_recent(path)
+            return
+        self.difficulty_list.setFocus()
+
+    def select_chart(self, path) -> bool:
+        """Put the lists on `path`'s song and difficulty; False when the song
+        is not in the library."""
         wanted = os.path.normcase(str(Path(path).resolve()))
         folder = os.path.normcase(str(Path(path).resolve().parent))
         row = self._song_row_for(folder)
@@ -1719,10 +1745,7 @@ class LibraryPageController:
             self.library_search.clear()
             row = self._song_row_for(folder)
         if row is None:
-            # Not in the library at all (a chart outside the Songs folder):
-            # there is nothing to select, so opening is the only thing to do.
-            self.open_recent(path)
-            return
+            return False
         self.song_list.setCurrentRow(row)
         self.song_list.scrollToItem(self.song_list.item(row))
         for index in range(self.difficulty_list.count()):
@@ -1730,7 +1753,7 @@ class LibraryPageController:
             if os.path.normcase(str(Path(item.data(Qt.UserRole)).resolve())) == wanted:
                 self.difficulty_list.setCurrentRow(index)
                 break
-        self.difficulty_list.setFocus()
+        return True
 
     def _song_row_for(self, folder: str) -> int | None:
         for row in range(self.song_list.count()):
@@ -2004,7 +2027,7 @@ class LibraryPageController:
                 font = header.font()
                 font.setBold(True)
                 header.setFont(font)
-                header.setForeground(theme.color(ACCENT_PINK))
+                header.setForeground(theme.text(ACCENT_PINK))
                 self.song_list.addItem(header)
             item = QListWidgetItem(text)
             item.setData(Qt.UserRole, str(folder))
@@ -2077,7 +2100,6 @@ class LibraryPageController:
             timing = self._timing_text(difficulty, self._common_bpm.get(difficulty.path))
             entry_item.setData(ROW_ROLE, {
                 "stars": stars, "stale": stale, "stats": (notes, timing), "notes": difficulty.notes,
-                "by": tr("MainWindow", "mapped by {name}").format(name=difficulty.creator) if difficulty.creator else "",
             })
             tip = difficulty.path.name
             if stale:

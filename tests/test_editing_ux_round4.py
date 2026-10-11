@@ -130,6 +130,32 @@ class FancyArrangerApplyTests(WindowTestCase):
         self.window.apply_selection()
         self.assertEqual(self.window.applied_positions[key], shown)
 
+    def _assert_on_playfield(self, keys):
+        for key in keys:
+            x, y = self.window.applied_positions[key]
+            self.assertTrue(0 <= x <= 512 and 0 <= y <= 384, (key, x, y))
+
+    def test_a_stale_offset_never_carries_notes_off_the_playfield(self):
+        """The offset is clamped against the shape when it is set, then stored
+        and re-added to whatever later parameters build (Text, Margin X 0:
+        a note at y=-1). Set past the edge directly, as a stale one is."""
+        keys = [n.original_index for n in self.state.document.hit_objects[:6]]
+        self._prepare("text")
+        self.window.preview_offsets["all"] = [512.0, -384.0]
+        self.window.preview_cache.clear()
+        self.window.apply_selection()
+        self._assert_on_playfield(keys)
+
+    def test_a_centre_at_the_edge_never_puts_the_shape_past_it(self):
+        """Center X 500 with the largest radius reached x=690."""
+        keys = [n.original_index for n in self.state.document.hit_objects[:6]]
+        self._prepare("circle")
+        self.window.controls["all"]["center_x"].set_value(500)
+        self.window.controls["all"]["radius"].set_value(190)
+        self.window.preview_cache.clear()
+        self.window.apply_selection()
+        self._assert_on_playfield(keys)
+
 
 # -- effective SV per timestamp ---------------------------------------------
 

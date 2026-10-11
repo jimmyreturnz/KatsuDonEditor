@@ -2486,8 +2486,8 @@ class SVFunctionPreview(QWidget):
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.fillRect(self.rect(), theme.color("#151b24"))
-        painter.setPen(QPen(theme.color("#3a4554"), 1))
+        painter.fillRect(self.rect(), theme.screen("#151b24"))
+        painter.setPen(QPen(theme.screen("#3a4554"), 1))
         painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
 
         margin = 22.0 if self.labels else 10.0
@@ -2509,7 +2509,7 @@ class SVFunctionPreview(QWidget):
         painter.setPen(QPen(theme.rgba(243, 166, 189, 110), 1))
         painter.drawPolyline(QPolygonF(dots))
         painter.setPen(Qt.NoPen)
-        painter.setBrush(theme.color("#f3a6bd"))
+        painter.setBrush(theme.screen("#f3a6bd"))
         radius = 3 if self.labels else 2
         for dot in dots:
             painter.drawEllipse(dot, radius, radius)

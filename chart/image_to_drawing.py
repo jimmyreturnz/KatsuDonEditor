@@ -173,15 +173,29 @@ def fit_strokes(strokes, width: float, height: float, margin: float = 12.0):
     ]
 
 
-def trace_image(path: str | Path, options: TraceOptions):
-    image = load_image(path)
-    mask = _mask(image, options)
-    loops = _trace_loops(_boundary_edges(mask))
+def trace_loops(image: QImage, options: TraceOptions):
+    """Every outline in `image`, in its own pixels. The slow half: it reads
+    mode, threshold and invert, and nothing else, so the dialog keeps its
+    result while the other two settings move (~2s on a 1024px screenshot)."""
+    return _trace_loops(_boundary_edges(_mask(image, options)))
+
+
+def refine_loops(loops, options: TraceOptions):
+    """`trace_loops`' outlines with the specks dropped and the points thinned,
+    still in image pixels. The fast half: minimum length and simplification."""
     minimum = max(4, int(options.minimum_component))
-    loops = [loop for loop in loops if len(loop) >= minimum]
-    strokes = [_simplify(loop, float(options.simplify_distance)) for loop in loops]
+    strokes = [_simplify(loop, float(options.simplify_distance)) for loop in loops if len(loop) >= minimum]
     strokes = [stroke for stroke in strokes if len(stroke) >= 3]
+    strokes.sort(key=lambda stroke: (min(y for _, y in stroke), min(x for x, _ in stroke)))
+    return strokes
+
+
+def to_playfield(strokes):
+    return fit_strokes(strokes, PLAYFIELD_WIDTH, PLAYFIELD_HEIGHT, margin=12.0)
+
+
+def trace_image(path: str | Path, options: TraceOptions):
+    strokes = refine_loops(trace_loops(load_image(path), options), options)
     if not strokes:
         raise ValueError("No usable outlines were detected")
-    strokes.sort(key=lambda stroke: (min(y for _, y in stroke), min(x for x, _ in stroke)))
-    return fit_strokes(strokes, PLAYFIELD_WIDTH, PLAYFIELD_HEIGHT, margin=12.0)
+    return to_playfield(strokes)

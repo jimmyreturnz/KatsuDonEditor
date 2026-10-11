@@ -89,6 +89,65 @@ THEMES = {
     "monokai": ("#a6e22e", "#272822", "#f92672", "#e6db74",
                 ("#1e1f1c", "#22231f", "#272822", "#3e3d32", "#49483e",
                  "#5b5a4c", "#75715e", "#a59f85", "#f8f8f2")),
+    # Needy Streamer Overload's desktop: light pink boxes with black text on
+    # the stripe wallpaper (windose), light pink buttons that turn heart pink
+    # once checked. Owner, 2026-10-12, after navy text on lilac and then
+    # light pink on violet: "light pink instead of purple everywhere".
+    "nso": ("#ffc6e3", "#111111", "#ff7baf", "#d6247a",
+            ("#fff0f7", "#ffe4f1", "#ffeaf4", "#ffd9eb", "#ffcae3",
+             "#f29cc6", "#a0708a", "#5c3a4d", "#111111")),
+}
+
+# A theme's own UI face, a file in assets/fonts (SIL OFL, licence beside it).
+# NSO's is M PLUS Rounded 1c, which covers kana and kanji too. It was the
+# pixel DotGothic16, which cannot be smooth under 16px and whose i and l
+# were a pixel apart (owner, 2026-10-12). A "-Regular" file's "-Bold"
+# sibling is registered with it. A theme not named here keeps Exo 2.
+FONTS = {
+    "nso": "MPLUSRounded1c-Regular.ttf",
+}
+# The face its window titles are set in, where a theme draws window chrome.
+TITLE_FONTS = {
+    "nso": "PressStart2P-Regular.ttf",
+}
+
+# Single colours a theme sets outright, after its steps and families. NSO's
+# checked tile is a solid pink; followed from the focus family it kept the
+# dark tint's lightness and read as black.
+OVERRIDES = {
+    "nso": {"#2a2230": "#ff9ccb"},
+}
+
+# Where a theme's primary fill is too light to be text, text written in it
+# (`color: #f3a6bd`, `text()`) takes another colour: the difficulty name and
+# the values were NSO's light pink on its light pink boxes.
+TEXT_OVERRIDES = {
+    "nso": {"#f3a6bd": "#d6247a"},
+}
+_TEXT_COLOR = re.compile(r"(?<![-\w])(color\s*:\s*)#([0-9a-fA-F]{6})(?![0-9a-fA-F])")
+
+# What chart content is painted on: lanes, the playfield, the SV graph, the
+# gameplay preview's built-in lane. A theme not named here paints its screens
+# in its own steps. NSO's are the wallpaper's pastel pink (owner, 2026-10-12:
+# "match with nso theme, like pink"), lightest-first like its chrome.
+SCREEN_STEPS = {
+    "nso": ("#ffe9f6", "#ffd9f0", "#ffe2f3", "#fbd0ea", "#f6c2e3",
+            "#e59ccb", "#a0708a", "#5c3a4d", "#111111"),
+}
+
+# Chart colours a light screen cannot show, only where chart content is
+# painted (`screen`, `screen_rgba`). A dark lane's white barline, playhead and
+# note outline become NSO's deep pink; osu!'s palest snap ticks keep their hue a
+# shade deeper, so 1/6 is still yellow and 1/7 still aqua on the pink.
+SCREEN_OVERRIDES = {
+    "nso": {
+        "#ffffff": "#c2185b", "#f4f7fb": "#c2185b", "#f2f2f2": "#c2185b",
+        "#e1e6f0": "#7a1442",
+        "#f2d34f": "#b88400", "#8bd1ff": "#2f86c9", "#55d6be": "#12917c",
+        "#ffdc6e": "#d97a00", "#ffd400": "#b88400",
+        "#5ae182": "#1f9e55", "#8cffb9": "#1f9e55", "#1c212b": "#ffd9f0",
+        "#000000": "#ffd9f0",
+    },
 }
 
 
@@ -148,11 +207,13 @@ def _between_steps(member: str, steps: tuple[str, ...]) -> str:
     return "#%02x%02x%02x" % tuple(round(x + (y - x) * f) for x, y in zip(a, b))
 
 
-def build_map(name: str) -> dict[str, str]:
+def build_map(name: str, screen: bool = False) -> dict[str, str]:
     spec = THEMES.get(name)
     if not spec:
         return {}
     primary, ink, focus, accent, steps = spec
+    if screen:
+        steps = SCREEN_STEPS.get(name, steps)
     mapping = {}
     # An anchor a theme keeps keeps its family too: `_follow` takes the
     # target's hue outright, so following pink onto pink would still turn
@@ -168,6 +229,9 @@ def build_map(name: str) -> dict[str, str]:
     if steps is not None:
         for member in _NEUTRALS:
             mapping[member] = _between_steps(member, steps)
+    mapping.update(OVERRIDES.get(name, {}))
+    if screen:
+        mapping.update(SCREEN_OVERRIDES.get(name, {}))
     return mapping
 
 
@@ -182,6 +246,7 @@ _svg_copies: dict[tuple[str, str], str] = {}
 
 _active = DEFAULT
 _map: dict[str, str] = {}
+_screen_map: dict[str, str] = {}
 _focus_rgb = "255, 102, 170"
 
 
@@ -190,8 +255,18 @@ def css(text: str) -> str:
     if not _map or not text:
         return text
     text = _SVG_URL.sub(lambda m: f"url({m.group(1)}{svg_asset(m.group(2))}{m.group(1)})", text)
+    overrides = TEXT_OVERRIDES.get(_active)
+    if overrides:
+        text = _TEXT_COLOR.sub(lambda m: m.group(1) + overrides.get("#" + m.group(2).lower(), "#" + m.group(2)), text)
     text = _HEX.sub(lambda m: _map.get("#" + m.group(1).lower(), m.group(0)), text)
     return _FOCUS_RGBA.sub(f"rgba({_focus_rgb},", text)
+
+
+def text(value) -> QColor:
+    """`color()` for text drawn in code (TEXT_OVERRIDES)."""
+    if isinstance(value, str):
+        value = TEXT_OVERRIDES.get(_active, {}).get(value.lower(), value)
+    return color(value)
 
 
 def color(value) -> QColor:
@@ -199,6 +274,27 @@ def color(value) -> QColor:
     if isinstance(value, str) and _map:
         value = _map.get(value.lower(), value)
     return QColor(value)
+
+
+def has_screens() -> bool:
+    """Whether the active theme paints chart content darker than its chrome."""
+    return _active in SCREEN_STEPS
+
+
+def screen(value) -> QColor:
+    """`color()` for paint that draws chart content (lanes, the playfield,
+    the SV graph): the theme's SCREEN_STEPS where it has them."""
+    if isinstance(value, str) and _screen_map:
+        value = _screen_map.get(value.lower(), value)
+    return QColor(value)
+
+
+def screen_rgba(r: int, g: int, b: int, a: int = 255) -> QColor:
+    """`screen()` for a colour written as integers, keeping its alpha: the
+    chart's translucent whites, QColor(255, 255, 255, 70) and the like."""
+    colour = screen("#%02x%02x%02x" % (r, g, b))
+    colour.setAlpha(a)
+    return colour
 
 
 def rgba(r: int, g: int, b: int, a: int = 255) -> QColor:
@@ -274,10 +370,11 @@ def active() -> str:
 
 def install(name: str) -> None:
     """Make `name` the theme for this process. Before any widget is built."""
-    global _active, _map, _focus_rgb
+    global _active, _map, _screen_map, _focus_rgb
     name = RENAMED.get(name, name)
     _active = name if name in THEMES or name == AS_WRITTEN else DEFAULT
     _map = build_map(_active)
+    _screen_map = build_map(_active, screen=True) if _active in SCREEN_STEPS else _map
     focus = QColor(_map.get(_FOCUS, _FOCUS))
     _focus_rgb = f"{focus.red()}, {focus.green()}, {focus.blue()}"
     from PySide6.QtWidgets import QApplication, QWidget
@@ -338,11 +435,15 @@ _load()
 
 if __name__ == "__main__":
     for theme_name in THEMES:
-        table = build_map(theme_name)
-        # A theme's output must never be another key, or a colour that passes
-        # through css() twice (a constant baked into a stylesheet) moves twice.
-        clashes = [v for k, v in table.items() if v in table and v != k]
-        assert not clashes, (theme_name, clashes)
+        for table in (build_map(theme_name), build_map(theme_name, screen=True)):
+            # A theme's output must never be another key, or a colour that passes
+            # through css() twice (a constant baked into a stylesheet) moves twice.
+            clashes = [v for k, v in table.items() if v in table and v != k]
+            assert not clashes, (theme_name, clashes)
+    install("nso")
+    assert screen("#151b24").name() == "#ffd9f0", "NSO's lanes are its pastel pink"
+    assert screen("#ffffff").name() == "#c2185b" and color("#ffffff").name() == "#ffffff",         "white lines turn deep pink on the lanes only"
+    assert css("a{color: #f3a6bd; background-color: #f3a6bd}") == "a{color: #d6247a; background-color: #ffc6e3}",         css("a{color: #f3a6bd; background-color: #f3a6bd}")
     install("taiko")
     assert css("a{color:#F3A6BD; b: #ff66aa55; c: rgba(255,102,170,13); d: #e54c2e}") == \
         "a{color:#d4432a; b: #5aa7c755; c: rgba(90, 167, 199,13); d: #e54c2e}", css("a{color:#F3A6BD; b: #ff66aa55; c: rgba(255,102,170,13); d: #e54c2e}")

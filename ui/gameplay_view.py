@@ -489,9 +489,7 @@ class GameplayViewerView(QWidget):
         # chosen and for any element a chosen skin does not ship.
         self.skin = TaikoSkin()
 
-        self.barline_pen = QPen(QColor(225, 230, 240, 90), 1)
-        self.hit_pen = QPen(QColor(255, 255, 255, 120), 2)
-        self.lane_brush = QColor(28, 33, 43)
+        self.restyle_pens()
 
         self.setMinimumHeight(GAMEPLAY_MIN_HEIGHT)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -519,6 +517,16 @@ class GameplayViewerView(QWidget):
         self.autoplay: tuple[str, str, bool] | None = None
         self._half_hits: dict[int, list[float]] = {}
         self._all_hits: list[float] = []
+
+    def restyle_pens(self) -> None:
+        """The built-in lane's pens and fill, for when no skin draws its own:
+        the lane through `theme.screen`, so NSO's is the pastel pink. The
+        barline and hit ring stay osu!'s white in every theme: a skin's dark
+        lane art is drawn over the lane, and NSO's violet on it vanished
+        (owner, 2026-10-12). Rebuilt on retheme."""
+        self.barline_pen = QPen(QColor(225, 230, 240, 90), 1)
+        self.hit_pen = QPen(QColor(255, 255, 255, 120), 2)
+        self.lane_brush = theme.screen_rgba(28, 33, 43)
 
     def resizeEvent(self, event) -> None:
         """Take the height that makes this view exactly an osu! screen.
@@ -1084,7 +1092,7 @@ class GameplayViewerView(QWidget):
         elif self.follows_view_opacity:
             ground = view_ground("#12161d")
         else:
-            ground = theme.color("#12161d")
+            ground = theme.screen("#12161d")
         painter.fillRect(self.rect(), ground)
 
         center_y = self.height() / 2

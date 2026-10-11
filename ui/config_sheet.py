@@ -81,6 +81,8 @@ def control_stylesheet() -> str:
     - **Scroll bars** are a thin handle with no track and no arrows, wider
       under the pointer and pink while held. Qt cannot animate the width, so
       the hover state snaps rather than grows.
+    - **Sliders** are a thin track, pink up to a round handle. Without a rule
+      they were the platform's own, a white groove on every theme.
     """
     up, up_hover, up_off = ui_asset("chevron-up.svg"), ui_asset("chevron-up-hover.svg"), ui_asset("chevron-up-disabled.svg")
     down, down_hover, down_off = ui_asset("chevron-down.svg"), ui_asset("chevron-down-hover.svg"), ui_asset("chevron-down-disabled.svg")
@@ -126,7 +128,7 @@ def control_stylesheet() -> str:
             }}
             QComboBox QAbstractItemView::item {{ min-height: 26px; padding: 0 8px; border-radius: 5px; }}
             QComboBox QAbstractItemView::item:hover {{ background: #2a3341; }}
-            QComboBox QAbstractItemView::item:selected {{ background: #2a2230; color: #ff9dcc; }}
+            QComboBox QAbstractItemView::item:selected {{ background: #2a2230; color: #ffffff; }}
             QCheckBox {{ spacing: 10px; }}
             QCheckBox::indicator {{ width: 30px; height: 18px; image: url({ui_asset("switch-off.svg")}); }}
             QCheckBox::indicator:hover {{ image: url({ui_asset("switch-off-hover.svg")}); }}
@@ -144,6 +146,16 @@ def control_stylesheet() -> str:
             QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; border: 0; background: none; }}
             QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
             QAbstractScrollArea::corner {{ background: transparent; }}
+            /* The window's QWidget rule painted each slider's own box in the
+               ground colour, a pale bar inside the darker AR/CS steppers. */
+            QSlider {{ background: transparent; }}
+            QSlider::groove:horizontal {{ height: 4px; border-radius: 2px; background: #3a4554; }}
+            QSlider::sub-page:horizontal {{ border-radius: 2px; background: #ff66aa; }}
+            QSlider::sub-page:horizontal:disabled {{ background: #3a4554; }}
+            QSlider::handle:horizontal {{
+                width: 14px; height: 14px; margin: -5px 0; border-radius: 7px;
+                background: #f3a6bd; border: 1px solid #ff9dcc;
+            }}
     """
 
 

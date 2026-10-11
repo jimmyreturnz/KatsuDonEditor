@@ -87,6 +87,12 @@ def button_text_width(button: QPushButton) -> int:
     width was pinned before the button ever got heavier, and checking it
     clipped the label again. The advance is now measured with the current
     font AND a bold copy of it, and the wider of the two wins.
+
+    The bold label's extra width is added to the sizeHint floor as well: a
+    menu button's hint holds its arrow, and the floor won over the bold
+    label without paying for the bold. Exo 2's bold is a few pixels wider;
+    NSO's pixel face has no bold, Qt's synthetic one is eight wider, and the
+    checked Autoplay lost its first letter.
     """
     metrics_width = button.fontMetrics().horizontalAdvance(button.text())
     bold_width = 0
@@ -95,7 +101,7 @@ def button_text_width(button: QPushButton) -> int:
         bold_font.setWeight(QFont.Weight.Bold)
         bold_width = QFontMetrics(bold_font).horizontalAdvance(button.text())
     return max(
-        button.sizeHint().width(),
+        button.sizeHint().width() + max(0, bold_width - metrics_width),
         max(metrics_width, bold_width) + button_chrome_width(button),
     )
 
@@ -455,8 +461,13 @@ def view_ground_is_opaque() -> bool:
 
 
 def view_ground(colour: str) -> QColor:
-    """A lane's ground colour at the View opacity in force."""
-    ground = theme.color(colour)
+    """A lane's ground colour at the View opacity in force, in every theme.
+
+    NSO's lanes were held opaque while its floor was the sticker wallpaper;
+    the floor is a pink tint now, and the setting did nothing there (owner,
+    2026-10-12).
+    """
+    ground = theme.screen(colour)
     ground.setAlpha(_view_ground_alpha)
     return ground
 

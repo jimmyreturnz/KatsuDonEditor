@@ -241,23 +241,7 @@ class SVEditorView(TimeAxisMixin, QWidget):
         self._hover_time: float | None = None
         self._hover_sv: float | None = None
 
-        self.red_pen = QPen(QColor(255, 90, 90, 230), 2)
-        self.green_pen = QPen(QColor(90, 225, 130, 230), 2)
-        # Both kinds share this millisecond -- same convention the timing
-        # overview bar already uses for its markers.
-        self.yellow_pen = QPen(QColor(255, 212, 0, 235), 2)
-        self.selected_pen = QPen(QColor(255, 255, 255, 240), 3)
-        self.ghost_pen = QPen(QColor(140, 255, 185, 130), 2, Qt.DashLine)
-        self.graph_pen = QPen(QColor(140, 255, 185, 210), 2)
-        self.range_brush = QColor(190, 195, 205, 40)
-        self.label_pen = QPen(QColor(225, 230, 240, 235), 1)
-        # The numbers on the graph, as the approved mockup draws them: the app
-        # font, bold, and the SV or volume values in the theme's accent so they
-        # read apart from the line labels. Kept off the painter's own font,
-        # which the shared cursor readout also uses.
-        self.label_font = value_label_font(self.font())
-        self.value_pen = QPen(theme.color("#ff9dcc"), 1)
-        self.cursor_pen = QPen(QColor("#ffffff"), 2)
+        self.restyle_pens()
 
         self.setMinimumHeight(self.MIN_HEIGHT)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -274,6 +258,28 @@ class SVEditorView(TimeAxisMixin, QWidget):
         self.setAttribute(Qt.WA_OpaquePaintEvent, view_ground_is_opaque())
 
     # -- data ----------------------------------------------------------------
+
+    def restyle_pens(self) -> None:
+        """The graph's pens, built once. Through `theme.screen`, so on NSO's
+        pink lanes its whites are violet and its pale greens and yellow a
+        shade deeper. Rebuilt on a theme switch (retheme)."""
+        self.red_pen = QPen(QColor(255, 90, 90, 230), 2)
+        self.green_pen = QPen(theme.screen_rgba(90, 225, 130, 230), 2)
+        # Both kinds share this millisecond -- same convention the timing
+        # overview bar already uses for its markers.
+        self.yellow_pen = QPen(theme.screen_rgba(255, 212, 0, 235), 2)
+        self.selected_pen = QPen(theme.screen_rgba(255, 255, 255, 240), 3)
+        self.ghost_pen = QPen(theme.screen_rgba(140, 255, 185, 130), 2, Qt.DashLine)
+        self.graph_pen = QPen(theme.screen_rgba(140, 255, 185, 210), 2)
+        self.range_brush = QColor(190, 195, 205, 40)
+        self.label_pen = QPen(theme.screen_rgba(225, 230, 240, 235), 1)
+        # The numbers on the graph, as the approved mockup draws them: the app
+        # font, bold, and the SV or volume values in the theme's accent so they
+        # read apart from the line labels. Kept off the painter's own font,
+        # which the shared cursor readout also uses.
+        self.label_font = value_label_font(self.font())
+        self.value_pen = QPen(theme.screen("#ff9dcc"), 1)
+        self.cursor_pen = QPen(theme.screen("#ffffff"), 2)
 
     def load_document(self, document) -> None:
         self.refresh_points(document)
@@ -941,7 +947,7 @@ class SVEditorView(TimeAxisMixin, QWidget):
             left, width = min(anchor_x, current_x), abs(current_x - anchor_x)
             painter.fillRect(QRectF(left, 0, width, self.height()), self.range_brush)
 
-        painter.setPen(QPen(theme.color("#3a4554"), 1))
+        painter.setPen(QPen(theme.screen("#3a4554"), 1))
         painter.drawLine(0, int(bottom), self.width(), int(bottom))
         self._draw_scale_guides(painter, top, bottom)
 

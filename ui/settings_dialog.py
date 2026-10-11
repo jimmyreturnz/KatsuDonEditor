@@ -412,7 +412,8 @@ class SettingsDialog(QDialog):
         look = page.group(self.tr("App theme"))
         self.theme_combo = QComboBox()
         names = [("osu", self.tr("osu!")), ("taiko", self.tr("Taiko")), ("lantern", self.tr("Lantern Rite")),
-                 ("gold", self.tr("Gold")), ("monokai", self.tr("Monokai"))]
+                 ("gold", self.tr("Gold")), ("monokai", self.tr("Monokai")),
+                 ("nso", self.tr("NSO"))]
         for name, label in names:
             self.theme_combo.addItem(label, name)
         swatches = []

@@ -7,6 +7,7 @@ from functools import lru_cache
 from PySide6.QtCore import QEvent, QLine, QPoint, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QRegion,
+    QLinearGradient,
     QColor,
     QFont,
     QFontMetrics,
@@ -465,13 +466,34 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
                 "shiny_brush", "ghost_shiny_brush", "spinner_band_brush",
             )
         }
-        self.ghost_pen = QPen(QColor(255, 255, 255, 110), 2)
-        self.normal_note_pen = QPen(QColor(255, 255, 255, 220), 2)
-        self.selected_note_pen = QPen(QColor(255, 220, 110, 235), 3)
-        self.baseline_pen = QPen(theme.color("#7a8492"), 2)
-        self.bpm_label_pen = QPen(QColor(225, 230, 240, 200), 1)
+        self.restyle_pens()
+
+        self.setMinimumHeight(self.MIN_HEIGHT)
+        self.setFocusPolicy(Qt.StrongFocus)
+        # paintEvent opens with an opaque fill of the whole rect, so nothing
+        # behind this widget is ever seen. Without the attribute Qt did not
+        # know that, and on every frame repainted what sits underneath --
+        # the EditorViewFrame's stylesheet (a rounded, bordered rect drawn
+        # through QStyleSheetStyle) and the scroll viewport -- only to cover
+        # it again. Measured: over half of a six-chart Editor frame was Qt's
+        # own work in processEvents, not these paintEvents. If a paintEvent
+        # here ever stops filling its whole rect, this has to go with it, or
+        # stale pixels show through -- which is why it follows View opacity
+        # (`set_view_opacity`): below 100% the fill lets the backdrop through.
+        self.setAttribute(Qt.WA_OpaquePaintEvent, view_ground_is_opaque())
+
+    def restyle_pens(self) -> None:
+        """The view's pens, built once rather than per tick per frame. The
+        chart's whites go through `theme.screen`: on NSO's pink lanes a white
+        barline or outline is violet. Rebuilt on a theme switch (retheme).
+        """
+        self.ghost_pen = QPen(theme.screen_rgba(255, 255, 255, 110), 2)
+        self.normal_note_pen = QPen(theme.screen_rgba(255, 255, 255, 220), 2)
+        self.selected_note_pen = QPen(theme.screen_rgba(255, 220, 110, 235), 3)
+        self.baseline_pen = QPen(theme.screen("#7a8492"), 2)
+        self.bpm_label_pen = QPen(theme.screen_rgba(225, 230, 240, 200), 1)
         self.label_font = value_label_font(self.font())
-        self.cursor_pen = QPen(QColor("#ffffff"), 3)
+        self.cursor_pen = QPen(theme.screen("#ffffff"), 3)
         # Two weights of red line: the ones this view owns, and the ones drawn
         # so the owned ones can be read in context.
         self.timing_line_pen = QPen(QColor(255, 90, 90, 235), 2)
@@ -488,35 +510,21 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
         # filled rectangle drawn one line at a time. Read off the pens rather
         # than typed, so restyling a tick cannot silently invalidate it.
         self._tick_styles = {
-            "beat": (QPen(QColor("#f2f2f2"), 2), 32),
+            "beat": (QPen(theme.screen("#f2f2f2"), 2), 32),
             "half": (QPen(QColor("#ff5151"), 2), 24),
             "quarter": (QPen(QColor("#4b9cff"), 1), 18),
-            "eighth": (QPen(QColor("#f2d34f"), 1), 12),
+            "eighth": (QPen(theme.screen("#f2d34f"), 1), 12),
             "third": (QPen(QColor("#b578ff"), 1), 16),
-            "fifth": (QPen(QColor("#f2d34f"), 1), 14),
-            "seventh": (QPen(QColor("#55d6be"), 1), 12),
+            "fifth": (QPen(theme.screen("#f2d34f"), 1), 14),
+            "seventh": (QPen(theme.screen("#55d6be"), 1), 12),
             "eleventh": (QPen(QColor("#ff9f40"), 1), 12),
-            "thirteenth": (QPen(QColor("#8bd1ff"), 1), 12),
+            "thirteenth": (QPen(theme.screen("#8bd1ff"), 1), 12),
             "other": (QPen(QColor("#738098"), 1), 10),
         }
-        self.beat_line_pen = QPen(QColor(255, 255, 255, 70), 1)
+        self.beat_line_pen = QPen(theme.screen_rgba(255, 255, 255, 70), 1)
         self._min_tick_spacing_px = max(
             pen.width() for pen, _height in self._tick_styles.values()
         ) + 1
-
-        self.setMinimumHeight(self.MIN_HEIGHT)
-        self.setFocusPolicy(Qt.StrongFocus)
-        # paintEvent opens with an opaque fill of the whole rect, so nothing
-        # behind this widget is ever seen. Without the attribute Qt did not
-        # know that, and on every frame repainted what sits underneath --
-        # the EditorViewFrame's stylesheet (a rounded, bordered rect drawn
-        # through QStyleSheetStyle) and the scroll viewport -- only to cover
-        # it again. Measured: over half of a six-chart Editor frame was Qt's
-        # own work in processEvents, not these paintEvents. If a paintEvent
-        # here ever stops filling its whole rect, this has to go with it, or
-        # stale pixels show through -- which is why it follows View opacity
-        # (`set_view_opacity`): below 100% the fill lets the backdrop through.
-        self.setAttribute(Qt.WA_OpaquePaintEvent, view_ground_is_opaque())
 
     def _draw_skinned_roll_body(self, painter, x, end_x, center_y, radius) -> bool:
         """A drumroll's stretched body and its tail cap, from the skin.
@@ -1807,7 +1815,7 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
                 painter.drawPixmap(QRectF(x1 - radius, note_center_y - radius, size, size), pixmap, QRectF(pixmap.rect()))
                 painter.setOpacity(1.0)
             if x2 > x1:
-                painter.setPen(QPen(QColor(255, 255, 255, 110), 3))
+                painter.setPen(QPen(theme.screen_rgba(255, 255, 255, 110), 3))
                 painter.drawLine(QPointF(x1, note_center_y), QPointF(x2, note_center_y))
             return
 
@@ -1886,7 +1894,7 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
                 painter.drawPixmap(QRectF(x - radius, note_center_y - radius, size, size), pixmap, QRectF(pixmap.rect()))
                 painter.setOpacity(1.0)
                 return
-            brush = QColor(255, 255, 255, 70)
+            brush = theme.screen_rgba(255, 255, 255, 70)
         else:
             brush = self.ghost_kat_brush if self.tool == "kat" else self.ghost_don_brush
         painter.setBrush(brush)
@@ -2102,7 +2110,7 @@ class TimingOverviewBar(QWidget):
         timeline above it. None of it changes while the song plays.
         """
         if self.width()<=0 or self.height()<=0:return
-        layer=QPixmap(self.size());layer.fill(theme.color("#0d1219"))
+        layer=QPixmap(self.size());layer.fill(theme.screen("#0d1219"))
         painter=QPainter(layer);painter.setRenderHint(QPainter.Antialiasing,False)
         center=self.height()//2
         kiai_height=max(3,self.height()//3);kiai_top=center-kiai_height//2
@@ -2110,7 +2118,7 @@ class TimingOverviewBar(QWidget):
         for start,end in self.kiai:
             x=start/self.duration_ms*self.width();w=max(1,(end-start)/self.duration_ms*self.width())
             painter.fillRect(QRectF(x,kiai_top,w,kiai_height),QColor(255,170,0,82))
-        painter.setPen(QPen(QColor(255,255,255,190),1));painter.drawLine(0,center,self.width(),center)
+        painter.setPen(QPen(theme.screen_rgba(255,255,255,190),1));painter.drawLine(0,center,self.width(),center)
         colors={"yellow":QColor("#ffd400"),"red":QColor("#ff4545"),"green":QColor("#45d65a")}
         # Grouped by colour so the pen is set three times instead of once per
         # marker: setPen was measured at the same call count as drawLine.
@@ -2131,8 +2139,8 @@ class TimingOverviewBar(QWidget):
             x=round(self.preview_time/self.duration_ms*self.width());painter.setPen(QPen(QColor("#ffd400"),1));painter.drawLine(x,center+1,x,self.height()-2)
         if self.viewport_end>self.viewport_start:
             x=self.viewport_start/self.duration_ms*self.width();w=(self.viewport_end-self.viewport_start)/self.duration_ms*self.width()
-            painter.setPen(QPen(QColor(255,255,255,65),1));painter.setBrush(Qt.NoBrush);painter.drawRect(QRectF(x,1,w,self.height()-2))
-        x=round(self.current_time/self.duration_ms*self.width());painter.setPen(QPen(QColor("#ffffff"),1));painter.drawLine(x,0,x,self.height())
+            painter.setPen(QPen(theme.screen_rgba(255,255,255,65),1));painter.setBrush(Qt.NoBrush);painter.drawRect(QRectF(x,1,w,self.height()-2))
+        x=round(self.current_time/self.duration_ms*self.width());painter.setPen(QPen(theme.screen("#ffffff"),1));painter.drawLine(x,0,x,self.height())
 
 
 # The density histogram (owner, 2026-10-08): one bar per 1% of the song, each
@@ -2208,20 +2216,28 @@ class DensityOverview(QWidget):
         super().resizeEvent(event)
     def _rebuild_static_layer(self)->None:
         if self.width()<=0 or self.height()<=0:return
-        layer=QPixmap(self.size()); layer.fill(QColor("#000000")); painter=QPainter(layer); painter.setPen(Qt.NoPen)
+        layer=QPixmap(self.size()); layer.fill(theme.screen("#000000")); painter=QPainter(layer); painter.setPen(Qt.NoPen)
+        # One gradient over the whole height in the theme's focus colour, faint
+        # at the foot and bright at the top, so a denser bar reaches further up
+        # it (owner, 2026-10-12). It was a fixed white-to-yellow in every theme;
+        # mixing two of a theme's colours went muddy where they are far apart
+        # (taiko's red into blue).
+        fill=QLinearGradient(0,self.height(),0,0)
+        top=theme.color("#ff66aa"); foot=QColor(top); foot.setAlpha(60)
+        # Lightened only on a dark lane: on NSO's pink it washed out.
+        fill.setColorAt(0.0,foot); fill.setColorAt(1.0,top if theme.has_screens() else top.lighter(118))
         for start,end,level in self.windows:
             if not level:continue
             x=start/self.duration_ms*self.width();w=max(1.0,(end-start)/self.duration_ms*self.width());h=max(1.0,level*(self.height()-8))
-            intensity=level; green=round(255+(216-255)*intensity); blue=round(255+(77-255)*intensity)
-            painter.fillRect(QRectF(x,self.height()-h,w,h),QColor(255,green,blue))
+            painter.fillRect(QRectF(x,self.height()-h,w,h),fill)
         painter.end(); self.static_layer=layer; self.static_layer_dirty=False
     def paintEvent(self,event)->None:
         if self.static_layer_dirty or self.static_layer.size()!=self.size(): self._rebuild_static_layer()
         painter=QPainter(self); painter.drawPixmap(0,0,self.static_layer)
         if self.viewport_end>self.viewport_start:
             vx=self.viewport_start/self.duration_ms*self.width(); vw=(self.viewport_end-self.viewport_start)/self.duration_ms*self.width()
-            painter.setPen(QPen(QColor(255,255,255,85),1)); painter.setBrush(Qt.NoBrush); painter.drawRect(QRectF(vx,1,vw,self.height()-2))
-        x=self.current_time/self.duration_ms*self.width();painter.setPen(QPen(QColor("#ffffff"),2));painter.drawLine(round(x),0,round(x),self.height())
+            painter.setPen(QPen(theme.screen_rgba(255,255,255,85),1)); painter.setBrush(Qt.NoBrush); painter.drawRect(QRectF(vx,1,vw,self.height()-2))
+        x=self.current_time/self.duration_ms*self.width();painter.setPen(QPen(theme.screen("#ffffff"),2));painter.drawLine(round(x),0,round(x),self.height())
 
 
 def view_type_caption(view_type: str) -> str:
@@ -2301,6 +2317,17 @@ class EditorViewFrame(QWidget):
         " background: qlineargradient(x1:0, y1:0, x2:1, y2:0,"
         " stop:0 rgba(255,102,170,46), stop:0.7 rgba(255,102,170,10)); }"
     )
+    # Under a theme with light screens (NSO) the header is chrome, not lane:
+    # a box in the chrome's own ground, or its pink name sat on pink.
+    SCREEN_HEADER_STYLE = (
+        "QWidget#viewHeader { border: 0; border-right: 1px solid #303947; border-radius: 0;"
+        " background: #1b212b; }"
+    )
+    SCREEN_FOCUSED_HEADER_STYLE = (
+        "QWidget#viewHeader { border: 0; border-left: 3px solid #ff66aa;"
+        " border-right: 1px solid #303947; border-radius: 0;"
+        " background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2a2230, stop:0.7 #1b212b); }"
+    )
 
     def __init__(self, view_type: str, difficulty_label: str, compact: bool = False) -> None:
         super().__init__()
@@ -2325,7 +2352,7 @@ class EditorViewFrame(QWidget):
         self.header.setObjectName("viewHeader")
         self.header.setAttribute(Qt.WA_StyledBackground, True)
         self.header.setFixedWidth(self.HEADER_WIDTH)
-        self.header.setStyleSheet(self.HEADER_STYLE)
+        self.header.setStyleSheet(self._header_style())
         header = QVBoxLayout(self.header)
         header.setContentsMargins(10, 5 if compact else 7, 6, 4 if compact else 6)
         header.setSpacing(1)
@@ -2392,6 +2419,11 @@ class EditorViewFrame(QWidget):
             controls.addWidget(button)
         controls.addStretch(1)
         header.addWidget(self.controls)
+        # Their room kept while hidden: shown on hover, they took it from a
+        # long wrapped name and pushed it down under the pointer.
+        policy = self.controls.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self.controls.setSizePolicy(policy)
         self.controls.setVisible(False)
 
         layout.addWidget(self.header)
@@ -2480,7 +2512,7 @@ class EditorViewFrame(QWidget):
         if focused == self.focused:
             return
         self.focused = focused
-        self.header.setStyleSheet(self.FOCUSED_HEADER_STYLE if focused else self.HEADER_STYLE)
+        self.header.setStyleSheet(self._header_style())
         self._show_overlay()
         # The caption names what is focused, in the accent, as in the mockup.
         self.kind_label.setStyleSheet(self._caption_style(focused))
@@ -2492,8 +2524,14 @@ class EditorViewFrame(QWidget):
         return self.FRAME_STYLE.format(ground=rgba)
 
     def refresh_ground(self) -> None:
-        """Re-read View opacity (`set_view_opacity`)."""
+        """Re-read View opacity (`set_view_opacity`), and the theme."""
         self.setStyleSheet(self._frame_style())
+        self.header.setStyleSheet(self._header_style())
+
+    def _header_style(self) -> str:
+        if theme.has_screens():
+            return self.SCREEN_FOCUSED_HEADER_STYLE if self.focused else self.SCREEN_HEADER_STYLE
+        return self.FOCUSED_HEADER_STYLE if self.focused else self.HEADER_STYLE
 
     def _caption_style(self, focused: bool) -> str:
         colour = "#ff9dcc" if focused else "#7d8794"
@@ -2534,7 +2572,7 @@ class _FrameOverlay(QWidget):
         if frame.focused:
             paint_living_rim(painter, QRectF(self.rect()), 0, 2, True)
         elif frame.dimmed:
-            wash = theme.color("#11151c")
+            wash = theme.screen("#11151c")
             wash.setAlphaF(EditorViewFrame.UNFOCUSED_WASH)
             painter.fillRect(event.rect(), wash)
 

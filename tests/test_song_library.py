@@ -531,6 +531,28 @@ class LibraryPageTests(unittest.TestCase):
         self.window._back_to_library()
         self.assertEqual(handed, [(state.audio_path, playhead, 3000)])
 
+    def test_back_from_the_editor_tab_reselects_the_song_being_edited(self):
+        """Pick a song, open it, go back, pick another, return to the Editor by
+        its tab and come back: the list showed the second song under the first
+        one's music."""
+        make_song(self.root, "Tester - Second Song")
+        (self.root / "Tester - Second Song" / "audio.mp3").write_bytes(b"")
+        self.run_scan()
+        rows = [row for row in range(self.window.song_list.count())
+                if self.window.song_list.item(row).data(Qt.UserRole) is not None]
+        self.assertGreaterEqual(len(rows), 2)
+        self.window.song_list.setCurrentRow(rows[0])
+        self.window._library.open_selected_difficulty()
+        edited = self.window.state.source_path
+        self.window._library.continue_song = lambda *args: None
+        self.window._back_to_library()
+        self.window.song_list.setCurrentRow(rows[1])
+        from ui.gui import PAGE_EDITOR
+        self.window._switch_page(PAGE_EDITOR)
+        self.window._back_to_library()
+        self.assertEqual(self.window.song_list.currentRow(), rows[0])
+        self.assertEqual(Path(self.window.difficulty_list.currentItem().data(Qt.UserRole)).resolve(), edited)
+
     def test_a_continued_song_starts_where_it_was_then_loops_to_the_preview(self):
         library = self.window._library
         positions = []

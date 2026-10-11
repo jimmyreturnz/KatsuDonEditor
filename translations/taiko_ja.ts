@@ -39,6 +39,14 @@
             <translation>アルファ輪郭</translation>
         </message>
         <message>
+            <source>Black or dark artwork on a light background: sketches, scanned line art, most logos.</source>
+            <translation>明るい背景に黒・暗い色で描かれた絵：スケッチ、スキャンした線画、多くのロゴ。</translation>
+        </message>
+        <message>
+            <source>Both</source>
+            <translation>両方</translation>
+        </message>
+        <message>
             <source>Choose Image</source>
             <translation>画像を選択</translation>
         </message>
@@ -47,12 +55,36 @@
             <translation>画像を選択...</translation>
         </message>
         <message>
+            <source>Choose a picture to begin.</source>
+            <translation>画像を選んで始めましょう。</translation>
+        </message>
+        <message>
+            <source>Clean Up</source>
+            <translation>クリーンアップ</translation>
+        </message>
+        <message>
+            <source>Could not open this picture: {error}</source>
+            <translation>この画像を開けませんでした: {error}</translation>
+        </message>
+        <message>
             <source>Dark Lines</source>
             <translation>暗い線</translation>
         </message>
         <message>
-            <source>Image tracing failed</source>
-            <translation>画像のトレースに失敗しました</translation>
+            <source>Drop a picture here</source>
+            <translation>ここに画像をドロップ</translation>
+        </message>
+        <message>
+            <source>Drops outlines shorter than this many points: dust, scan noise, stray pixels. Faded specks are removed.</source>
+            <translation>この点数より短い輪郭を除去します（ほこり、スキャンノイズ、はぐれピクセルなど）。薄く表示された点が除去されます。</translation>
+        </message>
+        <message>
+            <source>Ignore Specks</source>
+            <translation>小さな点を無視</translation>
+        </message>
+        <message>
+            <source>Ignored</source>
+            <translation>無視</translation>
         </message>
         <message>
             <source>Images (*.png *.jpg *.jpeg *.webp *.bmp)</source>
@@ -75,32 +107,84 @@
             <translation>明るい線</translation>
         </message>
         <message>
-            <source>Minimum Outline Length</source>
-            <translation>最小輪郭長</translation>
+            <source>No outlines found. Try another Trace Mode, or move Threshold.</source>
+            <translation>輪郭が見つかりません。別のトレースモードを試すか、しきい値を調整してください。</translation>
         </message>
         <message>
-            <source>No image selected</source>
-            <translation>画像が選択されていません</translation>
+            <source>Original</source>
+            <translation>元画像</translation>
         </message>
         <message>
-            <source>Refresh Preview</source>
-            <translation>プレビューを更新</translation>
+            <source>Outline</source>
+            <translation>輪郭</translation>
         </message>
         <message>
-            <source>Simplification</source>
-            <translation>単純化</translation>
+            <source>Pixels at least this opaque are the shape.</source>
+            <translation>この不透明度以上のピクセルを形として扱います。</translation>
+        </message>
+        <message>
+            <source>Pixels this bright or brighter are lines. Lower it to catch dimmer strokes.</source>
+            <translation>この明るさ以上のピクセルを線として扱います。暗めの線も拾うには値を下げてください。</translation>
+        </message>
+        <message>
+            <source>Pixels this dark or darker are lines. Raise it to catch faint grey strokes.</source>
+            <translation>この暗さ以下のピクセルを線として扱います。薄いグレーの線も拾うには値を上げてください。</translation>
+        </message>
+        <message>
+            <source>Replace...</source>
+            <translation>差し替え...</translation>
+        </message>
+        <message>
+            <source>Skips points closer together than this. Higher is smoother, lighter and faster to draw; too high cuts corners.</source>
+            <translation>この距離より近い点を省きます。大きいほど滑らかで軽く、描画が速くなります。大きすぎると角が削れます。</translation>
+        </message>
+        <message>
+            <source>Smoothing</source>
+            <translation>スムージング</translation>
         </message>
         <message>
             <source>Threshold</source>
             <translation>しきい値</translation>
         </message>
         <message>
-            <source>Threshold controls which pixels count as lines. Minimum Outline Length removes tiny noise loops. Simplification reduces point count after tracing; increase it for faster Drawing previews and cleaner outlines.</source>
-            <translation>しきい値は線として扱うピクセルを決めます。最小輪郭長は小さなノイズ輪郭を除去します。単純化はトレース後の点数を減らします。描画プレビューを高速化し、輪郭を整理するには値を上げてください。</translation>
-        </message>
-        <message>
             <source>Trace Mode</source>
             <translation>トレースモード</translation>
+        </message>
+        <message>
+            <source>Trace the background instead. The bar above swaps sides.</source>
+            <translation>代わりに背景をトレースします。上のバーの左右が入れ替わります。</translation>
+        </message>
+        <message>
+            <source>Traced</source>
+            <translation>トレース</translation>
+        </message>
+        <message>
+            <source>Tracing...</source>
+            <translation>トレース中...</translation>
+        </message>
+        <message>
+            <source>Transparent PNGs: traces where the picture stops, whatever its colours. Icons and silhouettes.</source>
+            <translation>透過PNG：色に関係なく、絵が途切れる境界をトレースします。アイコンやシルエットに。</translation>
+        </message>
+        <message>
+            <source>What Counts as Artwork</source>
+            <translation>線として扱う範囲</translation>
+        </message>
+        <message>
+            <source>White or bright artwork on a dark background: glowing symbols, inverted line art.</source>
+            <translation>暗い背景に白・明るい色で描かれた絵：光るシンボル、反転した線画。</translation>
+        </message>
+        <message>
+            <source>or click to choose  ·  PNG, JPG, WebP, BMP</source>
+            <translation>またはクリックして選択  ·  PNG, JPG, WebP, BMP</translation>
+        </message>
+        <message>
+            <source>points in this circle</source>
+            <translation>この円の点数</translation>
+        </message>
+        <message>
+            <source>{outlines} outlines · {points} points</source>
+            <translation>輪郭 {outlines} 個 · 点 {points} 個</translation>
         </message>
     </context>
     <context>
@@ -140,6 +224,102 @@
     </context>
     <context>
         <name>MainWindow</name>
+        <message>
+            <source>Notes keep the positions they have now.</source>
+            <translation>ノーツは現在の位置のままです。</translation>
+        </message>
+        <message>
+            <source>Spells your text out in notes. Each chunk of notes writes the text once.</source>
+            <translation>テキストをノーツで描きます。ノーツのまとまりごとにテキストを1回書きます。</translation>
+        </message>
+        <message>
+            <source>Places notes along a shape you draw, or trace from a picture, in the Drawing window.</source>
+            <translation>描画ウィンドウで描いた形（または画像からトレースした形）に沿ってノーツを配置します。</translation>
+        </message>
+        <message>
+            <source>Places notes along the graph of an equation you type, such as y = sin(x).</source>
+            <translation>入力した数式（例: y = sin(x)）のグラフに沿ってノーツを配置します。</translation>
+        </message>
+        <message>
+            <source>Curled blades spinning out from a centre, with an optional ring of notes inside.</source>
+            <translation>中心から渦を巻いて広がる羽根。内側にノーツの輪を追加することもできます。</translation>
+        </message>
+        <message>
+            <source>Rows across the playfield, each filled before the next one starts.</source>
+            <translation>プレイフィールドを横切る行。1行を埋めてから次の行へ進みます。</translation>
+        </message>
+        <message>
+            <source>Columns down the playfield, each filled before the next one starts.</source>
+            <translation>プレイフィールドを縦に並ぶ列。1列を埋めてから次の列へ進みます。</translation>
+        </message>
+        <message>
+            <source>Rows of a fixed number of beats, notes spaced by their real timing, like a taiko lane.</source>
+            <translation>一定の拍数ごとの行に、実際のタイミング通りの間隔でノーツを並べます。太鼓のレーンのように。</translation>
+        </message>
+        <message>
+            <source>The Taiko layout on its side: columns of fixed beats, spaced by timing.</source>
+            <translation>太鼓レイアウトを横倒しにしたもの：一定の拍数ごとの列に、タイミング通りの間隔で並べます。</translation>
+        </message>
+        <message>
+            <source>Travels in straight lines and bounces off the playfield edges, like the DVD logo.</source>
+            <translation>DVDロゴのように、まっすぐ進んでプレイフィールドの端で跳ね返ります。</translation>
+        </message>
+        <message>
+            <source>Notes evenly spaced around a circle. Each chunk of notes draws one circle.</source>
+            <translation>円周上に等間隔でノーツを配置します。ノーツのまとまりごとに円を1つ描きます。</translation>
+        </message>
+        <message>
+            <source>Notes evenly spaced around an ellipse. Each chunk of notes draws one ellipse.</source>
+            <translation>楕円上に等間隔でノーツを配置します。ノーツのまとまりごとに楕円を1つ描きます。</translation>
+        </message>
+        <message>
+            <source>Notes evenly spaced around a square. Each chunk of notes draws one square.</source>
+            <translation>正方形の周りに等間隔でノーツを配置します。ノーツのまとまりごとに正方形を1つ描きます。</translation>
+        </message>
+        <message>
+            <source>Notes evenly spaced around a triangle. Each chunk of notes draws one triangle.</source>
+            <translation>三角形の周りに等間隔でノーツを配置します。ノーツのまとまりごとに三角形を1つ描きます。</translation>
+        </message>
+        <message>
+            <source>Notes evenly spaced around a diamond. Each chunk of notes draws one diamond.</source>
+            <translation>ひし形の周りに等間隔でノーツを配置します。ノーツのまとまりごとにひし形を1つ描きます。</translation>
+        </message>
+        <message>
+            <source>Notes around a figure eight. Each chunk of notes draws one loop of it.</source>
+            <translation>8の字に沿ってノーツを配置します。ノーツのまとまりごとに1周描きます。</translation>
+        </message>
+        <message>
+            <source>Notes around a star, in and out between its points. Each chunk draws one star.</source>
+            <translation>星形の頂点を行き来するようにノーツを配置します。まとまりごとに星を1つ描きます。</translation>
+        </message>
+        <message>
+            <source>Notes winding outward from the start radius to the end radius.</source>
+            <translation>開始半径から終了半径へ、外側に向かって渦を巻くようにノーツを配置します。</translation>
+        </message>
+        <message>
+            <source>Notes along part of an ellipse, from the start angle through the sweep.</source>
+            <translation>楕円の一部に沿って、開始角度から掃引角度分だけノーツを配置します。</translation>
+        </message>
+        <message>
+            <source>Notes evenly spaced along one straight line.</source>
+            <translation>1本の直線上に等間隔でノーツを配置します。</translation>
+        </message>
+        <message>
+            <source>Notes along a sine wave: width, height and number of cycles are yours.</source>
+            <translation>正弦波に沿ってノーツを配置します。幅・高さ・周期数は自由に設定できます。</translation>
+        </message>
+        <message>
+            <source>Notes along a zigzag of sharp turns.</source>
+            <translation>鋭く折れ曲がるジグザグに沿ってノーツを配置します。</translation>
+        </message>
+        <message>
+            <source>Each note steps on from the last in a slowly turning direction, bouncing off the edges.</source>
+            <translation>各ノーツが前のノーツから少しずつ向きを変えながら進み、端で跳ね返ります。</translation>
+        </message>
+        <message>
+            <source>Every note at a random spot. The same seed brings the same layout back.</source>
+            <translation>すべてのノーツをランダムな位置に配置します。同じシードなら同じ配置に戻ります。</translation>
+        </message>
         <message>
             <source>Autoplay</source>
             <translation>オートプレイ</translation>
@@ -2956,14 +3136,6 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>上から下</translation>
         </message>
         <message>
-            <source>Top to Bottom / Left to Right</source>
-            <translation>上から下 / 左から右</translation>
-        </message>
-        <message>
-            <source>Top to Bottom / Right to Left</source>
-            <translation>上から下 / 右から左</translation>
-        </message>
-        <message>
             <source>Traversal</source>
             <translation>進行方法</translation>
         </message>
@@ -3249,6 +3421,10 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
         <message>
             <source>Lantern Rite</source>
             <translation>海灯祭</translation>
+        </message>
+        <message>
+            <source>NSO</source>
+            <translation>NSO</translation>
         </message>
         <message>
             <source>Gold</source>

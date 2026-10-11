@@ -149,12 +149,31 @@ def available_skins(root: Path | None) -> list[str]:
         entries = [entry for entry in os.scandir(root) if entry.is_dir()]
     except OSError:
         return []
-    names = [
-        entry.name for entry in entries
-        if (TAIKO_SIGNATURE_ELEMENTS & set(element_paths(Path(entry.path))))
-        or sound_paths(Path(entry.path))
-    ]
+    names = [entry.name for entry in entries if _offers_taiko(entry)]
     return sorted(names, key=str.lower)
+
+
+# {folder path: (its mtime_ns, whether it offers anything)}. Listing all 59
+# skin folders' 33,872 files was 98ms of every Settings open (measured
+# 2026-10-11). The answer depends only on the file *names* in the folder,
+# and adding, removing or renaming one changes the folder's mtime, which
+# scandir hands over without another call -- so a changed folder is read
+# again and an unchanged one costs nothing.
+_OFFERS_TAIKO: dict[str, tuple[int, bool]] = {}
+
+
+def _offers_taiko(entry: os.DirEntry) -> bool:
+    try:
+        stamp = entry.stat().st_mtime_ns
+    except OSError:
+        stamp = -1
+    known = _OFFERS_TAIKO.get(entry.path)
+    if known is not None and known[0] == stamp and stamp != -1:
+        return known[1]
+    folder = Path(entry.path)
+    offers = bool(TAIKO_SIGNATURE_ELEMENTS & set(element_paths(folder)) or sound_paths(folder))
+    _OFFERS_TAIKO[entry.path] = (stamp, offers)
+    return offers
 
 
 def sound_paths(folder: Path, names: dict[str, str] = SKIN_SOUNDS) -> dict[str, Path]:

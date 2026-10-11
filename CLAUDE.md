@@ -151,6 +151,16 @@ recovery -- two real bugs inherited from reading a stale copy.
   `BackgroundJobs`. Qt's image decode was measured to release the GIL (0.7ms
   worst main-thread stall during 1.3s of decoding); a worker that merely
   *overlaps* a gap is not its cause, which the attribution once got wrong.
+- `tools/measure_ui_freeze.py <map.osu> [--runs N] [--profile map|settings|theme]`
+  -- the freeze on opening a map, Settings, or switching theme, each up to
+  the end of the paint it causes. Opening a map parsed every difficulty in
+  the folder for the dropdown's names: 360ms -> 76ms repeat, 626ms -> 325ms
+  cold (2026-10-11). Settings (~260ms) and a theme switch (~230ms) are now
+  Qt building and restyling widgets: setting the dialog's sheet after its
+  widgets made it 180 -> 285ms, and the order sheets are re-set in on a
+  theme switch changes nothing. **Process deleteLater** in a harness
+  (`sendPostedEvents(None, QEvent.DeferredDelete)`): `processEvents` never
+  does, so closed dialogs lived on and inflated every theme switch to 1.4s.
 - `tools/play_with_hitsounds.py <map.osu> [rate] [seconds] [start_ms]` — the
   whole path, audibly: parse, schedule, decode, stretch, mix, sink. `voiced`
   and `offered` must be equal, or the 1/rate dedupe has leaked and every note

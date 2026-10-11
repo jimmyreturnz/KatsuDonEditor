@@ -60,7 +60,7 @@ from app.settings import (
 from ui.settings_dialog import SettingsDialog
 from ui import theme
 from app import updater
-from osu_io.parser import parse_osu
+from osu_io.parser import parse_osu, read_version
 from osu_io.timing import (
     EFFECT_KIAI, TimingPoint, active_point_at, active_uninherited_at, kiai_spans,
     sorted_by_time, sv_at, uninherited_points,
@@ -13370,8 +13370,7 @@ class MainWindow(QMainWindow):
             self.difficulty_combo.clear()
             for difficulty_path in self.song_difficulties:
                 try:
-                    difficulty_document = parse_osu(difficulty_path)
-                    label = difficulty_document.version or difficulty_path.stem
+                    label = read_version(difficulty_path) or difficulty_path.stem
                 except Exception:
                     label = difficulty_path.stem
                 self.difficulty_combo.addItem(label, str(difficulty_path))

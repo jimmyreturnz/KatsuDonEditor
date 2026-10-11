@@ -336,6 +336,9 @@ class SettingsDialog(QDialog):
         the Shortcuts table scrolls on its own and a table inside a scrolling
         column is two scroll bars fighting.
         """
+        # First, before any widget exists: set after the build it restyles
+        # all ~560 of them a second time, 180ms -> 285ms to open (measured
+        # 2026-10-11).
         self.setStyleSheet(SETTINGS_STYLE)
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -810,10 +813,23 @@ class SettingsDialog(QDialog):
         language = self.settings.string_value("language/current", "en")
         index = self.language_combo.findData(language if language in {"en", "ja"} else "en")
         self.language_combo.setCurrentIndex(max(0, index))
+        self._set_shortcut_sequences(self.shortcuts.sequence)
+
+    def _set_shortcut_sequences(self, sequence_for) -> None:
+        """Fill every chip, then reset-buttons and clash check once each.
+
+        Signals off while filling: each chip's change re-ran the clash check
+        over all 48, which is O(n^2) and was 41ms of opening Settings
+        (measured 2026-10-11). The end state is the same, since both only
+        read the final values.
+        """
         for action_id, editor in self._shortcut_editors.items():
-            editor.setKeySequence(QKeySequence(self.shortcuts.sequence(action_id)))
+            editor.blockSignals(True)
+            editor.setKeySequence(QKeySequence(sequence_for(action_id)))
+            editor.blockSignals(False)
         for sync in self._shortcut_syncs:
             sync()
+        self._validate()
 
     def _restore_current_page_defaults(self) -> None:
         """Reset whichever page is showing.
@@ -844,8 +860,7 @@ class SettingsDialog(QDialog):
         elif page == "language":
             self.language_combo.setCurrentIndex(self.language_combo.findData("en"))
         elif page == "shortcuts":
-            for action_id, editor in self._shortcut_editors.items():
-                editor.setKeySequence(QKeySequence(self.shortcuts.default_sequence(action_id)))
+            self._set_shortcut_sequences(self.shortcuts.default_sequence)
         elif page == "advanced":
             QMessageBox.information(self, self.tr("Settings"), self.tr("Use Reset All Settings to clear every saved setting."))
 

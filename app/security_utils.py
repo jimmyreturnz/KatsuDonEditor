@@ -1,4 +1,5 @@
 import sys
+from functools import lru_cache
 from pathlib import Path
 MAX_OSU_BYTES=32*1024*1024
 MAX_IMAGE_BYTES=64*1024*1024
@@ -27,7 +28,8 @@ def resolve_child_asset(folder,name,*,suffixes,max_bytes):
  return p
 
 
-def resource_roots() -> list[Path]:
+@lru_cache(maxsize=None)
+def _roots() -> tuple[Path, ...]:
     """Where bundled assets may be read from: the PyInstaller bundle, then the
     source tree. Never the working directory, so a file planted where the app
     is started from cannot stand in for one of ours. The one copy -- the
@@ -36,4 +38,12 @@ def resource_roots() -> list[Path]:
     source = Path(__file__).resolve().parents[1]
     if source not in roots:
         roots.append(source)
-    return roots
+    return tuple(roots)
+
+
+def resource_roots() -> list[Path]:
+    """`_roots`, resolved once: neither root moves while the app runs, and
+    resolving them per call was 34ms of opening Settings, which looks up 74
+    icons (measured 2026-10-11). A fresh list, so a caller can't edit the
+    cached one."""
+    return list(_roots())

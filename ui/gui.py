@@ -2517,7 +2517,7 @@ class MainWindow(QMainWindow):
         self.hitsound_later_shortcut = QShortcut(QKeySequence(self.shortcuts.sequence("hitsound_offset_later")), self)
         self.hitsound_later_shortcut.setContext(Qt.ApplicationShortcut)
         self.hitsound_later_shortcut.activated.connect(lambda: self._nudge_hitsound_offset(1))
-        self._build_tool_shortcuts()
+        self._tool_state.build_tool_shortcuts()
         self.preview_timer = QTimer(self)
         self.preview_timer.setSingleShot(True)
         self.preview_timer.setInterval(70)
@@ -3185,7 +3185,7 @@ class MainWindow(QMainWindow):
         root.addLayout(header)
 
         self.page_stack = QStackedWidget()
-        self.library_page = self._build_library_page()
+        self.library_page = self._library.build_page()
         self.page_stack.addWidget(self.library_page)
         self.editor_page = self._build_editor_page()
         self.page_stack.addWidget(self.editor_page)
@@ -3833,7 +3833,7 @@ class MainWindow(QMainWindow):
             button.setChecked(True)
         self._sync_status_bar(index)
         # Which toolbox owns the number keys is a property of the page.
-        self._refresh_tool_shortcut_scope()
+        self._tool_state.refresh_tool_shortcut_scope()
         # So is which difficulty is heard: the Play choice is the Editor
         # page's, and `_hitsound_state` reads the page to decide.
         if getattr(self, "state", None) is not None:
@@ -4131,9 +4131,6 @@ class MainWindow(QMainWindow):
 
     # -- Song library page --------------------------------------------------
 
-    def _build_library_page(self) -> QWidget:
-        return self._library.build_page()
-
     def _library_cache_path(self) -> Path:
         """Where the song index lives: <AppData>/jimmyreturnz/TaikoFancyArranger.
 
@@ -4148,21 +4145,6 @@ class MainWindow(QMainWindow):
         """
         root = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
         return Path(root or str(Path.home())) / "song_index.json"
-
-    def start_library(self) -> None:
-        self._library.start()
-
-    def _rescan_library(self) -> None:
-        self._library.rescan()
-
-    def _start_scan(self) -> None:
-        self._library.start_scan()
-
-    def _scan_step(self) -> None:
-        self._library.scan_step()
-
-    def _open_selected_difficulty(self) -> None:
-        self._library.open_selected_difficulty()
 
     # Read/write pass-throughs for the library widgets and scan state: the
     # test suite (and main()) reach for these directly on the window, so
@@ -4352,8 +4334,8 @@ class MainWindow(QMainWindow):
 
         # Global, not per-view: applies to whichever view has focus. Only
         # one of these two rows is visible at a time (chart vs SV).
-        layout.addWidget(see_through_row(self._build_global_tool_row()))
-        layout.addWidget(see_through_row(self._build_global_sv_tool_row()))
+        layout.addWidget(see_through_row(self._tool_state.build_global_tool_row()))
+        layout.addWidget(see_through_row(self._tool_state.build_global_sv_tool_row()))
 
         # Difficulty (source path) -> that group's QVBoxLayout. Views append
         # to the bottom of their difficulty's group and are never movable;
@@ -4656,7 +4638,7 @@ class MainWindow(QMainWindow):
         for layer_id, row in self.gimmick_tool_rows.items():
             row.setVisible(layer_id == layer)
         self._active_gimmick_layer = layer
-        self._refresh_tool_shortcut_scope()
+        self._tool_state.refresh_tool_shortcut_scope()
 
     def _set_gimmick_tool(self, layer_id: str, tool_id: str) -> None:
         """Set a tool on the one layer that owns it.
@@ -6156,7 +6138,7 @@ class MainWindow(QMainWindow):
             for row in self.gimmick_tool_rows.values():
                 row.setVisible(False)
             self._active_gimmick_layer = None
-            self._refresh_tool_shortcut_scope()
+            self._tool_state.refresh_tool_shortcut_scope()
         # ...and something has to be the focused layer afterwards, or the tool
         # digits, copy and paste are all aimed at nothing -- the same reason
         # _open_gimmick_layers picks one on the way in.
@@ -7427,7 +7409,7 @@ class MainWindow(QMainWindow):
             # disable the global tool row, since it can't watch every
             # frame's lock state itself.
             frame.lock_button.toggled.connect(
-                lambda _checked, v=view: self._sync_global_tool_row() if v is self._active_chart_view else None
+                lambda _checked, v=view: self._tool_state.sync_global_tool_row() if v is self._active_chart_view else None
             )
             # Newly-added view becomes the global tool row's target. Set
             # directly rather than relying solely on setFocus() -> Qt's
@@ -7439,7 +7421,7 @@ class MainWindow(QMainWindow):
             view.setFocus(Qt.FocusReason.OtherFocusReason)
             self._active_chart_view = view
             self._last_focused_editor_view = view
-            self._sync_global_tool_row()
+            self._tool_state.sync_global_tool_row()
             self.global_tool_row.setVisible(True)
             self.global_sv_tool_row.setVisible(False)
         elif view_type == "sv":
@@ -7500,12 +7482,12 @@ class MainWindow(QMainWindow):
             self._share_kiai_bands(view, sv=True)
             self._editor_snap_views.append(view)
             frame.lock_button.toggled.connect(
-                lambda _checked, v=view: self._sync_global_sv_tool_row() if v is self._active_sv_view else None
+                lambda _checked, v=view: self._tool_state.sync_global_sv_tool_row() if v is self._active_sv_view else None
             )
             view.setFocus(Qt.FocusReason.OtherFocusReason)
             self._active_sv_view = view
             self._last_focused_editor_view = view
-            self._sync_global_sv_tool_row()
+            self._tool_state.sync_global_sv_tool_row()
             self.global_tool_row.setVisible(False)
             self.global_sv_tool_row.setVisible(True)
         elif view_type == "gameplay":
@@ -7745,21 +7727,6 @@ class MainWindow(QMainWindow):
     # minimum, whatever the call site's comment says.
     TOOL_BUTTON_HEIGHT = 24
 
-    def _build_global_tool_row(self) -> QWidget:
-        return self._tool_state.build_global_tool_row()
-
-    def _build_global_sv_tool_row(self) -> QWidget:
-        return self._tool_state.build_global_sv_tool_row()
-
-    def _build_tool_shortcuts(self) -> None:
-        self._tool_state.build_tool_shortcuts()
-
-    def _refresh_tool_shortcut_scope(self) -> None:
-        self._tool_state.refresh_tool_shortcut_scope()
-
-    def _activate_tool_digit(self, digit: str) -> None:
-        self._tool_state.activate_tool_digit(digit)
-
     def _editor_view_focus_changed(self, _old, new) -> None:
         self._tool_state.editor_view_focus_changed(_old, new)
         # Re-sent only when the heard difficulty actually changes: focus moves
@@ -7770,15 +7737,6 @@ class MainWindow(QMainWindow):
             and self._hitsound_state() is not getattr(self, "_sounded_state", None)
         ):
             self._apply_hitsound_source()
-
-    def _sync_global_tool_row(self) -> None:
-        self._tool_state.sync_global_tool_row()
-
-    def _sv_tools_for(self, view) -> tuple[str, ...]:
-        return self._tool_state.sv_tools_for(view)
-
-    def _sync_global_sv_tool_row(self) -> None:
-        self._tool_state.sync_global_sv_tool_row()
 
     # Read/write pass-throughs: clipboard, editor-view management and
     # playback code elsewhere in MainWindow still read and write these
@@ -9138,7 +9096,7 @@ class MainWindow(QMainWindow):
             self._editor_snap_views.remove(chart_view)
         if chart_view is not None and chart_view is self._active_chart_view:
             self._active_chart_view = None
-            self._sync_global_tool_row()
+            self._tool_state.sync_global_tool_row()
         sv_view = getattr(frame, "sv_view", None)
         if sv_view is not None and sv_view in self._sv_views:
             self._sv_views.remove(sv_view)
@@ -9146,7 +9104,7 @@ class MainWindow(QMainWindow):
             self._editor_snap_views.remove(sv_view)
         if sv_view is not None and sv_view is self._active_sv_view:
             self._active_sv_view = None
-            self._sync_global_sv_tool_row()
+            self._tool_state.sync_global_sv_tool_row()
         if self._last_focused_editor_view in (chart_view, sv_view):
             self._last_focused_editor_view = None
         gameplay_view = getattr(frame, "gameplay_view", None)
@@ -10952,7 +10910,7 @@ def main() -> None:
     if not icon.isNull():app.setWindowIcon(icon)
     window = MainWindow()
     window.showMaximized()
-    window.start_library()
+    window._library.start()
     if update_failure:
         QMessageBox.warning(
             window,

@@ -92,7 +92,7 @@ class ToolShortcutTests(WindowTestCase):
     def test_digit_switches_the_active_chart_views_tool(self):
         view = self._chart_view()
         self.window._editor_view_focus_changed(None, view)
-        self.window._activate_tool_digit("2")
+        self.window._tool_state.activate_tool_digit("2")
         self.assertEqual(view.tool, "don")
         self.assertTrue(self.window.tool_buttons["don"].isChecked())
 
@@ -100,15 +100,15 @@ class ToolShortcutTests(WindowTestCase):
         view = self._chart_view()
         self.window._editor_view_focus_changed(None, view)
         self.assertFalse(view.new_combo)
-        self.window._activate_tool_digit("6")
+        self.window._tool_state.activate_tool_digit("6")
         self.assertTrue(view.new_combo)
-        self.window._activate_tool_digit("6")
+        self.window._tool_state.activate_tool_digit("6")
         self.assertFalse(view.new_combo)
 
     def test_digit_routes_to_sv_row_when_sv_view_is_active(self):
         sv_view = self._sv_view()
         self.window._editor_view_focus_changed(None, sv_view)
-        self.window._activate_tool_digit("2")
+        self.window._tool_state.activate_tool_digit("2")
         self.assertEqual(sv_view.tool, "green_line")
 
     def test_shortcut_is_ignored_while_a_spinbox_has_focus(self):

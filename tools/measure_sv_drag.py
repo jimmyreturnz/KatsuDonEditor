@@ -77,7 +77,7 @@ with tempfile.TemporaryDirectory() as tmp:
     app.processEvents()
 
     window.song_list.setCurrentRow(0)
-    window._open_selected_difficulty()
+    window._library.open_selected_difficulty()
     app.processEvents()
 
     document = window.state.document

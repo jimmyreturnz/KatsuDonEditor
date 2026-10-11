@@ -166,9 +166,9 @@ class PageTests(unittest.TestCase):
         self.window.settings.set_value = lambda key, value: self.stored.__setitem__(key, value)
         self.window.settings.sync = lambda: None
         self.window._library_cache_path = lambda: self.root / "index.json"
-        self.window._start_scan()
+        self.window._library.start_scan()
         while self.window._scan_iterator is not None:
-            self.window._scan_step()
+            self.window._library.scan_step()
 
     def tearDown(self):
         self.window.scan_timer.stop()
@@ -315,7 +315,7 @@ class PageTests(unittest.TestCase):
         library.refresh_continue_row()  # built from the real settings, before the patch
         self.assertTrue(library.continue_row.isHidden())
         self.window.song_list.setCurrentRow(0)
-        self.window._open_selected_difficulty()
+        self.window._library.open_selected_difficulty()
         recent = json.loads(self.stored["library/recent"])
         self.assertEqual(Path(recent[0][0]), self.window.state.source_path)
         self.assertFalse(library.continue_row.isHidden())
@@ -325,7 +325,7 @@ class PageTests(unittest.TestCase):
         # Owner, 2026-10-09: from song select, chart + SV + gameplay; another
         # difficulty opened from inside the editor gets the pair alone.
         self.window.song_list.setCurrentRow(0)
-        self.window._open_selected_difficulty()
+        self.window._library.open_selected_difficulty()
         first = self.window.state.source_path
         kinds = [frame.view_type for frame in self.window._editor_views
                  if getattr(frame, "difficulty_path", None) == first]
@@ -442,9 +442,9 @@ class PageTests(unittest.TestCase):
         (folder / "other.osu").write_bytes(first.read_bytes()
                                             .replace(b"AudioFilename: audio.mp3", b"AudioFilename: other.mp3")
                                             .replace(b"Version:Oni", b"Version:Zzz"))
-        self.window._start_scan()
+        self.window._library.start_scan()
         while self.window._scan_iterator is not None:
-            self.window._scan_step()
+            self.window._library.scan_step()
         row = next(i for i in range(self.window.song_list.count())
                    if self.window.song_list.item(i).data(Qt.UserRole) == str(folder))
         self.window._library.song_selected(row)
@@ -462,9 +462,9 @@ class PageTests(unittest.TestCase):
         (folder / "other.osu").write_bytes(first.read_bytes()
                                             .replace(b'0,0,"bg.jpg"', b'0,0,"other.jpg"')
                                             .replace(b"Version:Oni", b"Version:Zzz"))
-        self.window._start_scan()
+        self.window._library.start_scan()
         while self.window._scan_iterator is not None:
-            self.window._scan_step()
+            self.window._library.scan_step()
         row = next(i for i in range(self.window.song_list.count())
                    if self.window.song_list.item(i).data(Qt.UserRole) == str(folder))
         library = self.window._library
@@ -486,9 +486,9 @@ class PageTests(unittest.TestCase):
                                             .replace(b"0,500,4,1,0,60,1,0", b"0,300,4,1,0,60,1,0")
                                             .replace(b"6000,400,4,1,0,70,1,8", b"6000,250,4,1,0,70,1,8")
                                             .replace(b"Version:Oni", b"Version:Zzz"))
-        self.window._start_scan()
+        self.window._library.start_scan()
         while self.window._scan_iterator is not None:
-            self.window._scan_step()
+            self.window._library.scan_step()
         row = next(i for i in range(self.window.song_list.count())
                    if self.window.song_list.item(i).data(Qt.UserRole) == str(folder))
         self.window._library.song_selected(row)
@@ -532,9 +532,9 @@ class PageTests(unittest.TestCase):
         folder = Path(self.window.song_list.currentItem().data(Qt.UserRole))
         first = next(folder.glob("*.osu"))
         (folder / "other.osu").write_bytes(first.read_bytes().replace(b"Version:Oni", b"Version:Zzz"))
-        self.window._start_scan()
+        self.window._library.start_scan()
         while self.window._scan_iterator is not None:
-            self.window._scan_step()
+            self.window._library.scan_step()
         played.clear()
         self.window.difficulty_list.setCurrentRow(1)
         self.assertEqual(played, ["select_difficulty"])

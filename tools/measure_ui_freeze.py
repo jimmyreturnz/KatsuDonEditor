@@ -93,7 +93,7 @@ def main() -> None:
     if args.map:
         path = Path(args.map).resolve()
     else:
-        window.start_library()
+        window._library.start()
         deadline = time.perf_counter() + 30
         while not window._library.song_list.count() and time.perf_counter() < deadline:
             app.processEvents()

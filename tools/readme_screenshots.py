@@ -123,7 +123,7 @@ window.showMaximized()
 settle()
 
 # -- song select ---------------------------------------------------------------
-window.start_library()
+window._library.start()
 library = window._library
 for _ in range(20000):
     if getattr(library, "_scan_iterator", None) is None:

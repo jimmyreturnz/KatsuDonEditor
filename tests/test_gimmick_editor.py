@@ -1224,12 +1224,12 @@ class GimmickPageChromeTests(_GimmickFixture, unittest.TestCase):
         self.window._show_page(gui.PAGE_GIMMICK)
         barline = next(f for f in self.window._gimmick_views if f.gimmick_layer == "barline")
         self.window._editor_view_focus_changed(None, barline.chart_view)
-        self.window._activate_tool_digit("4")
+        self.window._tool_state.activate_tool_digit("4")
         self.assertEqual(barline.chart_view.tool, "red_line")
 
         fake = next(f for f in self.window._gimmick_views if f.gimmick_layer == "fake_slider")
         self.window._editor_view_focus_changed(None, fake.chart_view)
-        self.window._activate_tool_digit("2")
+        self.window._tool_state.activate_tool_digit("2")
         self.assertEqual(fake.chart_view.tool, "regular")
 
     def test_tool_digits_still_belong_to_the_editor_page_elsewhere(self):
@@ -1237,7 +1237,7 @@ class GimmickPageChromeTests(_GimmickFixture, unittest.TestCase):
         barline = next(f for f in self.window._gimmick_views if f.gimmick_layer == "barline")
         self.window._editor_view_focus_changed(None, barline.chart_view)
         self.window._show_page(gui.PAGE_EDITOR)
-        self.window._activate_tool_digit("3")
+        self.window._tool_state.activate_tool_digit("3")
         self.assertEqual(barline.chart_view.tool, "select", "editor page must not drive a layer")
 
     def test_zooming_one_layer_zooms_them_all(self):
@@ -3477,14 +3477,14 @@ class LibraryRescanTests(unittest.TestCase):
         self.window._library_songs = {Path("x"): []}
         self.window._listed_paths = {Path("x/y.osu")}
 
-        self.window._rescan_library()
+        self.window._library.rescan()
 
         self.assertFalse(self.cache.exists())
         self.assertEqual(self.window._library_cache, {})
         self.assertEqual(self.window._listed_paths, set())
 
     def test_a_missing_cache_file_is_not_an_error(self):
-        self.window._rescan_library()
+        self.window._library.rescan()
         self.assertEqual(self.window._library_cache, {})
 
 

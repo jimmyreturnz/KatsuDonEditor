@@ -47,7 +47,7 @@ t_window = time.perf_counter()
 window.show()
 app.processEvents()
 t_shown = time.perf_counter()
-window.start_library()
+window._library.start()
 deadline = t_shown + 20.0
 rows = 0
 while time.perf_counter() < deadline:

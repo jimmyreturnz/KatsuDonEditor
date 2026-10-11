@@ -265,9 +265,9 @@ class LibraryPageTests(unittest.TestCase):
         self._temp.cleanup()
 
     def run_scan(self) -> None:
-        self.window._start_scan()
+        self.window._library.start_scan()
         while self.window._scan_iterator is not None:
-            self.window._scan_step()
+            self.window._library.scan_step()
 
     def test_a_volume_change_reaches_a_preview_already_playing(self):
         """The preview read the music volume only as it started, so the
@@ -380,7 +380,7 @@ class LibraryPageTests(unittest.TestCase):
 
         self.run_scan()
         self.window.song_list.setCurrentRow(0)
-        self.window._open_selected_difficulty()
+        self.window._library.open_selected_difficulty()
         self.assertEqual(self.window.state.source_path, self.song.resolve())
         self.assertEqual(self.window.page_stack.currentIndex(), gui.PAGE_EDITOR)
         self.assertTrue(self.window.editor_page_button.isChecked())
@@ -390,7 +390,7 @@ class LibraryPageTests(unittest.TestCase):
 
         self.run_scan()
         self.window.song_list.setCurrentRow(0)
-        self.window._open_selected_difficulty()
+        self.window._library.open_selected_difficulty()
         self.window.keyPressEvent(QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier))
         self.assertEqual(self.window.page_stack.currentIndex(), gui.PAGE_LIBRARY)
         self.assertTrue(self.window.library_page_button.isChecked())
@@ -400,7 +400,7 @@ class LibraryPageTests(unittest.TestCase):
 
         self.run_scan()
         self.window.song_list.setCurrentRow(0)
-        self.window._open_selected_difficulty()
+        self.window._library.open_selected_difficulty()
         view = self.window._chart_views[-1]
         view.selected = {0}
         view.keyPressEvent(QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier))
@@ -439,7 +439,7 @@ class LibraryPageTests(unittest.TestCase):
             "getExistingDirectory": staticmethod(lambda *args, **kwargs: chosen)
         })
         try:
-            self.window.start_library()
+            self.window._library.start()
         finally:
             song_select.QMessageBox, song_select.QFileDialog = original_box, original_dialog
         self.assertEqual(stored["library/songs_folder"], chosen)
@@ -468,7 +468,7 @@ class LibraryPageTests(unittest.TestCase):
             "getExistingDirectory": staticmethod(lambda *args, **kwargs: "")  # cancelled
         })
         try:
-            self.window.start_library()
+            self.window._library.start()
         finally:
             song_select.QMessageBox, song_select.QFileDialog = original_box, original_dialog
         self.assertTrue(shown)
@@ -476,7 +476,7 @@ class LibraryPageTests(unittest.TestCase):
 
     def test_second_start_lists_the_songs_before_the_walk_begins(self):
         self.run_scan()  # writes the index
-        self.window._start_scan()
+        self.window._library.start_scan()
         try:
             # Not one file reopened yet, and the list is already complete.
             self.assertEqual(self.window._scan_files, 0)
@@ -507,7 +507,7 @@ class LibraryPageTests(unittest.TestCase):
     def test_going_back_closes_the_views_and_reopening_starts_fresh(self):
         self.run_scan()
         self.window.song_list.setCurrentRow(0)
-        self.window._open_selected_difficulty()
+        self.window._library.open_selected_difficulty()
         opened = [frame.view_type for frame in self.window._editor_views]
         # Song select opens a gameplay preview with the pair (owner, 2026-10-09).
         self.assertEqual(sorted(opened), ["chart", "gameplay", "sv"])
@@ -517,13 +517,13 @@ class LibraryPageTests(unittest.TestCase):
         self.assertEqual(self.window._sv_views, [])
         self.assertEqual(self.window._active_chart_view, None)
 
-        self.window._open_selected_difficulty()
+        self.window._library.open_selected_difficulty()
         self.assertEqual(sorted(frame.view_type for frame in self.window._editor_views), ["chart", "gameplay", "sv"])
 
     def test_going_back_keeps_the_song_playing_from_the_playhead(self):
         self.run_scan()
         self.window.song_list.setCurrentRow(0)
-        self.window._open_selected_difficulty()
+        self.window._library.open_selected_difficulty()
         state = self.window.state
         playhead = round(self.window.timeline.current_time)
         handed = []
@@ -587,7 +587,7 @@ class LibraryPageTests(unittest.TestCase):
     def test_tool_digits_do_not_eat_typing_in_the_search_box(self):
         self.run_scan()
         self.window.song_list.setCurrentRow(0)
-        self.window._open_selected_difficulty()
+        self.window._library.open_selected_difficulty()
         view = self.window._chart_views[-1]
 
         self.window._editor_view_focus_changed(view, self.window.library_search)
@@ -620,7 +620,7 @@ class LibraryPageTests(unittest.TestCase):
 
         self.run_scan()
         self.window.song_list.setCurrentRow(0)
-        self.window._open_selected_difficulty()
+        self.window._library.open_selected_difficulty()
         self.window.keyPressEvent(
             QKeyEvent(QKeyEvent.KeyPress, Qt.Key_B, Qt.ControlModifier)
         )
@@ -629,7 +629,7 @@ class LibraryPageTests(unittest.TestCase):
     def _open_and_dirty(self):
         self.run_scan()
         self.window.song_list.setCurrentRow(0)
-        self.window._open_selected_difficulty()
+        self.window._library.open_selected_difficulty()
         self.window._place_note(self.window.state.source_path, "don", 3000, False)
         self.assertTrue(self.window.state.history.dirty)
 

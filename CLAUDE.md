@@ -21,8 +21,10 @@ repository root; every import is absolute from there (`from ui import gui`,
 A path built from `__file__` in a package module is one level below the
 root: use `parents[1]`, as `resource_roots` and `ui_asset` do.
 
-`gui.py` imports every public name back from the modules split out of it,
-so `gui.X` still resolves. But a test that *rebinds* a module name
+`gui.py` imports only what it uses, so reach a name through the module that
+defines it (`gameplay_view.beat_pulse`, not `gui.beat_pulse`); an import
+`gui` does not use is dead, and `gui.X` for it is an `AttributeError`. A
+test that *rebinds* a module name
 (`gui.QMessageBox = Fake`, `patch.object(gui, "reduced_motion")`) only
 reaches code that looks the name up in `gui`: stub it in the module the
 code under test lives in, or a real modal opens offscreen and the run

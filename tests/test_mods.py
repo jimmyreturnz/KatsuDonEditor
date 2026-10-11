@@ -17,6 +17,8 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication
 
 from ui import gui
+from ui import gameplay_view
+from ui import common
 from osu_io.parser import parse_osu
 from tests.osu_fixtures import write_fixture
 
@@ -220,14 +222,14 @@ class PreviewModTests(unittest.TestCase):
         image = self.view.grab().toImage()
         far = QColor(image.pixel(1100, 10))
         self.assertLess(max(far.red(), far.green(), far.blue()), 8)
-        unit = self.view.height() * gui.STABLE_UNIT_PER_PLAYFIELD
-        near = QColor(image.pixel(round(gui.FL_CENTRE_STABLE * unit), 85))
+        unit = self.view.height() * common.STABLE_UNIT_PER_PLAYFIELD
+        near = QColor(image.pixel(round(gameplay_view.FL_CENTRE_STABLE * unit), 85))
         self.assertGreater(max(near.red(), near.green(), near.blue()), 8)
 
     def test_flashlight_closes_in_with_combo(self):
-        self.assertEqual(gui.flashlight_combo_scale(99), 1.0)
-        self.assertEqual(gui.flashlight_combo_scale(100), 0.8125)
-        self.assertEqual(gui.flashlight_combo_scale(200), 0.625)
+        self.assertEqual(gameplay_view.flashlight_combo_scale(99), 1.0)
+        self.assertEqual(gameplay_view.flashlight_combo_scale(100), 0.8125)
+        self.assertEqual(gameplay_view.flashlight_combo_scale(200), 0.625)
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QApplication
 
 from library import osu_db
+from ui import common, song_select
 from library.song_library import read_header
 from tests.osu_fixtures import write_fixture
 
@@ -80,23 +81,23 @@ class StarColourTests(unittest.TestCase):
     def test_osu_spectrum_stops(self):
         from ui import gui
 
-        self.assertEqual(gui.star_colour(1.25).name(), "#4fc0ff")
-        self.assertEqual(gui.star_colour(5.8).name(), "#c645b8")
-        self.assertEqual(gui.star_colour(0.05).name(), "#aaaaaa")
-        self.assertEqual(gui.star_colour(None).name(), "#aaaaaa")
-        self.assertEqual(gui.star_colour(12).name(), "#000000")
+        self.assertEqual(song_select.star_colour(1.25).name(), "#4fc0ff")
+        self.assertEqual(song_select.star_colour(5.8).name(), "#c645b8")
+        self.assertEqual(song_select.star_colour(0.05).name(), "#aaaaaa")
+        self.assertEqual(song_select.star_colour(None).name(), "#aaaaaa")
+        self.assertEqual(song_select.star_colour(12).name(), "#000000")
 
     def test_rounds_away_from_zero_before_sampling(self):
         from ui import gui
 
-        self.assertEqual(gui.star_colour(1.245).name(), gui.star_colour(1.25).name())
+        self.assertEqual(song_select.star_colour(1.245).name(), song_select.star_colour(1.25).name())
 
     def test_text_is_dark_then_gold_then_its_own_spectrum(self):
         from ui import gui
 
-        self.assertEqual(gui.star_text_colour(6.4).alpha(), 191)
-        self.assertEqual(gui.star_text_colour(7.0).name(), "#ffd966")
-        self.assertEqual(gui.star_text_colour(9.9).name(), "#ff8068")
+        self.assertEqual(song_select.star_text_colour(6.4).alpha(), 191)
+        self.assertEqual(song_select.star_text_colour(7.0).name(), "#ffd966")
+        self.assertEqual(song_select.star_text_colour(9.9).name(), "#ff8068")
 
 
 class BpmTextTests(unittest.TestCase):
@@ -106,17 +107,17 @@ class BpmTextTests(unittest.TestCase):
         from ui import gui
 
         bpm = 60000.0 / 1.14514535393084e-319
-        self.assertEqual(gui.format_bpm(180.0, bpm), "180–∞")
-        self.assertEqual(gui.format_bpm(bpm, bpm), "∞")
-        self.assertEqual(gui.format_bpm(150.2, 149.8), "150")
+        self.assertEqual(song_select.format_bpm(180.0, bpm), "180–∞")
+        self.assertEqual(song_select.format_bpm(bpm, bpm), "∞")
+        self.assertEqual(song_select.format_bpm(150.2, 149.8), "150")
 
     def test_a_range_says_which_bpm_it_mostly_is(self):
         # Owner, 2026-10-09: aleph-0 as "125–400 (250)", the density view's rule.
         from ui import gui
         from library.song_library import most_common_beat_length
 
-        self.assertEqual(gui.format_bpm(125, 400, 250), "125–400 (250)")
-        self.assertEqual(gui.format_bpm(250, 250, 250), "250", "one tempo needs no brackets")
+        self.assertEqual(song_select.format_bpm(125, 400, 250), "125–400 (250)")
+        self.assertEqual(song_select.format_bpm(250, 250, 250), "250", "one tempo needs no brackets")
         # 250 for 60s, 400 for 20s, 125 for 10s up to the last object at 90s.
         lines = [(0.0, 240.0), (60000.0, 150.0), (80000.0, 480.0)]
         self.assertEqual(most_common_beat_length(lines, 90000.0), 240.0)
@@ -126,12 +127,12 @@ class SongDotTests(unittest.TestCase):
     def test_a_pack_shows_a_count_of_the_rest(self):
         from ui import gui
 
-        self.assertEqual(gui.song_dots_shown(6, 1000), (6, 0))
+        self.assertEqual(song_select.song_dots_shown(6, 1000), (6, 0))
         # 1000px allows 20 dots at most, so 40 charts are 18 dots and "+22".
-        self.assertEqual(gui.song_dots_shown(40, 1000), (18, 22))
-        self.assertEqual(gui.song_dots_shown(20, 1000), (20, 0))
+        self.assertEqual(song_select.song_dots_shown(40, 1000), (18, 22))
+        self.assertEqual(song_select.song_dots_shown(20, 1000), (20, 0))
         # A narrow list gives the dots 40% of it: 300px is 8 slots.
-        shown, more = gui.song_dots_shown(12, 300)
+        shown, more = song_select.song_dots_shown(12, 300)
         self.assertEqual(shown + more, 12)
         self.assertLessEqual(shown, 8)
 
@@ -297,7 +298,7 @@ class PageTests(unittest.TestCase):
 
         library = self.window._library
         charts = []
-        for index in range(gui.RECENT_CHARTS_SHOWN + 1):
+        for index in range(song_select.RECENT_CHARTS_SHOWN + 1):
             folder = self.root / f"Extra {index}"
             folder.mkdir()
             charts.append(write_fixture(folder, "full_v14"))
@@ -306,7 +307,7 @@ class PageTests(unittest.TestCase):
         charts[-1].unlink()  # the newest is gone
         library.refresh_continue_row()
         shown = [card.path for card in library.continue_cards if not card.isHidden()]
-        self.assertEqual(len(shown), gui.RECENT_CHARTS_SHOWN)
+        self.assertEqual(len(shown), song_select.RECENT_CHARTS_SHOWN)
         self.assertNotIn(str(charts[-1]), shown)
 
     def test_opening_a_chart_puts_it_in_continue(self):
@@ -700,7 +701,7 @@ class PageTests(unittest.TestCase):
         library.jobs.drain()  # parsed on a worker
         self.assertTrue(library.chart_preview.notes)
         library.chart_preview.resize(600, 300)
-        natural = gui.osu_screen_height_for(600)
+        natural = common.osu_screen_height_for(600)
         self.assertEqual(library.chart_preview.height(), round(natural * 0.67))
         self.assertFalse(library.chart_preview.follows_view_opacity)
 

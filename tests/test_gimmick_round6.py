@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QApplication
 
 from chart import gimmick_session as gs
 from ui import gui
+from ui import dialogs
 from tests.test_gimmick_editor import _GimmickFixture
 
 _APP: QApplication | None = None
@@ -809,7 +810,7 @@ class OscillatingSVTests(_Session, unittest.TestCase):
         dialog.deleteLater()
 
     def test_the_preview_plots_the_oscillation_it_would_write(self):
-        preview = gui.SVFunctionPreview()
+        preview = dialogs.SVFunctionPreview()
         preview.set_range(1.0, 0.06 + 1.0)
         preview.set_oscillate("pair")
         values = [round(value, 4) for value in preview.rates(7)]

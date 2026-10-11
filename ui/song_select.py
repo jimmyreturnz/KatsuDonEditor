@@ -96,6 +96,7 @@ from ui.common import (
     SONG_SELECT_PREVIEW_DEFAULT_PERCENT,
     display_frame_interval_ns,
     equalize_button_widths,
+    next_frame_due,
     osu_screen_height_for,
     resource_roots,
     tabular,
@@ -2399,13 +2400,12 @@ class LibraryPageController:
             # Painted once per refresh of the screen it is on, not per tick of
             # the 4ms timer -- 125 paints a second judders on a 100Hz screen
             # just as the editor's fixed 120 did (display_frame_interval_ns).
-            now_ns = self._chart_frame_clock.nsecsElapsed()
-            if now_ns < self._chart_frame_due_ns:
+            due = next_frame_due(
+                self._chart_frame_due_ns, self._chart_frame_clock.nsecsElapsed(),
+                display_frame_interval_ns(self.chart_preview.screen()))
+            if due is None:
                 return
-            interval = display_frame_interval_ns(self.chart_preview.screen())
-            self._chart_frame_due_ns += interval
-            if self._chart_frame_due_ns < now_ns:
-                self._chart_frame_due_ns = now_ns + interval
+            self._chart_frame_due_ns = due
         now = self._chart_clock()
         if force or abs(now - self.chart_preview.current_time) > 0.5:
             self.chart_preview.current_time = now

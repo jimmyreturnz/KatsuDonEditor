@@ -30,6 +30,7 @@ from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
 
 from ui import gui
+from ui import dialogs
 from osu_io.timing import TimingPoint
 from tests.osu_fixtures import write_fixture
 
@@ -1003,7 +1004,7 @@ class FunctionChooserTests(unittest.TestCase):
 class FunctionPreviewTests(unittest.TestCase):
     def test_a_falling_sweep_is_drawn_falling(self):
         """1.10x -> 0.90x must descend, whatever the easing does."""
-        preview = gui.SVFunctionPreview()
+        preview = dialogs.SVFunctionPreview()
         preview.set_range(1.1, 0.9)
         for function_id in ("linear", "sin_in", "sin_out", "exp1.3", "exp1.6", "true_exp", "sin"):
             with self.subTest(function_id=function_id):
@@ -1014,21 +1015,21 @@ class FunctionPreviewTests(unittest.TestCase):
         preview.deleteLater()
 
     def test_a_rising_sweep_is_drawn_rising(self):
-        preview = gui.SVFunctionPreview()
+        preview = dialogs.SVFunctionPreview()
         preview.set_range(0.9, 1.1)
         preview.set_function("true_exp")
         self.assertLess(preview.rate_at(0.0), preview.rate_at(1.0))
         preview.deleteLater()
 
     def test_it_plots_real_rates_not_normalised_progress(self):
-        preview = gui.SVFunctionPreview()
+        preview = dialogs.SVFunctionPreview()
         preview.set_range(1.1, 0.9)
         preview.set_function("linear")
         self.assertAlmostEqual(preview.rate_at(0.5), 1.0, places=6)
         preview.deleteLater()
 
     def test_a_flat_sweep_paints_without_dividing_by_zero(self):
-        preview = gui.SVFunctionPreview()
+        preview = dialogs.SVFunctionPreview()
         preview.set_range(1.0, 1.0)
         preview.grab()
         preview.deleteLater()
@@ -1042,7 +1043,7 @@ class FunctionPreviewTests(unittest.TestCase):
         dialog.deleteLater()
 
     def test_the_preview_paints_for_every_function(self):
-        preview = gui.SVFunctionPreview()
+        preview = dialogs.SVFunctionPreview()
         preview.set_range(1.5, 0.4)
         for function_id in ("linear", "sin_in", "sin_out", "exp1.3", "exp1.6", "true_exp", "sin"):
             preview.set_function(function_id)

@@ -2,26 +2,14 @@
 from __future__ import annotations
 import math
 import operator
-import sys
 from pathlib import Path
 from PySide6.QtCore import QPointF, QRect, Qt
 from PySide6.QtGui import QImage, QColor, QFont, QFontMetrics, QPainter, QPen, QPixmap, QIcon
 from PySide6.QtWidgets import QPushButton, QStyle, QStyleOptionButton
+from app.security_utils import resource_roots
 from ui import theme
 from osu_io.timing import active_uninherited_at, sv_at
 from library.song_library import most_common_beat_length as library_common_beat_length
-
-
-def resource_roots() -> list[Path]:
-    """Return only trusted application roots, never the process working directory."""
-    roots=[]
-    if hasattr(sys,"_MEIPASS"):
-        roots.append(Path(sys._MEIPASS).resolve())
-    roots.append(Path(__file__).resolve().parents[1])
-    unique=[]
-    for root in roots:
-        if root not in unique:unique.append(root)
-    return unique
 
 
 def application_icon() -> QIcon:
@@ -490,6 +478,21 @@ def display_frame_interval_ns(screen) -> int:
     if not 30.0 <= rate <= 500.0:
         rate = 120.0
     return round(1_000_000_000 / rate)
+
+
+def next_frame_due(due_ns: int, now_ns: int, interval_ns: int) -> int | None:
+    """When the frame after this one is due, or None if this one is not yet.
+
+    Scheduled from the fixed cadence, not from "now": a timer tick firing a
+    few hundred microseconds late then no longer pushes every later frame
+    later too, which is what made a restart()-every-tick scheme's spacing
+    uneven. Behind by more than a whole interval (a stall), it resyncs
+    rather than firing a burst of catch-up frames.
+    """
+    if now_ns < due_ns:
+        return None
+    due_ns += interval_ns
+    return due_ns if due_ns >= now_ns else now_ns + interval_ns
 
 
 # The song select's chart preview, as a share of a gameplay view's height.

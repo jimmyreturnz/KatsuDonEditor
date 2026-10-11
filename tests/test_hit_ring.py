@@ -13,6 +13,7 @@ from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication
 
 from ui import gui
+from ui import gameplay_view
 from library.skin import TaikoSkin
 
 _APP: QApplication | None = None
@@ -40,15 +41,15 @@ def _ring_width(file_name: str, side: int) -> int:
 class HitRingSizeTests(unittest.TestCase):
     def test_ring_is_its_own_size_at_the_rulesets_scale(self) -> None:
         # A 200px view is the 200-unit playfield: one unit, one pixel.
-        self.assertEqual(_ring_width("approachcircle.png", 192), round(192 * gui.HIT_TARGET_RING_SCALE))
-        self.assertEqual(_ring_width("approachcircle.png", 128), round(128 * gui.HIT_TARGET_RING_SCALE))
+        self.assertEqual(_ring_width("approachcircle.png", 192), round(192 * gameplay_view.HIT_TARGET_RING_SCALE))
+        self.assertEqual(_ring_width("approachcircle.png", 128), round(128 * gameplay_view.HIT_TARGET_RING_SCALE))
 
     def test_a_2x_file_counts_half(self) -> None:
-        self.assertEqual(_ring_width("approachcircle@2x.png", 252), round(126 * gui.HIT_TARGET_RING_SCALE))
+        self.assertEqual(_ring_width("approachcircle@2x.png", 252), round(126 * gameplay_view.HIT_TARGET_RING_SCALE))
 
     def test_the_scale_is_lazers(self) -> None:
         # TaikoLegacyHitTarget: SCALE (0.8) + 0.03.
-        self.assertAlmostEqual(gui.HIT_TARGET_RING_SCALE, 0.83)
+        self.assertAlmostEqual(gameplay_view.HIT_TARGET_RING_SCALE, 0.83)
 
 
 if __name__ == "__main__":

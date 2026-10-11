@@ -37,6 +37,8 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.security_utils import resource_roots
+
 LOGGER = logging.getLogger(__name__)
 
 RELEASES_API = "https://api.github.com/repos/jimmyreturnz/TaikoFancyEditor/releases/latest"
@@ -60,14 +62,6 @@ APPLY_FLAG = "--apply-update"
 # --------------------------------------------------------------------------
 # Version
 # --------------------------------------------------------------------------
-
-def resource_roots() -> list[Path]:
-    """Trusted application roots, never the working directory (see gui.py)."""
-    roots = [Path(__file__).resolve().parents[1]]
-    if hasattr(sys, "_MEIPASS"):
-        roots.insert(0, Path(sys._MEIPASS).resolve())
-    return roots
-
 
 def local_version() -> str:
     """The VERSION file bundled next to the executable, or "" if unreadable."""

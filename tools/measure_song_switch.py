@@ -31,6 +31,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QApplication
 
 from ui import gui
+from ui import song_select
 
 switches = int(sys.argv[1]) if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else 20
 seed = int(sys.argv[sys.argv.index("--seed") + 1]) if "--seed" in sys.argv else 1
@@ -58,23 +59,23 @@ def timed(owner, name: str, label: str) -> None:
 
 # On the classes, before the window exists: the settle timers connect bound
 # methods at construction, and a wrapper set afterwards is never called.
-timed(gui.LibraryPageController, "_song_selected", "GUI: song_selected (all of it)")
-timed(gui.LibraryPageController, "_load_chart_preview", "GUI: load chart (all of it)")
-timed(gui.LibraryPageController, "start_preview", "GUI: start audio")
-if hasattr(gui.LibraryPageController, "_banner_art_decoded"):
-    timed(gui.LibraryPageController, "_banner_art_decoded", "GUI: art to pixmap")
-timed(gui, "parse_osu", "GUI: parse .osu")
-timed(gui, "heard_tempo", "GUI: read red lines")
-timed(gui.GameplayViewerView, "refresh_notes", "GUI: preview refresh_notes")
+timed(song_select.LibraryPageController, "_song_selected", "GUI: song_selected (all of it)")
+timed(song_select.LibraryPageController, "_load_chart_preview", "GUI: load chart (all of it)")
+timed(song_select.LibraryPageController, "start_preview", "GUI: start audio")
+if hasattr(song_select.LibraryPageController, "_banner_art_decoded"):
+    timed(song_select.LibraryPageController, "_banner_art_decoded", "GUI: art to pixmap")
+timed(song_select, "parse_osu", "GUI: parse .osu")
+timed(song_select, "heard_tempo", "GUI: read red lines")
+timed(song_select.GameplayViewerView, "refresh_notes", "GUI: preview refresh_notes")
 # Before the fix these ran on the GUI thread; after it, on a worker.
-timed(gui.osu_db, "file_md5", "md5 of every difficulty")
-timed(gui, "decode_background_image" if hasattr(gui, "decode_background_image") else "decode_background",
+timed(song_select.osu_db, "file_md5", "md5 of every difficulty")
+timed(song_select, "decode_background_image" if hasattr(song_select, "decode_background_image") else "decode_background",
       "decode background")
 # Per frame, so a gap can be put down to painting rather than to loading.
-timed(gui.SongBanner, "paintEvent", "paint: banner")
-timed(gui.GameplayViewerView, "paintEvent", "paint: chart preview")
-timed(gui.SongRowDelegate, "paint", "paint: song rows")
-timed(gui.DifficultyRowDelegate, "paint", "paint: difficulty rows")
+timed(song_select.SongBanner, "paintEvent", "paint: banner")
+timed(song_select.GameplayViewerView, "paintEvent", "paint: chart preview")
+timed(song_select.SongRowDelegate, "paint", "paint: song rows")
+timed(song_select.DifficultyRowDelegate, "paint", "paint: difficulty rows")
 
 app = QApplication.instance() or QApplication([])
 # main()'s identity, or AppDataLocation is not where the saved index lives.

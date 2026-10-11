@@ -19,10 +19,7 @@ module cannot import gui.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint, QRect, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, Qt, Signal
 from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
@@ -45,27 +42,19 @@ from PySide6.QtWidgets import (
 )
 
 
+from app.i18n import tr
+from app.security_utils import resource_roots
 from ui.smooth_scroll import SmoothScroller
 
 WARN_COLOR = "#ffb347"
 
 
-def tr(context: str, text: str) -> str:
-    """gui.tr's twin: the strings here are the main window's."""
-    return QCoreApplication.translate(context, text)
-
-
 def ui_asset(name: str) -> str:
     """`assets/ui/<name>` as a stylesheet `url()` path (forward slashes).
 
-    The bundle's copy first, then the source tree's -- the same order as
-    gui.resource_roots, which this module cannot import.
+    The bundle's copy first, then the source tree's.
     """
-    # Only a real bundle root: Path("") is ".", whose str is truthy, so a
-    # source run resolved every asset against the working directory and
-    # handed Qt relative paths that broke when started from anywhere else.
-    roots = [Path(sys._MEIPASS)] if hasattr(sys, "_MEIPASS") else []
-    roots.append(Path(__file__).resolve().parents[1])
+    roots = resource_roots()
     for root in roots:
         path = root / "assets" / "ui" / name
         if path.is_file():

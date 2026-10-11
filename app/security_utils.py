@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 MAX_OSU_BYTES=32*1024*1024
 MAX_IMAGE_BYTES=64*1024*1024
@@ -24,3 +25,15 @@ def resolve_child_asset(folder,name,*,suffixes,max_bytes):
  except ValueError as e: raise UnsafeInputError("Asset path escapes the beatmap folder") from e
  if p.suffix.lower() not in suffixes or not p.is_file() or p.stat().st_size>max_bytes: raise UnsafeInputError("Unsupported or oversized asset")
  return p
+
+
+def resource_roots() -> list[Path]:
+    """Where bundled assets may be read from: the PyInstaller bundle, then the
+    source tree. Never the working directory, so a file planted where the app
+    is started from cannot stand in for one of ours. The one copy -- the
+    package move had to fix three of them."""
+    roots = [Path(sys._MEIPASS).resolve()] if hasattr(sys, "_MEIPASS") else []
+    source = Path(__file__).resolve().parents[1]
+    if source not in roots:
+        roots.append(source)
+    return roots

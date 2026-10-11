@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
 
-from ui import gui
+from ui import common
 
 _APP: QApplication | None = None
 
@@ -27,7 +27,7 @@ def _centroid(x: float) -> float:
     image = QImage(40, 10, QImage.Format_ARGB32_Premultiplied)
     image.fill(Qt.transparent)
     painter = QPainter(image)
-    gui.draw_pixmap_subpixel(painter, sprite, x, 1.0)
+    common.draw_pixmap_subpixel(painter, sprite, x, 1.0)
     painter.end()
     weights = [image.pixelColor(column, 4).alphaF() for column in range(40)]
     return sum((column + 0.5) * w for column, w in enumerate(weights)) / sum(weights)

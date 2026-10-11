@@ -2,55 +2,46 @@ from __future__ import annotations
 
 import gc
 import math
-import operator
 import os
 import random
 import csv
 import shutil
 import sys
 from bisect import bisect_left, bisect_right
-from concurrent.futures import ThreadPoolExecutor, wait as futures_wait
-from dataclasses import replace
 from functools import lru_cache
 from contextlib import contextmanager
 from itertools import count as count_from
-from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
-import struct
 import json
-from time import perf_counter, time as wall_clock
 from types import SimpleNamespace
 from typing import Any
 
 from PySide6.QtCore import (
-    QByteArray, QCoreApplication, QElapsedTimer, QEvent, QLine, QObject, QVariantAnimation, QPoint, QPointF, QPropertyAnimation, QRect, QRectF, QSize, QStandardPaths, Qt, QEasingCurve,
-    QTimer,
-    QUrl, Signal,
+    QByteArray, QElapsedTimer, QEvent, QLine, QVariantAnimation, QPoint, QPointF,
+    QPropertyAnimation, QRectF, QSize, QStandardPaths, Qt, QEasingCurve, QTimer, QUrl, Signal,
 )
-from PySide6.QtGui import QActionGroup, QImage, QImageReader, QRegion, QBrush, QColor, QFont, QFontDatabase, QFontMetrics, QKeySequence, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QRadialGradient, QShortcut, QIcon
-from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PySide6.QtGui import (
+    QActionGroup, QRegion, QColor, QFont, QFontDatabase, QFontMetrics, QKeySequence, QPainter,
+    QPainterPath, QPen, QPixmap, QShortcut, QIcon,
+)
+from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import (
-    QAbstractItemView, QAbstractSlider, QAbstractSpinBox, QApplication, QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame,
-    QBoxLayout, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QMainWindow, QMessageBox,
-    QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QTextEdit,
-    QSlider, QSpacerItem, QSpinBox, QSplitter, QStackedWidget, QStyle, QStyleOptionButton, QStyledItemDelegate, QTabWidget,
-    QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget, QDockWidget, QMenu, QDialog, QDialogButtonBox, QFontComboBox, QSizePolicy
+    QAbstractSlider, QAbstractSpinBox, QApplication, QButtonGroup, QComboBox, QDoubleSpinBox,
+    QFileDialog, QFormLayout, QFrame, QBoxLayout, QGraphicsOpacityEffect, QGridLayout,
+    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
+    QPushButton, QScrollArea, QTextEdit, QSlider, QSpinBox, QStackedWidget, QTabWidget,
+    QToolButton, QVBoxLayout, QWidget, QDockWidget, QMenu, QDialog, QDialogButtonBox,
+    QFontComboBox, QSizePolicy,
 )
 
-from library import osu_db
 from ui.motion import (
-    SEGMENT_GLIDE_STYLE, HoverSheen, MorphRect, PageSlide, PlayPauseGlyph, PressRipple, ReorderDrag, RowEntrance,
-    ScanShimmer, SegmentGlide, SelectionGlide, out_cubic, paint_living_rim, tick_while_shown,
+    SEGMENT_GLIDE_STYLE, HoverSheen, PageSlide, PlayPauseGlyph, PressRipple, ReorderDrag,
+    SegmentGlide, paint_living_rim, tick_while_shown,
 )
-from ui.smooth_scroll import SMOOTH_SCROLL_MS, SmoothScroller, reduced_motion, smooth
-from ui.config_sheet import (
-    SEGMENT_STYLE, WARN_COLOR, Diagram, SheetDialog, TrimmedDoubleSpinBox, bind_segments, scrub_label,
-    set_field_visible, bind_tiles, control_stylesheet,
-    own_or_custom, segmented, set_warning,
-)
+from ui.smooth_scroll import reduced_motion, smooth
+from ui.config_sheet import SEGMENT_STYLE, scrub_label, control_stylesheet, segmented
 from audio.audio_engine import DEFAULT_HITSOUND_OFFSET_MS, WHEEL_SEEK_HOLD_MS, TrackPlayer
-from library.skin import UI_SOUNDS, TaikoSkin, skins_root
+from library.skin import TaikoSkin, skins_root
 from chart.parameters import PARAMETERS
 from app.i18n import install_translator, tr
 from ui.image_trace_dialog import ImageTraceDialog
@@ -71,111 +62,45 @@ from ui import theme
 from app import updater
 from osu_io.parser import parse_osu
 from osu_io.timing import (
-    EFFECT_KIAI,
-    EFFECT_OMIT_FIRST_BARLINE,
-    TimingPoint,
-    active_point_at,
-    active_uninherited_at,
-    kiai_spans,
-    sorted_by_time,
-    sv_at,
-    uninherited_points,
+    EFFECT_KIAI, TimingPoint, active_point_at, active_uninherited_at, kiai_spans,
+    sorted_by_time, sv_at, uninherited_points,
 )
 from osu_io.writer import write_osu
-from library.song_library import (
-    group_by_song, heard_tempo, load_cache, matches_search, most_common_bpm, read_header, save_cache, scan,
-    songs_from_cache,
-)
-from library.song_library import most_common_beat_length as library_common_beat_length
+from library.song_library import read_header
 from chart import autoplay
-from chart import sv_curves
-from chart.sv_curves import _true_exp_ease, sv_ease
+from chart.sv_curves import sv_ease
 from chart.time_axis import (
-    KIAI_OPEN_END_MS, SNAP_DIVISORS, TimeAxisMixin, osu_round, osu_snap_ms, own_divisor,
-    resnap_time, snap_time, wheel_seek_time,
+    KIAI_OPEN_END_MS, SNAP_DIVISORS, TimeAxisMixin, osu_snap_ms, own_divisor, resnap_time,
+    snap_time,
 )
 from chart.gimmick_session import (
-    DEFAULT_RED_LINE_BPM,
-    DEFAULT_SHINY_COUNT,
-    FAKE_SLIDER_MAX_LENGTH,
-    FAKE_SLIDER_RESTORE_OFFSET_MS,
-    GimmickConfig,
-    GimmickConfigError,
-    GimmickPairing,
+    FAKE_SLIDER_MAX_LENGTH, FAKE_SLIDER_RESTORE_OFFSET_MS, GimmickConfig, GimmickConfigError,
+    GimmickPairing, base_bpm_at, sv_restore_point, gimmick_path_for, gimmick_version_for,
+    index_key, difficulty_setting, load_index, looks_gimmicked, oscillating_series,
+    carry_active_state, save_index, snapshot_timing,
     anti_barline as gimmick_anti_barline,
     barline_note as gimmick_barline_note,
-    base_bpm_at,
     fake_slider as gimmick_fake_slider,
     format_length as gimmick_format_length,
     hidden_anti_barline as gimmick_hidden_anti_barline,
     keep_sv as gimmick_keep_sv,
     red_line as gimmick_red_line,
-    sv_restore_point,
-    gimmick_path_for,
-    gimmick_version_for,
-    index_key,
-    difficulty_setting,
-    load_index,
-    looks_gimmicked,
-    oscillating_series,
-    carry_active_state,
-    save_index,
-    shiny_collides,
-    snapshot_timing,
-    spacing_collides,
 )
 from chart.transformer import available_transformations, transform, transform_groups
 from ui.common import (
-    resource_roots, application_icon, button_chrome_width, button_text_width,
-    equalize_button_widths, DON_COLOR, KAT_COLOR, DRUMROLL_COLOR, format_time,
+    ACCENT_PINK, DON_COLOR, DRUMROLL_COLOR, KAT_COLOR, SCROLL_MODS, SLIDER_MULTIPLIER_ASSUMED,
+    SONG_SELECT_PREVIEW_DEFAULT_PERCENT, TAIKO_STRONG_SCALE, application_icon, button_text_width,
+    display_frame_interval_ns, draw_note_sprite, drumroll_tick_times, duration_for_slider_length,
+    equalize_button_widths, format_time, most_common_beat_length, next_frame_due, resource_roots,
+    set_view_ground_alpha, spinner_pixmap, tabular, view_ground, view_ground_is_opaque,
 )
 from ui.dialogs import (
-    set_row_visible, SV_DECIMALS, AddViewDialog, GimmickEntryDialog,
-    paint_barline_notes, paint_anti_barline, paint_shiny_stack,
-    paint_hidden_anti_barline, paint_fake_slider_structure, GimmickConfigDialog,
-    ConvertNotesDialog, BarlineFunctionDialog, FakeSliderFunctionDialog,
-    MultiFakeSliderDialog, TimingLineDialog, SVFunctionPreview, SVFunctionDialog,
+    AddViewDialog, GimmickEntryDialog, GimmickConfigDialog, ConvertNotesDialog,
+    BarlineFunctionDialog, FakeSliderFunctionDialog, MultiFakeSliderDialog, TimingLineDialog,
+    SVFunctionDialog,
 )
-from ui.common import (
-    _SPINNER_PIXMAP, spinner_pixmap, SLIDER_MULTIPLIER_ASSUMED,
-    duration_for_slider_length, drumroll_tick_times, _NOTE_SPRITES, SUBPIXEL_PHASES,
-    _SUBPIXEL_SHIFTED, _shifted_image, draw_pixmap_subpixel, draw_note_sprite,
-    TAIKO_STRONG_SCALE, PLAYFIELD_UNIT, STABLE_UNIT_PER_PLAYFIELD,
-    GAMEPLAY_MAX_ASPECT, GAMEPLAY_MIN_HEIGHT, osu_screen_height_for, SCROLL_MODS,
-    most_common_beat_length, set_view_ground_alpha, view_ground_is_opaque, view_ground,
-)
-from ui.gameplay_view import (
-    KIAI_PULSE_COLOR, KIAI_CIRCLE_PULSE_COLOR, KIAI_PULSE_ALPHA,
-    PLAYFIELD_PULSE_ALPHA, KIAI_GLOW_STRENGTH, CIRCLE_KIAI_STRENGTH,
-    KIAI_PULSE_MIN_BEAT_MS, KIAI_PULSE_CARRY_MIN_BEAT_MS, beat_pulse,
-    pulse_beat_point, kiai_flash_strength, draw_note_light, draw_kiai_flash,
-    TAIKO_NOTE_SIZE, PLAYFIELD_BARLINE_WIDTH, PLAYFIELD_BARLINE_HEIGHT,
-    GAMEPLAY_HIT_X_UNITS, INPUT_DRUM_WIDTH, DRUM_LAYOUT, DRUM_LAYOUT_PRE_2_1,
-    DRUM_HIT_DOWN_MS, DRUM_HIT_OUT_AT_MS, DRUM_HIT_UP_MS, DRUM_HIT_LIT_MS,
-    KIAI_GLOW_IN_MS, KIAI_GLOW_OUT_MS, KIAI_GLOW_SCALE, HIT_TARGET_NOTE_ALPHA,
-    HIT_TARGET_RING_SCALE, KIAI_GLOW_KICK, KIAI_GLOW_KICK_MS, KIAI_GLOW_COLOR,
-    GAMEPLAY_STABLE_UNITS_PER_BEAT, GAMEPLAY_LOCK_ASPECT, MOD_SLIDER_MULTIPLIER,
-    HD_FADE_START, HD_FADE_DURATION, FL_RADIUS_UNITS, FL_SMOOTHNESS, FL_CENTRE_STABLE,
-    FL_PLAYFIELD_TOP_STABLE, flashlight_combo_scale, GAMEPLAY_MAX_LOOKAHEAD_MS,
-    GameplayViewerView,
-)
-from ui.common import (
-    ACCENT_PINK, display_frame_interval_ns, SONG_SELECT_PREVIEW_DEFAULT_PERCENT,
-    tabular,
-)
-from ui.song_select import (
-    SCAN_SLICE_SECONDS, RECENT_CHARTS_SHOWN, RECENT_CHARTS_KEPT,
-    SONG_SELECT_PREVIEW_MIN_PERCENT, SONG_SELECT_PREVIEW_MAX_PERCENT,
-    SONG_SELECT_HIT_X_UNITS, STAR_SPECTRUM, STAR_TEXT_SPECTRUM, STAR_UNRATED,
-    star_colour, star_text_colour, format_length, format_bpm, decode_background_image,
-    decode_background, BackgroundJobs, ROW_ROLE, ROW_INK, ROW_INK_2, ROW_INK_3,
-    ROW_HOVER, ROW_PINK_ON, DIFFICULTY_SLOTS, DIFFICULTY_ROW_HEIGHT,
-    DIFFICULTY_RESERVED_SLOTS, ResizeHook, PREVIEW_SETTLE_MS, PREVIEW_FADE_MS,
-    CHART_FADE_OUT_MS, CHART_FADE_IN_MS, SONG_DOT_RADIUS, SONG_DOT_PITCH,
-    SONG_DOTS_MAX, SONG_DOTS_SHARE, song_dots_shown, paint_selected_row,
-    glide_selection, SongRowDelegate, DifficultyRowDelegate, SongBanner, ContinueCard,
-    LibraryKeys, LibraryPageController,
-)
+from ui.gameplay_view import GameplayViewerView
+from ui.song_select import LibraryPageController
 
 PLAYFIELD_WIDTH = 512
 PLAYFIELD_HEIGHT = 384
@@ -14336,17 +14261,10 @@ class MainWindow(QMainWindow):
 
     def _render_gameplay_frame(self) -> None:
         now_ns = self.gameplay_frame_clock.nsecsElapsed()
-        if now_ns < self._next_frame_due_ns:
+        due = next_frame_due(self._next_frame_due_ns, now_ns, self.gameplay_frame_interval_ns)
+        if due is None:
             return
-        # Schedule the next frame from the fixed cadence, not from "now":
-        # a timer tick firing a few hundred microseconds late no longer
-        # pushes every subsequent frame later too, which is what made the
-        # old restart()-every-tick scheme's frame spacing uneven.
-        self._next_frame_due_ns += self.gameplay_frame_interval_ns
-        if self._next_frame_due_ns < now_ns:
-            # Fell behind by more than a full interval (e.g. a stall);
-            # resync instead of firing a burst of catch-up frames.
-            self._next_frame_due_ns = now_ns + self.gameplay_frame_interval_ns
+        self._next_frame_due_ns = due
 
         # osu!'s InterpolatingFramedClock advances once per rendered frame,
         # by that frame's own real elapsed time -- not the fixed interval

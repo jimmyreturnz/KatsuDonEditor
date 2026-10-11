@@ -593,7 +593,8 @@ class GimmickPairing:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, GimmickPairing):
             return NotImplemented
-        return (self.target, self.reference, self.base_timing) ==             (other.target, other.reference, other.base_timing)
+        return ((self.target, self.reference, self.base_timing)
+                == (other.target, other.reference, other.base_timing))
 
     def __repr__(self) -> str:
         return f"GimmickPairing({self.target!r}, reference={self.reference!r})"

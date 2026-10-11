@@ -19,6 +19,7 @@ from PySide6.QtGui import QImage, QKeyEvent, QMouseEvent, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QApplication
 
 from ui import gui
+from chart import gimmick_session
 from osu_io.parser import parse_osu
 from tests.osu_fixtures import write_fixture
 
@@ -1602,11 +1603,11 @@ class GimmickStructureTests(_GimmickFixture, unittest.TestCase):
 
     def test_the_spacing_caution_fires_only_when_the_two_agree(self):
         self.assertFalse(
-            gui.spacing_collides(gui.GimmickConfig(), gui.GimmickConfig()),
+            gimmick_session.spacing_collides(gui.GimmickConfig(), gui.GimmickConfig()),
             "the defaults are deliberately different: 1ms spacing, +2ms offset",
         )
         self.assertTrue(
-            gui.spacing_collides(
+            gimmick_session.spacing_collides(
                 gui.GimmickConfig(spacing_ms=1), gui.GimmickConfig(fake_slider_offset_ms=1)
             )
         )

@@ -742,9 +742,17 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
                 finisher_radius if (note.is_finisher or note.is_spinner) else normal_radius
             )
             distance = abs(self.x_for_time(note.time) - x)
+            if note.is_spinner and self._on_spinner_band(note, x):
+                # A spinner is its whole duration: anywhere on the band is on it.
+                distance = 0.0
             if distance <= reach and (best_distance is None or distance < best_distance):
                 best = note; best_distance = distance
         return best
+
+    def _on_spinner_band(self, note, x: float) -> bool:
+        """Whether x falls between a spinner's start and end, where its band is drawn."""
+        end = self._note_end_time(note)
+        return end is not None and self.x_for_time(note.time) <= x <= self.x_for_time(end)
 
     def _note_end_time(self, note) -> float | None:
         """End time of a slider or spinner, for edge hit-testing and resize."""
@@ -1651,7 +1659,9 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
                     end_x = self.x_for_time(spinner_end + shift)
                     band = QRectF(x, note_center_y - radius * 0.5, end_x - x, radius)
                     painter.setBrush(self.spinner_band_brush)
-                    painter.setPen(Qt.NoPen)
+                    # Selected, the band is outlined as well as the head: the
+                    # whole duration is what a click selects.
+                    painter.setPen(note_pen if note.original_index in self.selected else Qt.NoPen)
                     painter.drawRoundedRect(band, radius * 0.25, radius * 0.25)
                     painter.setPen(self.spinner_edge_pen)
                     for edge_x in (x, end_x):
@@ -1757,6 +1767,8 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
         centre_y = self.note_center_y(note, self._baseline_y(), radius)
         dx = self.x_for_time(note.time) - x
         dy = centre_y - y
+        if note.is_spinner and self._on_spinner_band(note, x) and abs(dy) <= radius * 0.5:
+            return True  # the band, the same rect the painter draws
         return dx * dx + dy * dy <= radius * radius
 
     def _row_y(self, baseline_y: float, lower: bool) -> float:
@@ -1783,6 +1795,17 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
         """
         radius = finisher_radius if (note.is_finisher or note.is_spinner) else normal_radius
         shiny = self.split_rows and round(note.time) in self.shiny_times
+        if note.is_spinner:
+            # Its own art, faded, as the placement ghost draws it. Through the
+            # brush below it came out a yellow drumroll head.
+            pixmap = spinner_pixmap()
+            if not pixmap.isNull():
+                centre_y = self.note_center_y(note, baseline_y, radius)
+                painter.setOpacity(0.45)
+                painter.drawPixmap(
+                    QRectF(x - radius, centre_y - radius, radius * 2, radius * 2), pixmap, QRectF(pixmap.rect()))
+                painter.setOpacity(1.0)
+                return
         brush = (
             self.ghost_shiny_brush if shiny
             else self.ghost_slider_brush if (note.is_slider or note.is_spinner)
@@ -2447,6 +2470,14 @@ class EditorViewFrame(QWidget):
         kind = event.type()
         if kind == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
             self._drag_from = event.globalPosition().toPoint()
+            # A click on the handle selects the view as a click inside it
+            # does (owner, 2026-10-17): through Qt's focus, which is what
+            # rims the frame and swaps the tool row.
+            # Consumed: left to propagate, it reached the page under the views,
+            # whose press is "let go of the focused view".
+            if self.content is not None:
+                self.content.setFocus(Qt.MouseFocusReason)
+                return True
         elif kind == QEvent.MouseMove and self._drag_from is not None:
             here = event.globalPosition().toPoint()
             if (here - self._drag_from).manhattanLength() >= QApplication.startDragDistance():

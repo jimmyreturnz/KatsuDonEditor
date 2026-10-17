@@ -65,6 +65,13 @@ class SettingsManager:
         except (TypeError, ValueError):
             return default
 
+    def float_value(self, key: str, default: float = 0.0) -> float:
+        """Like int_value: QSettings hands back a str on Windows."""
+        try:
+            return float(self._settings.value(key, default))
+        except (TypeError, ValueError):
+            return default
+
     def string_value(self, key: str, default: str = "") -> str:
         value = self._settings.value(key, default)
         return default if value is None else str(value)
@@ -100,6 +107,11 @@ TOOLS_EDITOR_CATEGORY = "Tools — Editor"
 # registered, because a real shortcut would take Escape away from the views.
 SHORTCUT_DEFINITIONS: tuple[ShortcutDefinition, ...] = (
     ShortcutDefinition("play_pause", "Play/Pause", "Playback", "Space"),
+    # osu!'s editor transport keys (owner, 2026-10-17): Z to the first note,
+    # X to 00:00:000 and playing, C a second Play/Pause.
+    ShortcutDefinition("seek_first_note", "Seek to the first note", "Playback", "Z"),
+    ShortcutDefinition("play_from_start", "Play from the start", "Playback", "X"),
+    ShortcutDefinition("play_pause_alt", "Play/Pause (second key)", "Playback", "C"),
     # Tuned by ear while a chart plays at a slow rate, where the gap between a
     # note and its music is several times longer than at 1.0x.
     ShortcutDefinition("hitsound_offset_earlier", "Hitsound offset: 1ms earlier", "Playback", "Ctrl+["),

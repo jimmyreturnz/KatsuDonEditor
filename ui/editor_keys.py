@@ -13,6 +13,8 @@ table, where the two disagree:
   osu!s do; in taiko whistle or clap is what makes a kat, finish a big note.
 - Shift+1..9 set the snap divisor, Ctrl+G reverses the selection in time,
   Ctrl+X cuts, Ctrl+D clones one measure on -- stable's.
+- Z seeks to the first note, X to 00:00:000 and plays, C is a second
+  Play/Pause (owner, 2026-10-17).
 
 Every binding is a `ShortcutDefinition` in `app/settings.py`, so Settings lists
 and rebinds them like the rest.
@@ -75,6 +77,9 @@ class EditorKeys(QObject):
     # part of a structure, and what a key should do to a structure is not
     # something osu! has an answer for.
     ACTIONS = (
+        ("seek_first_note", "_seek_first_note", (), "both"),
+        ("play_from_start", "_play_from_start", (), "both"),
+        ("play_pause_alt", "_play_pause", (), "both"),
         ("seek_back", "_seek_steps", (-1, 1), "both"),
         ("seek_forward", "_seek_steps", (1, 1), "both"),
         ("seek_back_far", "_seek_steps", (-1, SHIFT_SEEK_STEPS), "both"),
@@ -190,6 +195,26 @@ class EditorKeys(QObject):
             return
         times = [note.time for note in state.document.hit_objects]
         self._seek_to_neighbour(view, times, direction)
+
+    # -- osu!'s transport: Z, X, C ---------------------------------------------
+
+    def _seek_first_note(self) -> None:
+        view = self._view()
+        state = self._state_for(view)
+        if state is None or not state.document.hit_objects:
+            return
+        self._seek(view, min(note.time for note in state.document.hit_objects))
+
+    def _play_from_start(self) -> None:
+        view = self._view()
+        if view is None:
+            return
+        self._seek(view, 0.0)
+        if not view.is_playing:
+            self.window.toggle_playback()
+
+    def _play_pause(self) -> None:
+        self.window._toggle_playback_from_shortcut()
 
     def _seek_bookmark(self, direction: int) -> None:
         view = self._view()

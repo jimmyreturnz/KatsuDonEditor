@@ -820,7 +820,8 @@ class SheetDialog(QDialog):
 
         head = QFrame()
         head.setObjectName("sheetHead")
-        head_row = QHBoxLayout(head)
+        # Kept, so a dialog can put a control at the header's right.
+        self.head_row = head_row = QHBoxLayout(head)
         head_row.setContentsMargins(16, 12, 16, 12)
         words = QVBoxLayout()
         words.setSpacing(1)
@@ -861,10 +862,14 @@ class SheetDialog(QDialog):
         self.cancel_button.clicked.connect(self.reject)
         row.addWidget(self.cancel_button)
         self.action_button = QPushButton(action)
-        self.action_button.setDefault(True)
         self.action_button.clicked.connect(self.accept)
         row.addWidget(self.action_button)
         root.addWidget(foot)
+        # Only once the button is inside the dialog: set while the footer had
+        # no parent, QDialog never heard of it and made the first auto-default
+        # button its default instead -- "Restore defaults", so Enter reset the
+        # sheet, or did nothing where that button is hidden.
+        self.action_button.setDefault(True)
 
     def set_summary(self, text: str, bad: bool = False) -> None:
         self.summary.setText(text)

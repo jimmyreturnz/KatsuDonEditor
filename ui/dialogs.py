@@ -2566,12 +2566,17 @@ class SVFunctionDialog(SheetDialog):
         position_offset: int | None = None,
         base_timing: list[TimingPoint] | None = None,
         volume: bool = False,
+        settings=None,
     ) -> None:
         title = tr("MainWindow", "Generate Volume") if volume else tr("MainWindow", "Generate SV")
         super().__init__(
             title,
             tr("MainWindow", "Range: {0} to {1}").format(format_time(round(start_ms)), format_time(round(end_ms))),
             action=tr("MainWindow", "Generate"), rail=False, restore=False, parent=parent)
+        # Where the dialog's own choices are remembered (`sv_generate/...`):
+        # the offset, the curve, the multipliers, the scroll step. None in
+        # tests and in volume mode, which remembers nothing.
+        self._settings = None if volume else settings
         self.action_button.clicked.disconnect()
         self.action_button.clicked.connect(self._accept)
         self.start_ms = start_ms
@@ -2658,13 +2663,13 @@ class SVFunctionDialog(SheetDialog):
             self._function_group.addButton(button)
             self.function_buttons[function_id] = button
             chip_rows.addWidget(button, index // 4, index % 4)
-        curve_help = tr(
-            "MainWindow",
-            "How the value moves from Initial to Final. Sin In is fast at the start and slow at "
-            "the end, following TaikoEditor's naming (the reverse of easings.net). True Exp bends "
-            "by the range itself, so 1\u00d7 to 10\u00d7 is a hard curve and 1\u00d7 to 1.1\u00d7 "
-            "is nearly straight.")
+        curve_help = tr("MainWindow", "How the value moves from initial point to final point.")
         sheet.add_widget(sheet.field(tr("MainWindow", "Curve"), chips, curve_help))
+        self.remember_curve_check = QCheckBox(tr("MainWindow", "Remember last choice"))
+        self.remember_curve_check.setChecked(self._setting_bool("remember_curve", False))
+        if self._settings is not None:
+            sheet.add_widget(sheet.switch(self.remember_curve_check, tr(
+                "MainWindow", "Open on the curve used last time.")))
 
         rates = sheet.add_section("rates", tr("MainWindow", "Volume") if volume else tr("MainWindow", "Rates"))
         self.initial_rate_spin = TrimmedDoubleSpinBox()
@@ -2690,6 +2695,34 @@ class SVFunctionDialog(SheetDialog):
             tr("MainWindow", "Final volume") if volume else tr("MainWindow", "Final rate"),
             self.final_rate_spin,
             tr("MainWindow", "The value at the last point."))
+
+        # A multiplier per end (owner, 2026-10-17): the box opens on the SV
+        # read from the selection times this, so a sweep that is "the same,
+        # 10% faster at the end" is Enter and nothing else. It scales the
+        # *box*, not what Generate writes -- a typed value is what it says.
+        self.multiply_initial_check = QCheckBox(tr("MainWindow", "Multiply initial by"))
+        self.multiply_final_check = QCheckBox(tr("MainWindow", "Multiply final by"))
+        self.initial_factor_spin = QDoubleSpinBox()
+        self.final_factor_spin = QDoubleSpinBox()
+        self._factor_pairs = (
+            ("initial", self.multiply_initial_check, self.initial_factor_spin, self.initial_rate_spin),
+            ("final", self.multiply_final_check, self.final_factor_spin, self.final_rate_spin),
+        )
+        for name, check, factor, _rate in self._factor_pairs:
+            check.setChecked(self._setting_bool(f"multiply_{name}", False))
+            factor.setRange(0.01, 100.0)
+            factor.setDecimals(3)
+            factor.setSingleStep(0.05)
+            factor.setPrefix("×")
+            factor.setValue(self._setting_float(f"{name}_factor", 1.1))
+            factor.setProperty("lastValue", factor.value())
+        if not volume:
+            rates.switch(self.multiply_initial_check, tr(
+                "MainWindow", "Open with the initial rate already multiplied."), span=1)
+            rates.field(tr("MainWindow", "Initial factor"), self.initial_factor_spin)
+            rates.switch(self.multiply_final_check, tr(
+                "MainWindow", "Open with the final rate already multiplied."), span=1)
+            rates.field(tr("MainWindow", "Final factor"), self.final_factor_spin)
 
         # The exponent behind the "Exp x" chip. The two fixed exp curves are
         # the shapes that get used most and stay as one click each; this is the
@@ -2756,13 +2789,22 @@ class SVFunctionDialog(SheetDialog):
         # before the note it is meant to affect. In a gimmick layer the value
         # comes from that layer's config, which is also what decides which
         # milliseconds the layer recognises as its own.
+        # The regular editor remembers it: it is set once and then left alone.
         self.position_offset_spin.setValue(
-            self.DEFAULT_POSITION_OFFSET_MS if position_offset is None else int(position_offset)
+            self._setting_int("position_offset", self.DEFAULT_POSITION_OFFSET_MS)
+            if position_offset is None else int(position_offset)
         )
         where.field(tr("MainWindow", "Position offset"), self.position_offset_spin, tr(
             "MainWindow",
             "How far ahead of its note each line sits. An SV point governs what comes after "
             "it, so a note needs its line slightly early."))
+
+        self.replace_existing_check = QCheckBox(tr("MainWindow", "Replace existing green lines"))
+        self.replace_existing_check.setChecked(self._setting_bool("replace_existing", False))
+        where.switch(self.replace_existing_check, tr(
+            "MainWindow",
+            "Remove every green line in the range before writing the new ones, instead of "
+            "only those the new ones land on."), span=2)
 
         self.omit_barline_check = QCheckBox(tr("MainWindow", "Omit barline"))
         self.omit_barline_check.setChecked(False)
@@ -2783,7 +2825,7 @@ class SVFunctionDialog(SheetDialog):
             # Relative to final BPM is a statement about scroll speed, and a
             # hitsound is as loud as it is whatever the BPM is doing.
             for widget in (self.position_offset_spin, self.omit_barline_check,
-                           self.relative_to_final_bpm_check):
+                           self.relative_to_final_bpm_check, self.replace_existing_check):
                 set_row_visible(None, widget, False)
 
         self.include_shiny_check = QCheckBox(tr("MainWindow", "Include shiny notes"))
@@ -2853,12 +2895,94 @@ class SVFunctionDialog(SheetDialog):
         sheet.set_diagram(self.curve, tr("MainWindow", "Curve"))
         self.resize(980, 700)
 
+        # The wheel step, at the header's right (owner, 2026-10-17): 0.01 by
+        # default, and kept once changed.
+        self.scroll_step_spin = QDoubleSpinBox()
+        self.scroll_step_spin.setRange(0.001, 1.0)
+        self.scroll_step_spin.setDecimals(3)
+        self.scroll_step_spin.setSingleStep(0.01)
+        self.scroll_step_spin.setValue(self._setting_float("scroll_step", 0.01))
+        if not volume:
+            box = QWidget()
+            row = QHBoxLayout(box)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(6)
+            row.addWidget(QLabel(tr("MainWindow", "Scroll step")))
+            row.addWidget(self.scroll_step_spin)
+            self.head_row.addWidget(box, 0, Qt.AlignTop)
+            self._apply_scroll_step()
+            self.scroll_step_spin.valueChanged.connect(self._apply_scroll_step)
+
+        if self.remember_curve_check.isChecked():
+            saved = self._setting_str("curve", "")
+            if saved:
+                self.set_selected_function(saved)
+        # Last, so the boxes they scale and the preview they redraw exist.
+        for _name, check, factor, rate in self._factor_pairs:
+            if check.isChecked() and not volume:
+                rate.setValue(rate.value() * factor.value())
+            check.toggled.connect(lambda on, f=factor, r=rate: r.setValue(
+                r.value() * f.value() if on else r.value() / f.value()))
+            factor.valueChanged.connect(lambda value, c=check, f=factor, r=rate: self._rescale(c, f, r, value))
+
         self._update_preview()
         self._update_placement_controls()
         self._update_bpm_filter_row()
         self._update_length_filter_row()
 
     CHIP_ICON_SIZE = (30, 20)
+
+    # -- remembered choices ----------------------------------------------------
+
+    def _setting_bool(self, key: str, default: bool) -> bool:
+        return default if self._settings is None else self._settings.bool_value(f"sv_generate/{key}", default)
+
+    def _setting_float(self, key: str, default: float) -> float:
+        return default if self._settings is None else self._settings.float_value(f"sv_generate/{key}", default)
+
+    def _setting_int(self, key: str, default: int) -> int:
+        return default if self._settings is None else self._settings.int_value(f"sv_generate/{key}", default)
+
+    def _setting_str(self, key: str, default: str) -> str:
+        return default if self._settings is None else self._settings.string_value(f"sv_generate/{key}", default)
+
+    def _remember(self, key: str, value) -> None:
+        if self._settings is not None:
+            self._settings.set_value(f"sv_generate/{key}", value)
+
+    def _apply_scroll_step(self, *_args) -> None:
+        step = self.scroll_step_spin.value()
+        self.initial_rate_spin.setSingleStep(step)
+        self.final_rate_spin.setSingleStep(step)
+        self._remember("scroll_step", step)
+
+    @staticmethod
+    def _rescale(check: QCheckBox, factor: QDoubleSpinBox, rate: QDoubleSpinBox, value: float) -> None:
+        """A factor changed while its box is multiplied: swap the old one out."""
+        previous = float(factor.property("lastValue") or value)
+        factor.setProperty("lastValue", value)
+        if check.isChecked() and previous:
+            rate.setValue(rate.value() / previous * value)
+
+    def showEvent(self, event) -> None:
+        # Straight into the initial rate, selected, so typing replaces it and
+        # Enter generates: the offset is set once, the rates every time.
+        super().showEvent(event)
+        self.initial_rate_spin.setFocus(Qt.OtherFocusReason)
+        self.initial_rate_spin.selectAll()
+
+    def done(self, result: int) -> None:
+        # Cancel keeps the switches too: they are preferences, not this sweep.
+        self._remember("remember_curve", self.remember_curve_check.isChecked())
+        self._remember("replace_existing", self.replace_existing_check.isChecked())
+        for name, check, factor, _rate in self._factor_pairs:
+            self._remember(f"multiply_{name}", check.isChecked())
+            self._remember(f"{name}_factor", factor.value())
+        if result == QDialog.Accepted:
+            self._remember("curve", self.selected_function())
+            if not self.gimmick_layer:
+                self._remember("position_offset", self.position_offset_spin.value())
+        super().done(result)
 
     def _curve_pixmap(self, function_id: str, size: tuple[int, int], width: float) -> QPixmap:
         """`function_id`'s shape, rising or falling with the typed range.
@@ -3008,6 +3132,7 @@ class SVFunctionDialog(SheetDialog):
             "position_offset": 0 if self.volume else self.position_offset_spin.value(),
             "omit_barline": self.omit_barline_check.isChecked(),
             "relative_to_final_bpm": self.relative_to_final_bpm_check.isChecked(),
+            "replace_existing": not self.volume and self.replace_existing_check.isChecked(),
             "function": self.selected_function(),
             "oscillate": str(self.mode_combo.currentData()),
             "include_shiny": self.include_shiny_check.isChecked(),

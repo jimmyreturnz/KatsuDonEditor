@@ -889,8 +889,10 @@ class FunctionPrefillTests(WindowTestCase):
         original = gui.SVFunctionDialog
         gui.SVFunctionDialog = FakeDialog
         try:
-            # The fixture is 0.75x from 2000 and 2.00x from 4000.
-            self.window._open_sv_function_dialog(self.path, 2500.0, 4500.0)
+            # The fixture is 0.75x from 2000 and 2.00x from 4000. Read at the
+            # range's first and last objects (2500, the spinner at 5000), not
+            # its edges: an object is what the sweep writes onto.
+            self.window._open_sv_function_dialog(self.path, 2500.0, 5500.0)
         finally:
             gui.SVFunctionDialog = original
 

@@ -581,8 +581,52 @@
             <translation>各線をノートからどれだけ前に置くかです。SV ポイントはその後ろに効くため、ノートには少し早めの線が必要です。</translation>
         </message>
         <message>
-            <source>How the value moves from Initial to Final. Sin In is fast at the start and slow at the end, following TaikoEditor's naming (the reverse of easings.net). True Exp bends by the range itself, so 1× to 10× is a hard curve and 1× to 1.1× is nearly straight.</source>
-            <translation>開始値から終了値への変化の仕方です。Sin In は最初が速く最後が遅い形で、TaikoEditor の名前に合わせています（easings.net とは逆）。True Exp は範囲そのものに応じて曲がるため、1× から 10× は強いカーブ、1× から 1.1× はほぼ直線になります。</translation>
+            <source>How the value moves from initial point to final point.</source>
+            <translation>最初のポイントから最後のポイントへの値の変化の仕方です。</translation>
+        </message>
+        <message>
+            <source>Remember last choice</source>
+            <translation>前回の選択を記憶</translation>
+        </message>
+        <message>
+            <source>Open on the curve used last time.</source>
+            <translation>前回使ったカーブで開きます。</translation>
+        </message>
+        <message>
+            <source>Multiply initial by</source>
+            <translation>開始値に掛ける</translation>
+        </message>
+        <message>
+            <source>Multiply final by</source>
+            <translation>終了値に掛ける</translation>
+        </message>
+        <message>
+            <source>Open with the initial rate already multiplied.</source>
+            <translation>開始レートを掛けた状態で開きます。</translation>
+        </message>
+        <message>
+            <source>Open with the final rate already multiplied.</source>
+            <translation>終了レートを掛けた状態で開きます。</translation>
+        </message>
+        <message>
+            <source>Initial factor</source>
+            <translation>開始の倍率</translation>
+        </message>
+        <message>
+            <source>Final factor</source>
+            <translation>終了の倍率</translation>
+        </message>
+        <message>
+            <source>Replace existing green lines</source>
+            <translation>既存の緑線を置き換える</translation>
+        </message>
+        <message>
+            <source>Remove every green line in the range before writing the new ones, instead of only those the new ones land on.</source>
+            <translation>新しい線を書き込む前に、新しい線と重なるものだけでなく、範囲内のすべての緑線を削除します。</translation>
+        </message>
+        <message>
+            <source>Scroll step</source>
+            <translation>スクロールの刻み</translation>
         </message>
         <message>
             <source>Only matters where a generated point lands on a red line.</source>
@@ -3565,6 +3609,18 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
         <message>
             <source>Toggle clap on the selection (kat)</source>
             <translation>選択のクラップを切り替え（カツ）</translation>
+        </message>
+        <message>
+            <source>Seek to the first note</source>
+            <translation>最初のノーツへ移動</translation>
+        </message>
+        <message>
+            <source>Play from the start</source>
+            <translation>最初から再生</translation>
+        </message>
+        <message>
+            <source>Play/Pause (second key)</source>
+            <translation>再生/一時停止（2つ目のキー）</translation>
         </message>
         <message>
             <source>Reverse the selection in time</source>

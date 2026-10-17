@@ -3992,6 +3992,7 @@ class MainWindow(QMainWindow):
         if button is not None:
             button.setChecked(True)
         self._sync_status_bar(index)
+        self._sync_mod_controls()  # the mods chip is off song select
         # Which toolbox owns the number keys is a property of the page.
         self._tool_state.refresh_tool_shortcut_scope()
         # So is which difficulty is heard: the Play choice is the Editor
@@ -8899,18 +8900,27 @@ class MainWindow(QMainWindow):
         self, difficulty_path: Path, start_ms: float, end_ms: float, layer_id: str | None = None,
     ) -> None:
         state = self._states.get(difficulty_path)
-        points = state.document.timing_points if state is not None else []
+        points = sorted_by_time(state.document.timing_points) if state is not None else []
         divisor = (
             self._gimmick_snap_divisor() if layer_id is not None
             else int(self.editor_snap_combo.currentData())
         )
-        # Prefill with the SV already in force at each end of the selection, so
-        # "Generate" with nothing changed is a no-op rather than a jump to some
-        # arbitrary 1.0x -> 2.0x ramp.
+        # Prefill with the SV the first and last objects of the sweep play at,
+        # so "Generate" with nothing changed is a no-op rather than a jump to
+        # some arbitrary ramp. It read the SV in force at the drag's edges
+        # before, and a drag starting a little ahead of a run's first note
+        # read the line before the run (2.70 -> 2.00 opened as 2.00 -> 2.00).
+        # The edges stay the fallback for a range with nothing in it.
+        targets = (
+            self._sv_generation_times(state, start_ms, end_ms, {"placement": "notes"}, layer_id)
+            if state is not None else []
+        )
         dialog = SVFunctionDialog(
             start_ms, end_ms, self, snap_divisor=divisor,
-            initial_rate=sv_at(points, start_ms), final_rate=sv_at(points, end_ms),
+            initial_rate=sv_at(points, targets[0] if targets else start_ms),
+            final_rate=sv_at(points, targets[-1] if targets else end_ms),
             gimmick_layer=layer_id,
+            settings=self.settings,
             position_offset=(
                 self._gimmick_config(layer_id).sv_offset_ms if layer_id is not None else None
             ),
@@ -9129,7 +9139,7 @@ class MainWindow(QMainWindow):
                 round(point.time) for point in state.document.timing_points
                 if not point.uninherited and start_ms - 0.5 <= point.time <= end_ms + 0.5
             }
-            if layer_id is None else set()
+            if layer_id is None and not params.get("replace_existing") else set()
         )
         # Oscillation is indexed, not timed: it alternates on every *point*, so
         # unlike a sweep its shape cannot be read off elapsed time. Built up
@@ -9192,7 +9202,24 @@ class MainWindow(QMainWindow):
 
         # One undo step regardless of point count, and regardless of how many
         # existing green lines the sweep replaces.
-        self._insert_sv_points(state, points, "generate_sv")
+        command = self._insert_points_command(state.document, points, "generate_sv")
+        if params.get("replace_existing"):
+            # Every green line in the range goes, not only those a new one
+            # lands on (owner, 2026-10-17) -- the range widened by the offset,
+            # which is where the new lines go. On a gimmick layer only the
+            # layer's own: another structure's line is not this sweep's.
+            owned = self._sv_layer_times(layer_id, state.document) if layer_id is not None else None
+            low, high = start_ms + min(offset, 0) - 0.5, end_ms + max(offset, 0) + 0.5
+            landing = {round(point.time) for point in points}
+            old = [
+                point for point in state.document.timing_points
+                if not point.uninherited and low <= point.time <= high
+                and round(point.time) not in landing  # _insert_points_command's own
+                and (owned is None or round(point.time) in owned)
+            ]
+            if old:
+                command = CompositeCommand([RemoveTimingPoints(old), command], "generate_sv")
+        state.history.push(command, state)
         self._refresh_difficulty_sv_views(difficulty_path)
 
     def _generate_volume(
@@ -9913,6 +9940,13 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, tr("MainWindow", "Open failed"), str(error))
             return
 
+        # A different difficulty picked on song select starts without mods
+        # (owner, 2026-10-17); coming back to the same one keeps them.
+        previous = getattr(self, "state", None)
+        if (self.page_stack.currentIndex() == PAGE_LIBRARY and previous is not None
+                and previous.source_path != state.source_path and self._mods):
+            self._set_mods(())
+
         self._activate_state(state)
 
         # Opening a map from the song list (or the header's Open .osu) means
@@ -10515,7 +10549,9 @@ class MainWindow(QMainWindow):
         chip = getattr(self, "mods_chip", None)
         if chip is not None:
             chip.setText(mod_string(self._mods))
-            chip.setVisible(bool(self._mods))
+            # Not on song select (owner, 2026-10-17): the mods are the
+            # editor's, and its preview plays without them.
+            chip.setVisible(bool(self._mods) and self.page_stack.currentIndex() != PAGE_LIBRARY)
 
     def _change_playback_speed(self,rate:float)->None:
         # Re-anchor from *our own* playhead, sampled before the rate changes --

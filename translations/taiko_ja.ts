@@ -629,6 +629,22 @@
             <translation>スクロールの刻み</translation>
         </message>
         <message>
+            <source>Open with the exponent used last time.</source>
+            <translation>前回使った指数で開きます。</translation>
+        </message>
+        <message>
+            <source>Relative to BPM</source>
+            <translation>指定BPM基準</translation>
+        </message>
+        <message>
+            <source>Holds the scroll speed that a rate has at this BPM, everywhere in the range.</source>
+            <translation>範囲全体で、このBPMでの値と同じスクロール速度を保ちます。</translation>
+        </message>
+        <message>
+            <source>Reference BPM</source>
+            <translation>基準BPM</translation>
+        </message>
+        <message>
             <source>Only matters where a generated point lands on a red line.</source>
             <translation>生成したポイントが赤線と重なる場所でのみ効きます。</translation>
         </message>
@@ -1959,6 +1975,14 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
         <message>
             <source>Reload this beatmap</source>
             <translation>このビートマップを再読み込み</translation>
+        </message>
+        <message>
+            <source>Reload from disk</source>
+            <translation>ファイルから再読み込み</translation>
+        </message>
+        <message>
+            <source>{0} has unsaved edits. Discard them and reload the file?</source>
+            <translation>{0} には保存していない編集があります。破棄してファイルを再読み込みしますか？</translation>
         </message>
         <message>
             <source>Read the selected song's files again, and nothing else</source>
@@ -3613,6 +3637,10 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
         <message>
             <source>Seek to the first note</source>
             <translation>最初のノーツへ移動</translation>
+        </message>
+        <message>
+            <source>Reload the chart from disk</source>
+            <translation>譜面をファイルから再読み込み</translation>
         </message>
         <message>
             <source>Play from the start</source>

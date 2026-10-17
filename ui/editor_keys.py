@@ -14,7 +14,8 @@ table, where the two disagree:
 - Shift+1..9 set the snap divisor, Ctrl+G reverses the selection in time,
   Ctrl+X cuts, Ctrl+D clones one measure on -- stable's.
 - Z seeks to the first note, X to 00:00:000 and plays, C is a second
-  Play/Pause (owner, 2026-10-17).
+  Play/Pause (owner, 2026-10-17). F5 re-reads the chart from its .osu, as
+  it does on song select.
 
 Every binding is a `ShortcutDefinition` in `app/settings.py`, so Settings lists
 and rebinds them like the rest.
@@ -80,6 +81,7 @@ class EditorKeys(QObject):
         ("seek_first_note", "_seek_first_note", (), "both"),
         ("play_from_start", "_play_from_start", (), "both"),
         ("play_pause_alt", "_play_pause", (), "both"),
+        ("reload_chart", "_reload_chart", (), "both"),
         ("seek_back", "_seek_steps", (-1, 1), "both"),
         ("seek_forward", "_seek_steps", (1, 1), "both"),
         ("seek_back_far", "_seek_steps", (-1, SHIFT_SEEK_STEPS), "both"),
@@ -215,6 +217,11 @@ class EditorKeys(QObject):
 
     def _play_pause(self) -> None:
         self.window._toggle_playback_from_shortcut()
+
+    def _reload_chart(self) -> None:
+        state = self._state_for(self._view()) or self.window.state
+        if state is not None:
+            self.window._reload_from_disk([state.source_path])
 
     def _seek_bookmark(self, direction: int) -> None:
         view = self._view()

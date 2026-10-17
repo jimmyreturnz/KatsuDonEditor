@@ -11,6 +11,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -78,6 +79,36 @@ class WindowTests(unittest.TestCase):
     def test_c_is_play_pause(self):
         self._key(Qt.Key_C)
         self.assertEqual(self.toggles, [1])
+
+    # -- F5 ------------------------------------------------------------------------
+
+    def _edit_on_disk(self) -> None:
+        text = self.path.read_text(encoding="utf-8")
+        version = self.window.state.document.version
+        self.path.write_text(text.replace(f"Version:{version}", "Version:edited in osu"), encoding="utf-8")
+
+    def test_f5_rereads_the_chart_from_its_file(self):
+        state = self.window.state
+        self._edit_on_disk()
+        self._key(Qt.Key_F5)
+        self.assertIs(self.window.state, state)
+        self.assertEqual(state.document.version, "edited in osu")
+
+    def test_f5_asks_before_dropping_unsaved_edits(self):
+        state = self.window.state
+        version = state.document.version
+        state.history.touch()
+        self._edit_on_disk()
+        asked = []
+
+        def no(*_args):
+            asked.append(1)
+            return gui.QMessageBox.No
+
+        with patch.object(gui.QMessageBox, "question", no):
+            self._key(Qt.Key_F5)
+        self.assertEqual(asked, [1])
+        self.assertEqual(state.document.version, version)
 
     # -- the header ----------------------------------------------------------------
 
@@ -167,12 +198,28 @@ class WindowTests(unittest.TestCase):
         state.history.undo(state)
         self.assertIn(stray.uid, {point.uid for point in state.document.timing_points})
 
+    def test_relative_to_a_typed_bpm_scales_by_it(self):
+        state = self.window.state
+        bpm = next(p for p in state.document.timing_points if p.uninherited).bpm
+        params = {
+            "initial_rate": 1.0, "final_rate": 1.0, "placement": "notes", "snap_divisor": 4,
+            "position_offset": 0, "omit_barline": False, "relative_to_final_bpm": False,
+            "relative_bpm": bpm / 2, "function": "linear", "oscillate": "",
+        }
+        self.window._generate_sv(self.path, 900.0, 2100.0, params)
+        written = [p.sv_multiplier for p in state.document.timing_points
+                   if not p.uninherited and 900 <= p.time <= 2100]
+        self.assertTrue(written)
+        for sv in written:
+            self.assertAlmostEqual(sv, 0.5)
+
 
 class DialogTests(unittest.TestCase):
     def setUp(self) -> None:
         self.settings = SettingsManager()
         for key in ("multiply_initial", "multiply_final", "remember_curve", "curve",
-                    "scroll_step", "initial_factor", "final_factor"):
+                    "scroll_step", "initial_factor", "final_factor", "remember_exponent",
+                    "exponent", "relative_mode", "relative_bpm"):
             self.settings._settings.remove(f"sv_generate/{key}")
 
     def _dialog(self, **kwargs):
@@ -219,6 +266,41 @@ class DialogTests(unittest.TestCase):
         dialog.set_selected_function("sin_out")
         dialog.accept()
         self.assertEqual(self._dialog().selected_function(), "sin_out")
+
+    def test_remember_last_exponent(self):
+        dialog = self._dialog()
+        dialog.set_selected_function("exp_x")
+        dialog.exp_spin.setValue(2.4)
+        dialog.accept()
+        self.assertAlmostEqual(self._dialog().exp_spin.value(), 2.0)
+        dialog = self._dialog()
+        dialog.remember_exp_check.setChecked(True)
+        dialog.set_selected_function("exp_x")
+        dialog.exp_spin.setValue(2.4)
+        dialog.accept()
+        self.assertAlmostEqual(self._dialog().exp_spin.value(), 2.4)
+
+    def test_relative_to_bpm_is_exclusive_and_remembered(self):
+        dialog = self._dialog(start_bpm=180.0)
+        self.assertTrue(dialog.relative_to_final_bpm_check.isChecked())
+        self.assertIsNone(dialog.parameters()["relative_bpm"])
+        self.assertAlmostEqual(dialog.relative_bpm_spin.value(), 180.0)
+        dialog.relative_to_bpm_check.setChecked(True)
+        self.assertFalse(dialog.relative_to_final_bpm_check.isChecked())
+        dialog.relative_bpm_spin.setValue(90.0)
+        self.assertAlmostEqual(dialog.parameters()["relative_bpm"], 90.0)
+        dialog.reject()
+        again = self._dialog(start_bpm=180.0)
+        self.assertTrue(again.relative_to_bpm_check.isChecked())
+        self.assertAlmostEqual(again.relative_bpm_spin.value(), 90.0)
+        again.relative_to_final_bpm_check.setChecked(True)
+        self.assertFalse(again.relative_to_bpm_check.isChecked())
+
+    def test_relative_to_bpm_opens_off_in_a_gimmick_layer(self):
+        self.settings.set_value("sv_generate/relative_mode", "bpm")
+        dialog = self._dialog(gimmick_layer="sv_barline")
+        self.assertFalse(dialog.relative_to_bpm_check.isChecked())
+        self.assertFalse(dialog.relative_to_final_bpm_check.isChecked())
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import math
 import os
 import random
 import csv
+import dataclasses
 import shutil
 import sys
 from collections import deque
@@ -8921,6 +8922,7 @@ class MainWindow(QMainWindow):
             final_rate=sv_at(points, targets[-1] if targets else end_ms),
             gimmick_layer=layer_id,
             settings=self.settings,
+            start_bpm=active_uninherited_at(points, start_ms).bpm if points else None,
             position_offset=(
                 self._gimmick_config(layer_id).sv_offset_ms if layer_id is not None else None
             ),
@@ -9168,7 +9170,12 @@ class MainWindow(QMainWindow):
                     params["function"], t, params["initial_rate"], params["final_rate"],
                 )
                 rate = params["initial_rate"] + (params["final_rate"] - params["initial_rate"]) * eased
-            if params["relative_to_final_bpm"] and start_bpm:
+            # A typed reference BPM is the same compensation against a BPM
+            # the mapper names instead of the one the range starts on.
+            reference_bpm = params.get("relative_bpm") or (
+                start_bpm if params["relative_to_final_bpm"] else None
+            )
+            if reference_bpm:
                 # Compensate for a BPM change across the range so the
                 # perceived scroll speed matches `rate` regardless of where
                 # the local BPM lands, not just the raw multiplier.
@@ -9182,9 +9189,9 @@ class MainWindow(QMainWindow):
                 # The regression test only covered a range with no BPM change
                 # in it, where the ratio is 1.0 either way and the direction
                 # cannot be seen.
-                local_bpm = active_uninherited_at(state.document.timing_points, time_ms).bpm or start_bpm
+                local_bpm = active_uninherited_at(state.document.timing_points, time_ms).bpm or reference_bpm
                 if local_bpm:
-                    rate = rate * (start_bpm / local_bpm)
+                    rate = rate * (reference_bpm / local_bpm)
             # Kiai belongs to the active point, so a generated sweep that
             # doesn't carry it forward switches kiai off for the whole range
             # it covers. Read per point, not once: a range can cross a kiai
@@ -10373,6 +10380,41 @@ class MainWindow(QMainWindow):
             self._refresh_difficulty_views(state.source_path)
             self._refresh_difficulty_sv_views(state.source_path)
         self.refresh_canvas()
+
+    def _reload_from_disk(self, paths) -> None:
+        """Re-read each open difficulty in `paths` from its .osu (F5).
+
+        A difficulty keeps its in-memory copy all session, so after a save in
+        osu!'s editor reopening it showed this app's version, not the file's.
+        The fresh parse is copied into the *same* state object, because every
+        view, the gimmick pairing and the undo target hold that object; the
+        playhead stays put. Unsaved edits are asked about, not thrown away.
+        """
+        for path in paths:
+            state = self._states.get(path)
+            if state is None:
+                continue
+            if state.dirty and QMessageBox.question(
+                self, tr("MainWindow", "Reload from disk"),
+                tr("MainWindow", "{0} has unsaved edits. Discard them and reload the file?")
+                .format(path.name),
+            ) != QMessageBox.Yes:
+                continue
+            del self._states[path]
+            try:
+                fresh = self._ensure_state(path)
+            except Exception as error:
+                self._states[path] = state
+                QMessageBox.critical(self, tr("MainWindow", "Open failed"), str(error))
+                continue
+            playhead = state.playhead_ms
+            for item in dataclasses.fields(state):
+                setattr(state, item.name, getattr(fresh, item.name))
+            state.playhead_ms = playhead
+            self._states[path] = state
+            self._after_history_change(state)
+            if self.state is state:
+                self._show_chart_identity(state)
 
     def undo(self)->None:
         state = self._history_target()

@@ -112,6 +112,8 @@ SHORTCUT_DEFINITIONS: tuple[ShortcutDefinition, ...] = (
     ShortcutDefinition("seek_first_note", "Seek to the first note", "Playback", "Z"),
     ShortcutDefinition("play_from_start", "Play from the start", "Playback", "X"),
     ShortcutDefinition("play_pause_alt", "Play/Pause (second key)", "Playback", "C"),
+    # Song select's F5, in the editor: re-read the chart from its .osu.
+    ShortcutDefinition("reload_chart", "Reload the chart from disk", "Playback", "F5"),
     # Tuned by ear while a chart plays at a slow rate, where the gap between a
     # note and its music is several times longer than at 1.0x.
     ShortcutDefinition("hitsound_offset_earlier", "Hitsound offset: 1ms earlier", "Playback", "Ctrl+["),

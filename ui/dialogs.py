@@ -2567,6 +2567,7 @@ class SVFunctionDialog(SheetDialog):
         base_timing: list[TimingPoint] | None = None,
         volume: bool = False,
         settings=None,
+        start_bpm: float | None = None,
     ) -> None:
         title = tr("MainWindow", "Generate Volume") if volume else tr("MainWindow", "Generate SV")
         super().__init__(
@@ -2734,10 +2735,20 @@ class SVFunctionDialog(SheetDialog):
         self.exp_spin.setRange(1.0, 10.0)
         self.exp_spin.setDecimals(2)
         self.exp_spin.setSingleStep(0.1)
-        self.exp_spin.setValue(2.0)
+        # Before the preview is connected: the rest of the dialog is not built yet.
+        self.exp_spin.setValue(
+            self._setting_float("exponent", 2.0) if self._setting_bool("remember_exponent", False) else 2.0)
         self.exp_spin.valueChanged.connect(self._update_preview)
         self._exp_field = rates.field(tr("MainWindow", "Exponent"), self.exp_spin, tr(
             "MainWindow", "The x in t^x for the Exp x curve. Floored at 1: below it the curve bends the other way."))
+        # Its own memory, separate from the curve's: a tuned 2.4 survives a
+        # sweep or two on another curve in between.
+        self.remember_exp_check = QCheckBox(tr("MainWindow", "Remember last choice"))
+        self.remember_exp_check.setChecked(self._setting_bool("remember_exponent", False))
+        self._remember_exp_field = None
+        if self._settings is not None:
+            self._remember_exp_field = rates.switch(self.remember_exp_check, tr(
+                "MainWindow", "Open with the exponent used last time."), span=1)
 
         # Sweep or oscillation. The same growth function drives both: a sweep
         # eases the rate from Initial to Final, an oscillation eases the
@@ -2819,13 +2830,36 @@ class SVFunctionDialog(SheetDialog):
         self.relative_to_final_bpm_check.setChecked(not gimmick_layer and not volume)
         where.switch(self.relative_to_final_bpm_check, tr(
             "MainWindow", "Scales each rate so the scroll speed holds across BPM changes in the range."), span=1)
+
+        # The same compensation against a BPM the mapper names rather than the
+        # one the range starts on: a sweep through a 60000 BPM gimmick run that
+        # should scroll as if it were the song's 180.
+        self.relative_to_bpm_check = QCheckBox(tr("MainWindow", "Relative to BPM"))
+        self.relative_bpm_spin = QDoubleSpinBox()
+        self.relative_bpm_spin.setRange(1.0, 100000.0)
+        self.relative_bpm_spin.setDecimals(3)
+        self.relative_bpm_spin.setSingleStep(1.0)
+        self.relative_bpm_spin.setValue(self._setting_float("relative_bpm", float(start_bpm or 120.0)))
+        where.switch(self.relative_to_bpm_check, tr(
+            "MainWindow", "Holds the scroll speed that a rate has at this BPM, everywhere in the range."), span=1)
+        where.field(tr("MainWindow", "Reference BPM"), self.relative_bpm_spin)
+        if not gimmick_layer and not volume and self._settings is not None:
+            mode = self._setting_str("relative_mode", "final")
+            self.relative_to_final_bpm_check.setChecked(mode == "final")
+            self.relative_to_bpm_check.setChecked(mode == "bpm")
+        self.relative_bpm_spin.setEnabled(self.relative_to_bpm_check.isChecked())
+        # Exclusive, but "neither" is allowed, which a QButtonGroup is not.
+        self.relative_to_bpm_check.toggled.connect(self._relative_bpm_toggled)
+        self.relative_to_final_bpm_check.toggled.connect(
+            lambda on: on and self.relative_to_bpm_check.setChecked(False))
         if volume:
             # Position offset and Omit barline describe an *inserted* point;
             # the Volume tool edits the timing points already in the range.
             # Relative to final BPM is a statement about scroll speed, and a
             # hitsound is as loud as it is whatever the BPM is doing.
             for widget in (self.position_offset_spin, self.omit_barline_check,
-                           self.relative_to_final_bpm_check, self.replace_existing_check):
+                           self.relative_to_final_bpm_check, self.replace_existing_check,
+                           self.relative_to_bpm_check, self.relative_bpm_spin):
                 set_row_visible(None, widget, False)
 
         self.include_shiny_check = QCheckBox(tr("MainWindow", "Include shiny notes"))
@@ -2950,6 +2984,11 @@ class SVFunctionDialog(SheetDialog):
         if self._settings is not None:
             self._settings.set_value(f"sv_generate/{key}", value)
 
+    def _relative_bpm_toggled(self, on: bool) -> None:
+        self.relative_bpm_spin.setEnabled(on)
+        if on:
+            self.relative_to_final_bpm_check.setChecked(False)
+
     def _apply_scroll_step(self, *_args) -> None:
         step = self.scroll_step_spin.value()
         self.initial_rate_spin.setSingleStep(step)
@@ -2975,11 +3014,18 @@ class SVFunctionDialog(SheetDialog):
         # Cancel keeps the switches too: they are preferences, not this sweep.
         self._remember("remember_curve", self.remember_curve_check.isChecked())
         self._remember("replace_existing", self.replace_existing_check.isChecked())
+        self._remember("remember_exponent", self.remember_exp_check.isChecked())
+        self._remember("relative_bpm", self.relative_bpm_spin.value())
+        if not self.gimmick_layer:
+            self._remember("relative_mode", "bpm" if self.relative_to_bpm_check.isChecked()
+                           else "final" if self.relative_to_final_bpm_check.isChecked() else "off")
         for name, check, factor, _rate in self._factor_pairs:
             self._remember(f"multiply_{name}", check.isChecked())
             self._remember(f"{name}_factor", factor.value())
         if result == QDialog.Accepted:
             self._remember("curve", self.selected_function())
+            if self.function_buttons["exp_x"].isChecked():
+                self._remember("exponent", self.exp_spin.value())
             if not self.gimmick_layer:
                 self._remember("position_offset", self.position_offset_spin.value())
         super().done(result)
@@ -3064,6 +3110,8 @@ class SVFunctionDialog(SheetDialog):
             button.setIcon(QIcon(self._curve_pixmap(self._resolved_function(key), self.CHIP_ICON_SIZE, 1.6)))
         self.preview.set_function(self.selected_function())
         self._exp_field.setVisible(self.function_buttons["exp_x"].isChecked())
+        if self._remember_exp_field is not None:
+            self._remember_exp_field.setVisible(self.function_buttons["exp_x"].isChecked())
         self.curve.refresh()
 
     def _update_placement_controls(self) -> None:
@@ -3132,6 +3180,9 @@ class SVFunctionDialog(SheetDialog):
             "position_offset": 0 if self.volume else self.position_offset_spin.value(),
             "omit_barline": self.omit_barline_check.isChecked(),
             "relative_to_final_bpm": self.relative_to_final_bpm_check.isChecked(),
+            "relative_bpm": (
+                self.relative_bpm_spin.value() if self.relative_to_bpm_check.isChecked() else None
+            ),
             "replace_existing": not self.volume and self.replace_existing_check.isChecked(),
             "function": self.selected_function(),
             "oscillate": str(self.mode_combo.currentData()),

@@ -1869,6 +1869,10 @@ class LibraryPageController:
         # Selection is kept by folder, but the row is re-set from -1 so the
         # difficulty list refills from the new entries.
         self.rebuild_song_list()
+        # And the editor's copies of them, or opening one shows this session's
+        # version rather than the file just re-read.
+        resolved = folder.resolve()
+        self.window._reload_from_disk([path for path in list(self.window._states) if path.parent == resolved])
 
     def start_scan(self) -> None:
         folder = self.window.settings.string_value("library/songs_folder", "")

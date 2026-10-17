@@ -221,7 +221,7 @@ class EditorKeys(QObject):
     def _reload_chart(self) -> None:
         state = self._state_for(self._view()) or self.window.state
         if state is not None:
-            self.window._reload_from_disk([state.source_path])
+            self.window._reload_from_disk([state.source_path], confirm=True)
 
     def _seek_bookmark(self, direction: int) -> None:
         view = self._view()

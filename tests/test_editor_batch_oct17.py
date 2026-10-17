@@ -87,11 +87,38 @@ class WindowTests(unittest.TestCase):
         version = self.window.state.document.version
         self.path.write_text(text.replace(f"Version:{version}", "Version:edited in osu"), encoding="utf-8")
 
-    def test_f5_rereads_the_chart_from_its_file(self):
+    def _answer(self, answer):
+        asked = []
+
+        def question(*_args):
+            asked.append(1)
+            return answer
+
+        return asked, patch.object(gui.QMessageBox, "question", question)
+
+    def test_f5_asks_then_rereads_the_chart_from_its_file(self):
+        state = self.window.state
+        version = state.document.version
+        self._edit_on_disk()
+        asked, stub = self._answer(gui.QMessageBox.No)
+        with stub:
+            self._key(Qt.Key_F5)
+        self.assertEqual(asked, [1])
+        self.assertEqual(state.document.version, version)
+        asked, stub = self._answer(gui.QMessageBox.Yes)
+        with stub:
+            self._key(Qt.Key_F5)
+        self.assertEqual(asked, [1])
+        self.assertIs(self.window.state, state)
+        self.assertEqual(state.document.version, "edited in osu")
+
+    def test_song_select_reload_only_asks_about_unsaved_edits(self):
         state = self.window.state
         self._edit_on_disk()
-        self._key(Qt.Key_F5)
-        self.assertIs(self.window.state, state)
+        asked, stub = self._answer(gui.QMessageBox.Yes)
+        with stub:
+            self.window._reload_from_disk([state.source_path])
+        self.assertEqual(asked, [])
         self.assertEqual(state.document.version, "edited in osu")
 
     def test_f5_asks_before_dropping_unsaved_edits(self):
@@ -99,14 +126,9 @@ class WindowTests(unittest.TestCase):
         version = state.document.version
         state.history.touch()
         self._edit_on_disk()
-        asked = []
-
-        def no(*_args):
-            asked.append(1)
-            return gui.QMessageBox.No
-
-        with patch.object(gui.QMessageBox, "question", no):
-            self._key(Qt.Key_F5)
+        asked, stub = self._answer(gui.QMessageBox.No)
+        with stub:
+            self.window._reload_from_disk([state.source_path])
         self.assertEqual(asked, [1])
         self.assertEqual(state.document.version, version)
 

@@ -10381,23 +10381,29 @@ class MainWindow(QMainWindow):
             self._refresh_difficulty_sv_views(state.source_path)
         self.refresh_canvas()
 
-    def _reload_from_disk(self, paths) -> None:
+    def _reload_from_disk(self, paths, confirm: bool = False) -> None:
         """Re-read each open difficulty in `paths` from its .osu (F5).
 
         A difficulty keeps its in-memory copy all session, so after a save in
         osu!'s editor reopening it showed this app's version, not the file's.
         The fresh parse is copied into the *same* state object, because every
         view, the gimmick pairing and the undo target hold that object; the
-        playhead stays put. Unsaved edits are asked about, not thrown away.
+        playhead stays put. Unsaved edits are asked about, not thrown away;
+        `confirm` (the editor's F5, one stray key from losing the undo
+        history) asks even when there are none.
         """
         for path in paths:
             state = self._states.get(path)
             if state is None:
                 continue
-            if state.dirty and QMessageBox.question(
-                self, tr("MainWindow", "Reload from disk"),
-                tr("MainWindow", "{0} has unsaved edits. Discard them and reload the file?")
-                .format(path.name),
+            if state.dirty:
+                question = tr("MainWindow", "{0} has unsaved edits. Discard them and reload the file?")
+            elif confirm:
+                question = tr("MainWindow", "Reload {0} from its file?")
+            else:
+                question = None
+            if question and QMessageBox.question(
+                self, tr("MainWindow", "Reload from disk"), question.format(path.name),
             ) != QMessageBox.Yes:
                 continue
             del self._states[path]

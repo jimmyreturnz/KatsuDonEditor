@@ -1977,6 +1977,10 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>このビートマップを再読み込み</translation>
         </message>
         <message>
+            <source>Reload {0} from its file?</source>
+            <translation>{0} をファイルから再読み込みしますか？</translation>
+        </message>
+        <message>
             <source>Reload from disk</source>
             <translation>ファイルから再読み込み</translation>
         </message>

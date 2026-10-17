@@ -15,7 +15,7 @@ Taiko Fancy Arranger started as a tool for turning osu!taiko notes into visual p
 
 The editor does not support editing storyboards, breaks, colours, editor bookmarks yet.
 
-> **Current release:** v3.5.4  
+> **Current release:** v3.5.5  
 > **Platform:** Windows x64  
 > **Author:** [jimmyreturnz](https://osu.ppy.sh/users/11306153)
 
@@ -57,16 +57,15 @@ The main inspirations include Alchyr's ranked maps *13 Stairs* and *Helios*, whi
 
 ---
 
-## What is new in 3.5.4
+## What is new in 3.5.5
 
-osu!'s Z/X/C keys and a Generate SV dialog you can drive from the keyboard.
+A small update.
 
-- **Z / X / C.** First note, play from 00:00, and a second Play/Pause.
-- **Generate SV:** type a rate and press Enter. It also gains Replace existing green lines, initial/final multipliers, Remember last choice for the curve and a scroll step.
-- **Rates are read at the selection's first and last notes**, not at the drag's edges.
-- **Fixed:** Enter in a settings sheet pressed Restore defaults; a spinner could only be grabbed by its head; a view's header did not select it; the mods chip showed on song select.
+- **F5 reads the chart from its file**, in song select and (after asking) in the editor. A chart saved in osu!'s editor used to reopen as this app's copy.
+- **Relative to BPM** in Generate SV: hold the scroll speed of a BPM you type.
+- **The Exp x exponent is remembered.**
 
-Details: [`docs/releases/v3.5.4.md`](docs/releases/v3.5.4.md)
+Details: [`docs/releases/v3.5.5.md`](docs/releases/v3.5.5.md)
 
 
 The full development log is in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md).
@@ -75,7 +74,7 @@ The full development log is in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLA
 
 ## Windows SmartScreen notice
 
-Taiko Fancy Arranger v3.5.4 is an unsigned Windows application. The release validates its input files, ships with automated tests, and publishes SHA-256 checksums.
+Taiko Fancy Arranger v3.5.5 is an unsigned Windows application. The release validates its input files, ships with automated tests, and publishes SHA-256 checksums.
 
 Windows Defender SmartScreen may still show an "unrecognized app" warning, because a new executable has no download reputation yet.
 
@@ -486,7 +485,7 @@ Do not upload copyrighted audio or private beatmap assets unless permission has 
 
 ## Project status
 
-Version 3.5.4 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
+Version 3.5.5 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
 
 Not yet implemented, and next in line:
 

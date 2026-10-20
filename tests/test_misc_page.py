@@ -26,6 +26,10 @@ class PureTests(unittest.TestCase):
         none = misc_page.shifted_lines(["[General]\n", "PreviewTime: -1\n"], 5, "\n")
         self.assertEqual(metadata.read_keys(none, "General")["PreviewTime"], "-1")
 
+    def test_a_bookmark_that_is_not_a_number_stays_and_does_not_raise(self):
+        out = misc_page.shifted_lines(["[Editor]\n", "Bookmarks: 10,x,1.5,-20\n"], 5, "\n")
+        self.assertEqual(metadata.read_keys(out, "Editor")["Bookmarks"], "15,x,1.5,-15")
+
 
 class MetadataValuesTests(unittest.TestCase):
     """The owner's osu-metadata rules."""

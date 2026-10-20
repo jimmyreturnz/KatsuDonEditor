@@ -83,8 +83,15 @@ def register(settings) -> None:
             )
             # Not waited on: PowerShell takes a few hundred ms to start, and a
             # failed write simply leaves no shortcut, so the next start retries.
+            # By absolute path: a bare "powershell" is searched for in the
+            # app's folder and the working directory first, where a planted
+            # powershell.exe would run instead.
+            powershell = (Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+                          / "WindowsPowerShell" / "v1.0" / "powershell.exe")
+            if not powershell.is_file():
+                return
             subprocess.Popen(
-                ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                [str(powershell), "-NoProfile", "-NonInteractive", "-Command", script],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )

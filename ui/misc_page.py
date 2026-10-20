@@ -24,7 +24,10 @@ def shifted_lines(lines: list[str], delta_ms: int, ending: str) -> list[str]:
     `delta_ms`. A PreviewTime of -1 means "none" and stays."""
     bookmarks = metadata.read_keys(lines, "Editor").get("Bookmarks", "")
     if bookmarks:
-        moved = ",".join(str(int(value) + delta_ms) for value in bookmarks.split(",") if value.strip())
+        # A bookmark that is not a whole number (a hand-edited file) is kept
+        # as it was: raising here left the set half shifted.
+        moved = ",".join(str(int(value) + delta_ms) if value.strip().lstrip("-").isdigit() else value.strip()
+                         for value in bookmarks.split(",") if value.strip())
         lines = metadata.with_keys(lines, "Editor", {"Bookmarks": moved}, ending)
     preview = metadata.read_keys(lines, "General").get("PreviewTime", "")
     if preview.lstrip("-").isdigit() and int(preview) >= 0:

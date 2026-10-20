@@ -22,16 +22,23 @@ from ui.config_sheet import ConfigSheet, set_warning
 def shifted_lines(lines: list[str], delta_ms: int, ending: str) -> list[str]:
     """`lines` with [Editor] Bookmarks and [General] PreviewTime moved by
     `delta_ms`. A PreviewTime of -1 means "none" and stays."""
+    def as_int(value: str) -> int | None:
+        # A value that is not a whole number (a hand-edited file) is kept as
+        # it was: raising here left the set half shifted. Parsed, not
+        # pre-checked: isdigit() passes "²" and "--5", which int() rejects.
+        try:
+            return int(value)
+        except ValueError:
+            return None
+
     bookmarks = metadata.read_keys(lines, "Editor").get("Bookmarks", "")
     if bookmarks:
-        # A bookmark that is not a whole number (a hand-edited file) is kept
-        # as it was: raising here left the set half shifted.
-        moved = ",".join(str(int(value) + delta_ms) if value.strip().lstrip("-").isdigit() else value.strip()
-                         for value in bookmarks.split(",") if value.strip())
+        values = [value.strip() for value in bookmarks.split(",") if value.strip()]
+        moved = ",".join(value if as_int(value) is None else str(as_int(value) + delta_ms) for value in values)
         lines = metadata.with_keys(lines, "Editor", {"Bookmarks": moved}, ending)
-    preview = metadata.read_keys(lines, "General").get("PreviewTime", "")
-    if preview.lstrip("-").isdigit() and int(preview) >= 0:
-        lines = metadata.with_keys(lines, "General", {"PreviewTime": str(int(preview) + delta_ms)}, ending)
+    preview = as_int(metadata.read_keys(lines, "General").get("PreviewTime", ""))
+    if preview is not None and preview >= 0:
+        lines = metadata.with_keys(lines, "General", {"PreviewTime": str(preview + delta_ms)}, ending)
     return lines
 
 

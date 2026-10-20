@@ -123,6 +123,7 @@ SHORTCUT_DEFINITIONS: tuple[ShortcutDefinition, ...] = (
     ShortcutDefinition("copy", "Copy", "Editing", "Ctrl+C"),
     ShortcutDefinition("paste", "Paste", "Editing", "Ctrl+V"),
     ShortcutDefinition("resnap", "Resnap to each object's own grid", "Editing", "Ctrl+R"),
+    ShortcutDefinition("scale_sv", "Scale the selected green lines' SV", "Editing", "Ctrl+M"),
     # osu!'s editor keys (ui/editor_keys.py; chosen with the owner against
     # current osu!lazer and the stable wiki, 2026-10-11).
     ShortcutDefinition("toggle_new_combo", "Toggle new combo on the selection", "Editing", "Q"),

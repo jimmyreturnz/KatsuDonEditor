@@ -171,6 +171,15 @@ recovery -- two real bugs inherited from reading a stale copy.
   (2026-10-11). **Process deleteLater** in a harness
   (`sendPostedEvents(None, QEvent.DeferredDelete)`): `processEvents` never
   does, so closed dialogs lived on and inflated every theme switch to 1.4s.
+- `tools/measure_pause_seek.py <map.osu> [--paused-drag] [--settle S]` -- drag
+  the timing bar, pause, resume; the window's playhead against the engine's
+  audio, and whether anything reached the sink. "Muted, then resumes from the
+  last pause while the playhead is elsewhere" was **an .ogg** (2026-10-18): the
+  track decodes in the background at ~106x realtime (2.8s for 294s; .mp3
+  178x), a seek past the decoded part plays nothing until the decode arrives,
+  and the playhead ran on without it. `--settle 0.05` reproduces it; with
+  the default 1.5s every run was clean, which is why it looked unreproducible.
+  The engine now reports `starved_changed` and the clock holds.
 - `tools/play_with_hitsounds.py <map.osu> [rate] [seconds] [start_ms]` — the
   whole path, audibly: parse, schedule, decode, stretch, mix, sink. `voiced`
   and `offered` must be equal, or the 1/rate dedupe has leaked and every note

@@ -560,6 +560,18 @@ class SVEditorIntegrationTests(unittest.TestCase):
         _press(view, view.x_for_time(inherited.time), button=Qt.MouseButton.RightButton)
         self.assertEqual(len(self.state.document.timing_points), before - 1)
 
+    def test_right_click_on_a_selected_point_deletes_the_selection(self):
+        view = self._sv_view()
+        view.resize(800, 200)
+        view.window_ms = 4000.0
+        inherited = [p for p in self.state.document.timing_points if not p.uninherited][:3]
+        view.current_time = inherited[0].time
+        view.selected_uids = {p.uid for p in inherited}
+        before = len(self.state.document.timing_points)
+        self.assertGreater(len(inherited), 1)
+        _press(view, view.x_for_time(inherited[0].time), button=Qt.MouseButton.RightButton)
+        self.assertEqual(len(self.state.document.timing_points), before - len(inherited))
+
     # -- multi-view refresh -----------------------------------------------------
 
     def test_edit_refreshes_every_open_sv_view_of_the_difficulty(self):

@@ -59,7 +59,7 @@ from app.settings import (
 )
 from ui.settings_dialog import SettingsDialog
 from ui import theme, windose
-from app import updater
+from app import launcher_entry, updater
 from osu_io.parser import parse_osu, read_version
 from osu_io.timing import (
     EFFECT_KIAI, TimingPoint, active_point_at, active_uninherited_at, kiai_spans,
@@ -93,10 +93,11 @@ from ui.common import (
     format_time, next_frame_due, resource_roots, set_view_ground_alpha, spinner_pixmap, tabular,
     view_ground_is_opaque,
 )
+from ui.misc_page import MiscPage
 from ui.dialogs import (
     AddViewDialog, GimmickEntryDialog, GimmickConfigDialog, ConvertNotesDialog,
-    BarlineFunctionDialog, FakeSliderFunctionDialog, MultiFakeSliderDialog, TimingLineDialog,
-    SVFunctionDialog,
+    BarlineFunctionDialog, FakeSliderFunctionDialog, MultiFakeSliderDialog, TimingLineDialog, ScaleSvDialog,
+    SVFunctionDialog, SaveSelectionDialog,
 )
 from ui.gameplay_view import GameplayViewerView
 from ui.song_select import LibraryPageController
@@ -172,7 +173,7 @@ TOOL_BUTTON_STYLE = "QPushButton { padding: 5px 12px; font-size: 12px; }"
 GIMMICK_TOOL_BUTTON_STYLE = "QPushButton { padding: 3px 9px; font-size: 11px; }"
 
 # page_stack / page_button_group indices.
-PAGE_LIBRARY, PAGE_EDITOR, PAGE_GIMMICK, PAGE_FANCY = 0, 1, 2, 3
+PAGE_LIBRARY, PAGE_EDITOR, PAGE_GIMMICK, PAGE_FANCY, PAGE_MISC = 0, 1, 2, 3, 4
 
 # Points added to the system UI font. Applied to the QApplication font so it
 # reaches dialogs and honours DPI scaling, unlike a stylesheet pixel size.
@@ -734,7 +735,7 @@ class ParameterControl(QWidget):
             if self.caption is not None:
                 scrub_label(self.caption, self.spin)
             return
-        step = float(definition.get("step", 1 if kind == "int" else .1))
+        step = float(definition.get("step", 1 if kind == "int" else .01))
         self.scale = 1 if kind == "int" or step >= 1 else 10 if step >= .1 else 100
         self.slider = QSlider(Qt.Horizontal)
         self.slider.setRange(round(float(definition["min"]) * self.scale), round(float(definition["max"]) * self.scale))
@@ -842,7 +843,7 @@ class DifficultyValueControl(QWidget):
         layout = QHBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(2)
         caption = QLabel(label); caption.setToolTip(tooltip); layout.addWidget(caption)
         self.value_box = QDoubleSpinBox(); self.value_box.setRange(0.0, 10.0); self.value_box.setDecimals(2)
-        self.value_box.setSingleStep(0.1); self.value_box.setFixedWidth(84); self.value_box.setToolTip(tooltip)
+        self.value_box.setSingleStep(0.01); self.value_box.setFixedWidth(84); self.value_box.setToolTip(tooltip)
         self.slider = QSlider(Qt.Horizontal)
         self.slider.setRange(0, int(10 * self.SLIDER_STEPS_PER_UNIT))
         self.slider.setPageStep(self.SLIDER_STEPS_PER_UNIT)
@@ -2188,7 +2189,7 @@ class ToolStateController:
         return row
 
     def build_global_sv_tool_row(self) -> QWidget:
-        """M4 SV-editing tools: 1 select, 2 green line, 3 function. Same
+        """M4 SV-editing tools: 1 select, 2 green line, 3 function, 4 scale. Same
         pattern and rationale as the note tool row above; applies to
         whichever SV view last had focus (active_sv_view). Only one of this
         row and the note tool row is visible at a time, switched by
@@ -2212,6 +2213,7 @@ class ToolStateController:
             ("1", "select", tr("MainWindow", "1. Select")),
             ("2", "green_line", tr("MainWindow", "2. Green Line")),
             ("3", "function", tr("MainWindow", "3. Function")),
+            ("4", "scale", tr("MainWindow", "4. Scale SV")),
             ("2", "kiai", tr("MainWindow", "2. Kiai")),
             ("3", "volume", tr("MainWindow", "3. Volume")),
         )
@@ -2227,7 +2229,7 @@ class ToolStateController:
             self.sv_tool_buttons[tool_id] = button
             layout.addWidget(button)
 
-        self.SV_TOOLS_DEFAULT = ("select", "green_line", "function")
+        self.SV_TOOLS_DEFAULT = ("select", "green_line", "function", "scale")
         self.SV_TOOLS_KIAI_SOUND = ("select", "kiai", "volume")
         for tool_id in self.SV_TOOLS_KIAI_SOUND[1:]:
             self.sv_tool_buttons[tool_id].setVisible(False)
@@ -2315,7 +2317,7 @@ class ToolStateController:
         if should_ignore_shortcut_focus(QApplication.focusWidget()):
             return
         note_tools = {"1": "select", "2": "don", "3": "kat", "4": "slider", "5": "spinner"}
-        sv_tools = dict(zip("123", self.sv_tools_for(self.active_sv_view)))
+        sv_tools = dict(zip("1234", self.sv_tools_for(self.active_sv_view)))
         # The gimmick page has its own row and its own meanings for 1-4, and it
         # is checked first: its row is always visible while that page is up,
         # where the Editor page's two rows are only visible on theirs.
@@ -2997,8 +2999,10 @@ class MainWindow(QMainWindow):
             self.toggle_playback()
 
     def _save_from_shortcut(self) -> None:
+        # Ctrl+S is the difficulty on screen, as in osu!'s editor: muscle
+        # memory should not write files the user is not looking at.
         if not should_ignore_shortcut_focus(QApplication.focusWidget()) and self.state is not None:
-            self.save_all_states()
+            self._save_states([self.state] if self.state.history.dirty else [])
 
     def _reload_shortcuts(self) -> None:
         """Re-read every registry-driven binding after Settings applies.
@@ -3018,6 +3022,7 @@ class MainWindow(QMainWindow):
             ("copy", self.gimmick_copy_shortcut),
             ("paste", self.gimmick_paste_shortcut),
             ("resnap", self.resnap_shortcut),
+            *(("scale_sv", shortcut) for shortcut in self.scale_sv_shortcuts),
             ("hitsound_offset_earlier", self.hitsound_earlier_shortcut),
             ("hitsound_offset_later", self.hitsound_later_shortcut),
             *self.tool_shortcuts.items(),
@@ -3250,8 +3255,8 @@ class MainWindow(QMainWindow):
         header.addWidget(self.redo_button)
 
         self.save_all_button = QPushButton(tr("MainWindow", "Save"))
-        self.save_all_button.setToolTip(tr("MainWindow", "Save every changed difficulty"))
-        self.save_all_button.clicked.connect(self.save_all_states)
+        self.save_all_button.setToolTip(tr("MainWindow", "Choose which changed difficulties to save"))
+        self.save_all_button.clicked.connect(self._save_clicked)
         self.save_all_button.setFocusPolicy(Qt.NoFocus)
         self.save_all_button.setEnabled(False)
         header.addWidget(self.save_all_button)
@@ -3315,9 +3320,10 @@ class MainWindow(QMainWindow):
         self.editor_page_button = QPushButton(tr("MainWindow", "Editor"))
         self.gimmick_page_button = QPushButton(tr("MainWindow", "Gimmick"))
         self.fancy_arranger_page_button = QPushButton(tr("MainWindow", "Fancy Arranger"))
+        self.misc_page_button = QPushButton(tr("MainWindow", "Miscellaneous"))
         page_buttons = (
             self.library_page_button, self.editor_page_button,
-            self.gimmick_page_button, self.fancy_arranger_page_button,
+            self.gimmick_page_button, self.fancy_arranger_page_button, self.misc_page_button,
         )
         for button in page_buttons:
             button.setCheckable(True)
@@ -3327,6 +3333,7 @@ class MainWindow(QMainWindow):
         self.page_button_group.addButton(self.editor_page_button, PAGE_EDITOR)
         self.page_button_group.addButton(self.gimmick_page_button, PAGE_GIMMICK)
         self.page_button_group.addButton(self.fancy_arranger_page_button, PAGE_FANCY)
+        self.page_button_group.addButton(self.misc_page_button, PAGE_MISC)
         self.library_page_button.setChecked(True)
         self.page_button_group.idClicked.connect(self._switch_page)
         # A sheen crosses every page tab on hover: the app's own pages in the
@@ -3358,6 +3365,8 @@ class MainWindow(QMainWindow):
         self.page_stack.addWidget(self.gimmick_page)
         self.fancy_arranger_page = self._build_fancy_arranger_page()
         self.page_stack.addWidget(self.fancy_arranger_page)
+        self.misc_page = MiscPage(self)
+        self.page_stack.addWidget(self.misc_page)
         self.page_stack.setCurrentIndex(PAGE_LIBRARY)
         root.addWidget(self.page_stack, 1)
         # The page left slides away and the new one arrives (_show_page).
@@ -3943,6 +3952,9 @@ class MainWindow(QMainWindow):
         # by an earlier _leave_editor never gets them back on its own.
         if index == PAGE_EDITOR and self.state is not None:
             self._ensure_default_editor_views(self.state)
+        if index == PAGE_MISC:
+            # Read off whichever difficulty is open now, not the last visit's.
+            self.misc_page.refresh()
         if index != current:
             self._click_page_change()
         self._show_page(index)
@@ -4696,12 +4708,15 @@ class MainWindow(QMainWindow):
         ),
         "sv_chart": (
             ("select", "Select"), ("green_line", "Green Line"), ("function", "Function"),
+            ("scale", "Scale SV"),
         ),
         "sv_fake_slider": (
             ("select", "Select"), ("green_line", "Green Line"), ("function", "Function"),
+            ("scale", "Scale SV"),
         ),
         "sv_barline": (
             ("select", "Select"), ("green_line", "Green Line"), ("function", "Function"),
+            ("scale", "Scale SV"),
         ),
         # Both tools act on a dragged range rather than on a click: Kiai sets
         # the flag across it, Volume sweeps hitsound volume over it. Kiai used
@@ -5637,6 +5652,41 @@ class MainWindow(QMainWindow):
             self._refresh_difficulty_views(difficulty_path)
             self._refresh_difficulty_sv_views(difficulty_path)
 
+    def scale_selected_sv(self) -> None:
+        """Multiply and/or add to the SV of the selected green lines, one undo
+        step (`ScaleSvDialog`). Red lines in the selection are left alone:
+        their SV is the green line on their millisecond, which is selected
+        separately if it is meant to change."""
+        if should_ignore_shortcut_focus(QApplication.focusWidget()):
+            return
+        view = self._active_sv_view
+        path = self._difficulty_for_view(view) if view is not None else None
+        state = self._states.get(path) if path is not None else None
+        points = [point for point in view.selected_points() if not point.uninherited] if state else []
+        if not points:
+            self.show_toast(tr("MainWindow", "Select green lines to scale first."))
+            return
+        self.scale_sv_points(path, points)
+
+    def scale_sv_points(self, path: Path, points: list) -> None:
+        """`ScaleSvDialog` over `points` (green lines of difficulty `path`),
+        as one undo step. The Miscellaneous page passes every green line."""
+        state = self._states.get(path)
+        if state is None or not points:
+            return
+        dialog = ScaleSvDialog(len(points), self)
+        accepted = dialog.exec() == QDialog.Accepted
+        commands = [
+            EditTimingPoint(point.uid, {"beat_length": (point.beat_length, -100.0 / dialog.scaled(point.sv_multiplier))})
+            for point in points
+        ] if accepted else []
+        dialog.deleteLater()
+        commands = [command for command in commands if command.changes["beat_length"][0] != command.changes["beat_length"][1]]
+        if not commands:
+            return
+        state.history.push(CompositeCommand(commands, "edit_timing_point"), state)
+        self._refresh_difficulty_sv_views(path)
+
     def resnap_selection(self) -> None:
         """Put each selected object -- every object, with nothing selected --
         on the nearest line of its *own* grid, as one undo step.
@@ -5725,6 +5775,9 @@ class MainWindow(QMainWindow):
             commands.append(RemoveHitObjects(notes))
         if points:
             commands.append(RemoveTimingPoints(points))
+            restored = self._restore_base_reds(state, points)
+            if restored:
+                commands.append(InsertTimingPoints(restored))
         state.history.push(CompositeCommand(commands, "delete_gimmick"), state)
         # Note selection only: refresh_notes prunes the red-line selection
         # against the document by itself, but `selected` is original_index and
@@ -5844,16 +5897,61 @@ class MainWindow(QMainWindow):
         point = next((p for p in state.document.timing_points if p.uid == uid), None)
         if point is None:
             return
-        dialog = TimingLineDialog(point, self)
+        point, partner = self._timing_pair(state.document, point)
+        dialog = TimingLineDialog(point, self, partner=partner)
         accepted = dialog.exec() == QDialog.Accepted
         changes = dialog.changes(point) if accepted else {}
+        partner_changes = dialog.partner_changes(point) if accepted else {}
+        new_sv = dialog.new_partner_sv() if accepted else None
         dialog.deleteLater()
-        if not changes:
+        commands = []
+        if changes:
+            commands.append(EditTimingPoint(point.uid, changes))
+        if partner_changes:
+            # A retime sorts the list after each edit, stably on time alone.
+            # Moving later, the green has to move first, or the red passes it
+            # and then lands *after* it on the shared millisecond -- which
+            # resets the SV the green was there to set. Moving earlier, the
+            # red first, for the mirror reason.
+            edit = EditTimingPoint(partner.uid, partner_changes)
+            later = "time" in changes and changes["time"][1] > changes["time"][0]
+            if later:
+                commands.insert(0, edit)
+            else:
+                commands.append(edit)
+        if new_sv is not None:
+            time_ms = changes["time"][1] if "time" in changes else point.time
+            # Appended after the red line's edit: InsertTimingPoints sorts
+            # stably, so the new green lands after the red on their millisecond.
+            commands.append(InsertTimingPoints([TimingPoint.inherited_at(
+                time_ms, new_sv, kiai=dialog.kiai_check.isChecked(), template=point)]))
+        if not commands:
             return
-        state.history.push(EditTimingPoint(uid, changes), state)
+        state.history.push(
+            commands[0] if len(commands) == 1 else CompositeCommand(commands, "edit_timing_point"), state)
         with self._refresh_cycle():
             self._refresh_difficulty_views(difficulty_path)
             self._refresh_difficulty_sv_views(difficulty_path)
+
+    @staticmethod
+    def _timing_pair(document, point):
+        """(red line, its green partner or None) for a double click on either.
+
+        The partner is the last green line on the red line's millisecond that
+        comes after it in file order -- the one osu! reads there. A green line
+        before the red one is reset by it, so it partners nothing. A green line
+        on a millisecond with no red line comes back as (itself, None).
+        """
+        at = round(point.time)
+        same = [p for p in document.timing_points if round(p.time) == at]
+        red = point if point.uninherited else next((p for p in same if p.uninherited), None)
+        if red is None:
+            return point, None
+        # By identity: TimingPoint compares by value, and two identical lines
+        # on one millisecond are exactly what a gimmick map is full of.
+        after = same[next(i for i, p in enumerate(same) if p is red) + 1:]
+        partner = next((p for p in reversed(after) if not p.uninherited), None)
+        return red, partner
 
     def _sv_layer_times(self, layer_id: str, document) -> set[int] | None:
         """Milliseconds an SV layer owns, or None for a layer that owns them all.
@@ -6151,7 +6249,7 @@ class MainWindow(QMainWindow):
                 # in layer 5 lands on fake sliders and nothing else.
                 view.function_range_requested.connect(
                     lambda start_ms, end_ms, dp=pairing.target, v=view, lid=layer_id:
-                        self._sv_range_action(dp, v.tool, start_ms, end_ms, layer_id=lid)
+                        self._sv_range_action(dp, v.tool, start_ms, end_ms, layer_id=lid, view=v)
                 )
                 view.point_add_requested.connect(
                     lambda time_ms, sv, dp=pairing.target: self._add_sv_point(dp, time_ms, sv)
@@ -6569,16 +6667,17 @@ class MainWindow(QMainWindow):
         # A fake slider and a shiny on one snap share a gimmick line, so the
         # second of them must not write a duplicate: osu! honours only the first
         # uninherited point on a timestamp, and a second identical one is dead
-        # weight the structure walk would then have to reason about.
-        existing_red = {
-            (round(point.time), point.beat_length)
-            for point in state.document.timing_points if point.uninherited
-        }
-        points = [
-            point for point in points
-            if not point.uninherited
-            or (round(point.time), point.beat_length) not in existing_red
-        ]
+        # weight the structure walk would then have to reason about. A
+        # *different* red line there -- the chart's own BPM switch on the note
+        # -- is replaced instead; see `_supersede_chart_reds`.
+        points, replaced = self._supersede_chart_reds(state.document, points)
+        if replaced:
+            # The structure's last red line is what is in force for the rest of
+            # the section, so it takes over the replaced line's meter: a 3/4
+            # switch converted must not count the bars after it in 4.
+            last = max((point for point in points if point.uninherited), key=lambda p: p.time, default=None)
+            if last is not None:
+                last.meter = replaced[-1].meter
         if not points and not notes:
             return []
 
@@ -6588,6 +6687,8 @@ class MainWindow(QMainWindow):
         commands = (
             [self._insert_points_command(state.document, points)] if points else []
         )
+        if replaced:
+            commands.insert(0, RemoveTimingPoints(replaced))
         if notes:
             # Same "one object per millisecond" rule every other placement path
             # follows (_insert_notes). This path used to skip it, so a Kat
@@ -6635,14 +6736,20 @@ class MainWindow(QMainWindow):
 
     def _sv_range_action(
         self, difficulty_path: Path, tool: str, start_ms: float, end_ms: float,
-        layer_id: str | None = None,
+        layer_id: str | None = None, view=None,
     ) -> None:
         """The same routing for an SV view's dragged range.
 
-        One signal, three tools: the SV layers' Function, and the Kiai and
-        Sound Volume layer's Kiai and Volume. Which one it was is a property of
-        the view rather than of the drag -- see _gimmick_range_action.
+        One signal, four tools: the SV layers' Function and Scale, and the Kiai
+        and Sound Volume layer's Kiai and Volume. Which one it was is a property
+        of the view rather than of the drag -- see _gimmick_range_action.
         """
+        if tool == "scale":
+            # The view's own selection, not the document's greens in the
+            # range: a gimmick layer selects only the lines it draws.
+            if view is not None:
+                self.scale_sv_points(difficulty_path, [p for p in view.selected_points() if not p.uninherited])
+            return
         if tool == "kiai":
             # The Kiai and Sound Volume layer's Kiai tool never creates a
             # green line (task: "you shouldn't be able to drag them at all"
@@ -6824,16 +6931,16 @@ class MainWindow(QMainWindow):
             self.show_toast(tr("MainWindow", "No notes in the selected range to convert."))
             return
         replaced = self._greens_under_wall(state.document, points, sv_model) if sv_model is not None else []
-        # Only the red lines are filtered against what is already there. The
+        # Only the red lines are checked against what is already there. The
         # green line beside each one is this layer's handle on it and has to
         # survive even where the map's own timing supplied the red line, or
         # the wall would have gaps in the SV layer exactly where the chart has
-        # timing of its own.
-        taken = {round(p.time) for p in state.document.timing_points if p.uninherited}
-        points = [
-            point for point in points
-            if point.inherited or round(point.time) not in taken
-        ]
+        # timing of its own. A chart red line identical to ours does the job
+        # already; a different one -- a BPM switch on a note -- would win the
+        # millisecond and leave the note visible, so it goes.
+        points, superseded = self._supersede_chart_reds(state.document, points)
+        if superseded:
+            replaced = [RemoveTimingPoints(superseded), *replaced]
         if not any(point.uninherited for point in points):
             self.show_toast(tr("MainWindow", "There is already a gimmick here."))
             return
@@ -6856,6 +6963,65 @@ class MainWindow(QMainWindow):
         with self._refresh_cycle():
             self._refresh_difficulty_views(pairing.target)
             self._refresh_difficulty_sv_views(pairing.target)
+
+    @staticmethod
+    def _supersede_chart_reds(document, points: list) -> tuple[list, list]:
+        """(points to write, chart red lines to remove) for a structure.
+
+        osu! honours the first uninherited point on a millisecond. A structure
+        written onto a millisecond the chart already has a red line on -- a BPM
+        switch on a note, mostly -- therefore lost to it: the barline path
+        appended its 60000 BPM squash *after* the chart's line, the
+        anti-barline paths dropped theirs outright, and either way the note
+        stayed visible (owner, 2026-10-18).
+
+        So: a red line identical to one already there is not written (the
+        chart's does the job); a different one replaces it. The structure's
+        restore lines carry the chart's BPM onward on their own, read from the
+        base snapshot, which still holds the replaced line -- and a delete puts
+        it back (`_restore_base_reds`).
+        """
+        by_ms: dict[int, list] = {}
+        for point in document.timing_points:
+            if point.uninherited:
+                by_ms.setdefault(round(point.time), []).append(point)
+        kept, replaced, seen = [], [], set()
+        for point in points:
+            if point.uninherited:
+                existing = by_ms.get(round(point.time), [])
+                if any(other.beat_length == point.beat_length for other in existing):
+                    continue
+                for other in existing:
+                    if id(other) not in seen:
+                        seen.add(id(other))
+                        replaced.append(other)
+            kept.append(point)
+        return kept, replaced
+
+    def _restore_base_reds(self, state, removed: list) -> list:
+        """The chart's own red lines a gimmick delete would leave missing.
+
+        A conversion replaces the chart's red line on a note's millisecond
+        (`_supersede_chart_reds`), so deleting the structure afterwards would
+        take the BPM switch with it. A red line of the base snapshot comes back,
+        as a copy, when the delete empties its millisecond of red lines and it
+        was already missing from the chart -- superseded, not deleted. The
+        chart's own line still standing there is a delete like any other.
+        """
+        pairing = self._gimmick_pairing
+        if pairing is None or not removed:
+            return []
+        gone = {id(point) for point in removed}
+        reds = [point for point in state.document.timing_points if point.uninherited]
+        present = {(round(point.time), point.beat_length) for point in reds}
+        emptied = {round(point.time) for point in removed if point.uninherited}
+        emptied -= {round(point.time) for point in reds if id(point) not in gone}
+        return [
+            point.copy()
+            for point in pairing.base_timing
+            if point.uninherited and round(point.time) in emptied
+            and (round(point.time), point.beat_length) not in present
+        ]
 
     def _greens_under_wall(self, document, points: list, model) -> list:
         """Keep SV's anti-barline: what becomes of the chart's own green lines
@@ -6903,8 +7069,8 @@ class MainWindow(QMainWindow):
         the whole range, so nothing here is dense enough to want the
         already-taken filter that one needs -- but a note whose millisecond
         already carries a red line would still lose its hide line to it (osu!
-        honours the first on a timestamp), so those are dropped and reported
-        rather than written into a structure that would silently not work.
+        honours the first on a timestamp), so that red line is replaced
+        (`_supersede_chart_reds`).
         """
         pairing = self._gimmick_pairing
         state = self._states.get(difficulty_path)
@@ -6924,16 +7090,15 @@ class MainWindow(QMainWindow):
         if not points:
             self.show_toast(tr("MainWindow", "No notes in the selected range to convert."))
             return
-        taken = {round(p.time) for p in state.document.timing_points if p.uninherited}
-        points = [
-            point for point in points
-            if point.inherited or round(point.time) not in taken
-        ]
+        points, superseded = self._supersede_chart_reds(state.document, points)
         if not any(point.uninherited for point in points):
             self.show_toast(tr("MainWindow", "There is already a gimmick here."))
             return
         carry_active_state(points, state.document.timing_points)
-        state.history.push(self._insert_points_command(state.document, points), state)
+        command = self._insert_points_command(state.document, points)
+        if superseded:
+            command = CompositeCommand([RemoveTimingPoints(superseded), command], "insert_timing_points")
+        state.history.push(command, state)
         with self._refresh_cycle():
             self._refresh_difficulty_views(pairing.target)
             self._refresh_difficulty_sv_views(pairing.target)
@@ -7646,7 +7811,7 @@ class MainWindow(QMainWindow):
             view.seek_requested.connect(self.seek_audio)
             view.function_range_requested.connect(
                 lambda start_ms, end_ms, dp=difficulty_path, v=view:
-                    self._sv_range_action(dp, v.tool, start_ms, end_ms)
+                    self._sv_range_action(dp, v.tool, start_ms, end_ms, view=v)
             )
             view.point_add_requested.connect(
                 lambda time_ms, sv, dp=difficulty_path: self._add_sv_point(dp, time_ms, sv)
@@ -8020,6 +8185,12 @@ class MainWindow(QMainWindow):
         self.resnap_shortcut = QShortcut(QKeySequence(self.shortcuts.sequence("resnap")), self.editor_page)
         self.resnap_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.resnap_shortcut.activated.connect(self.resnap_selection)
+        self.scale_sv_shortcuts = []
+        for page in (self.editor_page, self.gimmick_page):
+            shortcut = QShortcut(QKeySequence(self.shortcuts.sequence("scale_sv")), page)
+            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(self.scale_selected_sv)
+            self.scale_sv_shortcuts.append(shortcut)
         self.gimmick_copy_shortcut = QShortcut(QKeySequence(self.shortcuts.sequence("copy")), self.gimmick_page)
         self.gimmick_copy_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         self.gimmick_copy_shortcut.activated.connect(self.copy_selection)
@@ -8384,9 +8555,16 @@ class MainWindow(QMainWindow):
             extract_timing_points(state.document), view.current_time, view.snap_divisor,
         )))
         divisor = getattr(self, "_sv_clipboard_divisor", 0) or int(view.snap_divisor)
+        # The pattern's first line lands on the cursor's snap *plus the preset
+        # Position offset* (owner, 2026-10-18), the one Generate SV remembers:
+        # with -5 there, a pasted effect sits 5ms ahead of its notes like a
+        # generated one, whatever offset the copied lines had. Landed onto the
+        # grid first and offset after, or the snap would pull it back.
+        lead = self.settings.int_value(
+            "sv_generate/position_offset", SVFunctionDialog.DEFAULT_POSITION_OFFSET_MS)
         pasted = [
             TimingPoint(
-                time=float(self._paste_landing(view, base, divisor, entry)),
+                time=float(self._paste_landing(view, base, divisor, entry) + lead),
                 beat_length=entry["beat_length"],
                 meter=entry["meter"], sample_set=entry["sample_set"],
                 sample_index=entry["sample_index"], volume=entry["volume"],
@@ -9143,6 +9321,20 @@ class MainWindow(QMainWindow):
             }
             if layer_id is None and not params.get("replace_existing") else set()
         )
+        # Red lines in the range (owner, 2026-10-18). A red line resets SV to
+        # 1.0x, so a note sitting on one had its sweep thrown away: its green
+        # line went `offset` early, the red line followed and reset it. On a
+        # red line's own millisecond the offset is ignored and the green goes
+        # on the red, after it in file order. A red line with no note on it is
+        # left alone (owner): it is not a point of the sweep. Not in a gimmick
+        # layer: its red lines are structures.
+        red_times = (
+            {
+                round(point.time) for point in state.document.timing_points
+                if point.uninherited and start_ms - 0.5 <= point.time <= end_ms + 0.5
+            }
+            if layer_id is None else set()
+        )
         # Oscillation is indexed, not timed: it alternates on every *point*, so
         # unlike a sweep its shape cannot be read off elapsed time. Built up
         # front for the whole run, then indexed alongside it.
@@ -9162,7 +9354,10 @@ class MainWindow(QMainWindow):
             # offset moves it, so a -5ms lead-in doesn't skew the curve.
             t = 0.0 if span <= 0 else (source_time - times[0]) / span
             unoffset_ms = round(source_time)
-            time_ms = unoffset_ms if unoffset_ms in existing_times else round(source_time + offset)
+            time_ms = (
+                unoffset_ms if unoffset_ms in existing_times or unoffset_ms in red_times
+                else round(source_time + offset)
+            )
             if wobble:
                 rate = wobble[index]
             else:
@@ -10856,6 +11051,13 @@ class MainWindow(QMainWindow):
             # for the same span, so the playhead waits with it.
             self.audio_anchor_clock.restart()
             return
+        if running and getattr(self.player, "is_starved", lambda: False)():
+            # The track is not decoded as far as the seek yet, so no song time
+            # passes (`_Engine._set_starved`). Run on, the playhead left the
+            # audio behind, and a pause there resumed from two places at once.
+            self.audio_anchor_clock.restart()
+            self._source_report_clock.restart()
+            return
         source = self._source_clock_position()
 
         interpolated = last_interpolated + (frame_elapsed_ms * rate if running else 0.0)
@@ -11024,9 +11226,27 @@ class MainWindow(QMainWindow):
         label = tr("MainWindow", "Save")
         self.save_all_button.setText(f"{label} · {count}" if count else label)
 
+    def _save_clicked(self) -> None:
+        """The header's Save: one changed difficulty saves; more ask which."""
+        dirty = [state for state in self._states.values() if state.history.dirty]
+        if len(dirty) <= 1:
+            self._save_states(dirty)
+            return
+
+        def discard(path: Path) -> bool:
+            self._reload_from_disk([path])
+            state = self._states.get(path)
+            return state is None or not state.history.dirty
+
+        dialog = SaveSelectionDialog([(state.source_path, state.source_path.name) for state in dirty], discard, self)
+        if dialog.exec() == QDialog.Accepted:
+            self._save_states([self._states[path] for path in dialog.chosen() if path in self._states])
+
     def save_all_states(self) -> None:
-        """Write every changed difficulty's original file at once (global header's Save)."""
-        dirty_states = [state for state in self._states.values() if state.history.dirty]
+        """Write every changed difficulty's original file at once (the leave prompt's Save)."""
+        self._save_states([state for state in self._states.values() if state.history.dirty])
+
+    def _save_states(self, dirty_states) -> None:
         if not dirty_states:
             self.status.setText(tr("MainWindow", "Nothing to save."))
             return
@@ -11060,7 +11280,8 @@ class MainWindow(QMainWindow):
         if errors:
             QMessageBox.critical(self, tr("MainWindow", "Save failed"), "\n".join(errors))
         else:
-            self.status.setText(tr("MainWindow", "Saved all changed difficulties."))
+            self.status.setText(tr("MainWindow", "Saved all changed difficulties.") if len(dirty_states) > 1
+                                else tr("MainWindow", "Saved {0}.").format(dirty_states[0].source_path.name))
 
     def export_new_difficulty(self) -> None:
         """Branch the active difficulty off into a new file in the same song folder."""
@@ -11238,6 +11459,7 @@ def main() -> None:
             + "\n\n" + update_failure,
         )
     window.maybe_check_for_updates()
+    launcher_entry.register(settings)
     # Everything built so far -- modules, the window, its pages -- lives for
     # the whole session, and the cyclic collector rescanned all of it on every
     # full pass: 80k objects, 12-13ms, longer than a 120Hz frame, at moments

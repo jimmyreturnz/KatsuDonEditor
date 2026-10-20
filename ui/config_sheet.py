@@ -552,9 +552,13 @@ class ConfigSheet(QWidget):
     # draws a different picture per section (barline vs anti-barline) listens.
     section_changed = Signal(str)
 
-    def __init__(self, rail: bool = True, explain: bool = True, parent=None) -> None:
+    def __init__(self, rail: bool = True, explain: bool = True, parent=None, paged: bool = False) -> None:
         super().__init__(parent)
         self.setStyleSheet(SHEET_STYLE)
+        # Paged: the rail shows one section at a time instead of scrolling to
+        # it. For a sheet whose sections all fit at once, where scrolling to
+        # one moves nothing and a rail click looked dead (owner, 2026-10-18).
+        self.paged = paged
         self.sections: dict[str, Section] = {}
         self._rail_buttons: dict[str, QPushButton] = {}
         self._rail_colors: dict[str, str] = {}
@@ -645,6 +649,8 @@ class ConfigSheet(QWidget):
             self._rail_colors[key] = color or "#3a4554"
             if len(self._rail_buttons) == 1:
                 button.setChecked(True)
+        if self.paged:
+            section.setVisible(len(self.sections) == 1)
         return section
 
     def show_only(self, keys) -> None:
@@ -761,14 +767,18 @@ class ConfigSheet(QWidget):
 
     def jump_to(self, key: str) -> None:
         section = self.sections[key]
-        self.scroller.glide_to(section.y() - 14)
+        if self.paged:
+            self.show_only({key})
+            self.column.verticalScrollBar().setValue(0)
+        else:
+            self.scroller.glide_to(section.y() - 14)
         button = self._rail_buttons.get(key)
         if button is not None:
             button.setChecked(True)
 
     def _follow_scroll(self, value: int) -> None:
         """The rail marks the last section whose top has scrolled past."""
-        if not self._rail_buttons:
+        if not self._rail_buttons or self.paged:
             return
         bar = self.column.verticalScrollBar()
         # At the very bottom the last card may never reach the top.

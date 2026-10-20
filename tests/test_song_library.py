@@ -588,6 +588,7 @@ class LibraryPageTests(unittest.TestCase):
             "copy": self.window.copy_shortcut,
             "paste": self.window.paste_shortcut,
             "resnap": self.window.resnap_shortcut,
+            "scale_sv": self.window.scale_sv_shortcuts[0],
             "hitsound_offset_earlier": self.window.hitsound_earlier_shortcut,
             "hitsound_offset_later": self.window.hitsound_later_shortcut,
             **self.window.tool_shortcuts,

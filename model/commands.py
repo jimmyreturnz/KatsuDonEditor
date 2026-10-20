@@ -210,16 +210,27 @@ class InsertTimingPoints(Command):
 class RemoveTimingPoints(Command):
     points: list[Any]
     label_id: str = "remove_timing_points"
+    # Where each removed point stood, so an undo puts it back in the same file
+    # order. A sort on time alone put a restored red line *after* the green
+    # line sharing its millisecond -- and osu! reads a tie by file order, so
+    # the undo reset the SV the green line was there to set.
+    _positions: list[tuple[int, Any]] = field(default_factory=list, init=False, repr=False, compare=False)
 
     def apply(self, target: EditTarget) -> None:
         removing = {point.uid for point in self.points}
-        target.document.timing_points[:] = [
-            point for point in target.document.timing_points if point.uid not in removing
-        ]
+        points = target.document.timing_points
+        self._positions = [(index, point) for index, point in enumerate(points) if point.uid in removing]
+        points[:] = [point for point in points if point.uid not in removing]
 
     def revert(self, target: EditTarget) -> None:
-        target.document.timing_points.extend(self.points)
-        target.document.timing_points.sort(key=lambda point: point.time)
+        points = target.document.timing_points
+        if len(self._positions) != len(self.points):
+            # Never applied (or applied to a list that lacked some): no order to restore.
+            points.extend(self.points)
+            points.sort(key=lambda point: point.time)
+            return
+        for index, point in self._positions:
+            points.insert(index, point)
 
 
 @dataclass
@@ -268,6 +279,67 @@ class EditTimingPoint(Command):
             for name in self.changes
         }
         return EditTimingPoint(self.uid, merged, self.label_id)
+
+
+@dataclass
+class ShiftChartTimes(Command):
+    """Every hit object and timing point `delta_ms` later (earlier if negative).
+
+    One command rather than a SetNoteFields/EditTimingPoint per object: each of
+    those re-sorts its list, which over a gimmick difficulty's thousands of
+    lines is quadratic. A uniform shift keeps every order as it is.
+    """
+
+    delta_ms: int
+    label_id: str = "shift_offset"
+    # A spinner's end is an absolute time in its extras; the originals, by
+    # uid, so the undo puts back the exact text rather than a recomputation.
+    _extras: dict[int, tuple[str, ...]] = field(default_factory=dict, init=False, repr=False, compare=False)
+
+    def _shift(self, target: EditTarget, delta: int, forward: bool) -> None:
+        for note in target.document.hit_objects:
+            note.time += delta
+            if note.is_spinner and note.extras:
+                if forward:
+                    self._extras[note.uid] = note.extras
+                    end = note.end_time
+                    if end is not None:
+                        note.extras = (str(end + delta), *note.extras[1:])
+                elif note.uid in self._extras:
+                    note.extras = self._extras[note.uid]
+        for point in target.document.timing_points:
+            point.time += delta
+
+    def apply(self, target: EditTarget) -> None:
+        self._shift(target, self.delta_ms, True)
+
+    def revert(self, target: EditTarget) -> None:
+        self._shift(target, -self.delta_ms, False)
+
+
+@dataclass
+class ReplaceDocumentLines(Command):
+    """Swap the passthrough lines -- [Metadata], [General], [Editor] edits.
+
+    The writer keeps those lines verbatim (`osu_io.metadata`), so the line
+    list *is* the data, and a whole-list swap is the simplest exact undo.
+    """
+
+    old: list[str]
+    new: list[str]
+    label_id: str = "edit_metadata"
+
+    def _set(self, target: EditTarget, lines: list[str]) -> None:
+        from osu_io.writer import _section_spans
+
+        target.document.lines[:] = lines
+        target.document.section_spans = _section_spans(target.document.lines)
+
+    def apply(self, target: EditTarget) -> None:
+        self._set(target, self.new)
+
+    def revert(self, target: EditTarget) -> None:
+        self._set(target, self.old)
 
 
 @dataclass

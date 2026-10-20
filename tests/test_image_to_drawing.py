@@ -84,6 +84,21 @@ class FastImageTracingTests(unittest.TestCase):
             self.assertIsNone(dialog._loops)
             dialog.deleteLater()
 
+    def test_sliders_and_boxes_follow_each_other(self):
+        """Each setting is a slider and a box to type into. The box can go
+        past the slider's end, and the slider then pins there."""
+        from ui import image_trace_dialog
+        dialog = image_trace_dialog.ImageTraceDialog()
+        dialog.simplify_slider.setValue(7)
+        self.assertEqual(dialog.simplify.value(), 3.5)
+        self.assertEqual(dialog.options().simplify_distance, 3.5)
+        dialog.threshold.setValue(200)
+        self.assertEqual(dialog.threshold_slider.value(), 200)
+        dialog.minimum.setValue(500)
+        self.assertEqual(dialog.minimum_slider.value(), image_trace_dialog.SPECK_SLIDER_MAX)
+        self.assertEqual(dialog.options().minimum_component, 500)
+        dialog.deleteLater()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1350,7 +1350,7 @@ class _StubTimingLineDialog:
     accepted = False
     values: dict = {}
 
-    def __init__(self, point, parent=None):
+    def __init__(self, point, parent=None, partner=None):
         self.point = point
 
     def exec(self):
@@ -1358,6 +1358,12 @@ class _StubTimingLineDialog:
 
     def changes(self, point):
         return dict(type(self).values)
+
+    def partner_changes(self, point):
+        return {}
+
+    def new_partner_sv(self):
+        return None
 
     def deleteLater(self):
         pass

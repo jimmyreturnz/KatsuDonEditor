@@ -1970,6 +1970,8 @@ class SVPasteByIndexTests(_Session, unittest.TestCase):
         expected_base = gui.osu_snap_ms(max(0.0, gui.snap_time(
             gui.extract_timing_points(self.document), 5000.0, sv_view.snap_divisor,
         )))
+        # Plus the preset Position offset (owner, 2026-10-18).
+        expected_base += self.window.settings.int_value("sv_generate/position_offset", -5)
         pasted = self._point_at(expected_base)
         self.assertAlmostEqual(pasted.beat_length, source_point.beat_length)
 
@@ -2183,6 +2185,63 @@ class KeepSvConversionTests(_Session, unittest.TestCase):
                             f"a green line straight after the red line at {red.time}")
         for time_ms in self.NOTES:
             self.assertAlmostEqual(sv_at(after, time_ms), sv_at(self.ordered_before, time_ms), places=9)
+
+
+class ConversionOverBpmSwitchTests(_Session, unittest.TestCase):
+    """A BPM switch on a note (owner, 2026-10-18). osu! honours the first red
+    line on a millisecond, so the chart's own switch beat the structure's
+    60000 BPM line and the note stayed visible."""
+
+    NOTES = [1000 + 500 * index for index in range(7)]  # 1000 .. 4000
+    SWITCH = 2500
+
+    def setUp(self) -> None:
+        super().setUp()
+        from osu_io.timing import TimingPoint
+
+        start, switch = TimingPoint.uninherited_at(0, 120), TimingPoint.uninherited_at(self.SWITCH, 150)
+        self.document.timing_points[:] = [start, switch]
+        self.window._gimmick_pairing.base_timing = [start.copy(), switch.copy()]
+        self.document.hit_objects[:] = [
+            gui.HitObject(x=256, y=192, time=time_ms, type=gui.TYPE_CIRCLE, hit_sound=0)
+            for time_ms in self.NOTES
+        ]
+        self.switch_beat = switch.beat_length
+
+    def _convert(self, mode):
+        original = gui.ConvertNotesDialog
+
+        class Answered(original):
+            def exec(self):
+                self.mode_combo.setCurrentIndex(self.mode_combo.findData(mode))
+                return gui.QDialog.DialogCode.Accepted
+
+        with patch.object(gui, "ConvertNotesDialog", Answered):
+            self.window._experimental_conversion(self.window._gimmick_pairing.target)
+
+    def test_the_note_on_the_switch_is_hidden(self):
+        for mode in (gui.ConvertNotesDialog.STRUCTURE, gui.ConvertNotesDialog.ANTI):
+            self._convert(mode)
+            reds = self._red(self.SWITCH)
+            self.assertEqual(len(reds), 1, mode)
+            self.assertNotEqual(reds[0].beat_length, self.switch_beat, f"{mode}: the structure's line won")
+            # The section after it still runs at the switch's BPM.
+            later = [p for p in self.document.timing_points if p.uninherited and self.SWITCH < p.time < 4000]
+            self.assertTrue(any(abs(p.beat_length - self.switch_beat) < 1e-9 for p in later), mode)
+            self.state.history.undo(self.state)
+            self.assertEqual([(p.time, p.beat_length) for p in self.document.timing_points],
+                             [(0, 500.0), (self.SWITCH, self.switch_beat)], f"{mode}: undone")
+
+    def test_deleting_the_structure_brings_the_switch_back(self):
+        self._convert(gui.ConvertNotesDialog.STRUCTURE)
+        squash = self._red(self.SWITCH)[0]
+        self.window._delete_gimmick_objects(self.window._gimmick_pairing.target, (), [squash.uid])
+        self.assertEqual([p.beat_length for p in self._red(self.SWITCH)], [self.switch_beat])
+
+    def test_the_charts_own_line_can_still_be_deleted(self):
+        switch = self._red(self.SWITCH)[0]
+        self.window._delete_gimmick_objects(self.window._gimmick_pairing.target, (), [switch.uid])
+        self.assertEqual(self._red(self.SWITCH), [])
 
 
 class GimmickViewSizeTests(_Session, unittest.TestCase):

@@ -1945,6 +1945,10 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>フォルダーを変更…</translation>
         </message>
         <message>
+            <source>Reload</source>
+            <translation>再読み込み</translation>
+        </message>
+        <message>
             <source>Changed since osu! rated it: open it in osu! to update the stars.</source>
             <translation>osu! で評価された後に変更されています。osu! で開くと星の数が更新されます。</translation>
         </message>
@@ -2397,6 +2401,34 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>変更されたすべての難易度を保存しました。</translation>
         </message>
         <message>
+            <source>Save changes</source>
+            <translation>変更を保存</translation>
+        </message>
+        <message>
+            <source>Choose which changed difficulties to save:</source>
+            <translation>保存する難易度を選択してください:</translation>
+        </message>
+        <message>
+            <source>Discard</source>
+            <translation>破棄</translation>
+        </message>
+        <message>
+            <source>Throw these edits away and reload the file</source>
+            <translation>この変更を破棄してファイルを再読み込み</translation>
+        </message>
+        <message>
+            <source>Save Selected</source>
+            <translation>選択したものを保存</translation>
+        </message>
+        <message>
+            <source>Choose which changed difficulties to save</source>
+            <translation>保存する変更済みの難易度を選択</translation>
+        </message>
+        <message>
+            <source>Saved {0}.</source>
+            <translation>{0} を保存しました。</translation>
+        </message>
+        <message>
             <source>Open a beatmap before exporting a new difficulty.</source>
             <translation>新しい難易度をエクスポートする前にビートマップを開いてください。</translation>
         </message>
@@ -2787,6 +2819,182 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
         <message>
             <source>Next song</source>
             <translation>次の曲</translation>
+        </message>
+        <message>
+            <source>Added after multiplying. Negative slows the lines down.</source>
+            <translation>乗算の後に加算します。負の値で遅くなります。</translation>
+        </message>
+        <message>
+            <source>Apply</source>
+            <translation>適用</translation>
+        </message>
+        <message>
+            <source>Apply to every difficulty</source>
+            <translation>全難易度に適用</translation>
+        </message>
+        <message>
+            <source>Artist (Unicode)</source>
+            <translation>アーティスト (Unicode)</translation>
+        </message>
+        <message>
+            <source>Changed {0} notes.</source>
+            <translation>{0}個のノーツを変更しました。</translation>
+        </message>
+        <message>
+            <source>Changes here are edits like any other: Save writes them, and Ctrl+Z undoes them.</source>
+            <translation>ここでの変更は通常の編集と同じです。保存で書き込まれ、Ctrl+Zで元に戻せます。</translation>
+        </message>
+        <message>
+            <source>Clap → Whistle</source>
+            <translation>クラップ → ホイッスル</translation>
+        </message>
+        <message>
+            <source>Creator</source>
+            <translation>作成者</translation>
+        </message>
+        <message>
+            <source>Every difficulty in the set</source>
+            <translation>セット内の全難易度</translation>
+        </message>
+        <message>
+            <source>Every selected line&apos;s SV times this.</source>
+            <translation>選択した各ラインのSVにこの値を掛けます。</translation>
+        </message>
+        <message>
+            <source>Flat</source>
+            <translation>フラット</translation>
+        </message>
+        <message>
+            <source>Hitsounds</source>
+            <translation>ヒットサウンド</translation>
+        </message>
+        <message>
+            <source>Metadata</source>
+            <translation>メタデータ</translation>
+        </message>
+        <message>
+            <source>Metadata written to {0} difficulties.</source>
+            <translation>{0}個の難易度にメタデータを書き込みました。</translation>
+        </message>
+        <message>
+            <source>Miscellaneous</source>
+            <translation>その他</translation>
+        </message>
+        <message>
+            <source>Moves every note, timing line, bookmark and the preview point. Positive is later.</source>
+            <translation>全ノーツ、タイミングライン、ブックマーク、プレビュー位置を移動します。正の値で後ろへ。</translation>
+        </message>
+        <message>
+            <source>Multiply by</source>
+            <translation>倍率</translation>
+        </message>
+        <message>
+            <source>Multiply or add to the selected green lines&apos; SV</source>
+            <translation>選択した緑線のSVに乗算・加算します</translation>
+        </message>
+        <message>
+            <source>No notes to change.</source>
+            <translation>変更するノーツがありません。</translation>
+        </message>
+        <message>
+            <source>Scale</source>
+            <translation>スケール</translation>
+        </message>
+        <message>
+            <source>4. Scale SV</source>
+            <translation>4. SVをスケール</translation>
+        </message>
+        <message>
+            <source>Scale SV</source>
+            <translation>SVをスケール</translation>
+        </message>
+        <message>
+            <source>Scale SV…</source>
+            <translation>SVをスケール…</translation>
+        </message>
+        <message>
+            <source>Scale every green line…</source>
+            <translation>全ての緑線をスケール…</translation>
+        </message>
+        <message>
+            <source>Select green lines to scale first.</source>
+            <translation>先にスケールする緑線を選択してください。</translation>
+        </message>
+        <message>
+            <source>Shift by</source>
+            <translation>移動量</translation>
+        </message>
+        <message>
+            <source>Shift the whole map</source>
+            <translation>マップ全体を移動</translation>
+        </message>
+        <message>
+            <source>Shifted {0} difficulties by {1} ms.</source>
+            <translation>{0}個の難易度を{1}ms移動しました。</translation>
+        </message>
+        <message>
+            <source>Source</source>
+            <translation>ソース</translation>
+        </message>
+        <message>
+            <source>Tags</source>
+            <translation>タグ</translation>
+        </message>
+        <message>
+            <source>The difficulty being edited</source>
+            <translation>編集中の難易度</translation>
+        </message>
+        <message>
+            <source>Then add</source>
+            <translation>加算</translation>
+        </message>
+        <message>
+            <source>This difficulty has no green lines.</source>
+            <translation>この難易度には緑線がありません。</translation>
+        </message>
+        <message>
+            <source>Title</source>
+            <translation>タイトル</translation>
+        </message>
+        <message>
+            <source>Title (Unicode)</source>
+            <translation>タイトル (Unicode)</translation>
+        </message>
+        <message>
+            <source>Whistle → Clap</source>
+            <translation>ホイッスル → クラップ</translation>
+        </message>
+        <message>
+            <source>Written as a green line on this millisecond, after the red line.</source>
+            <translation>このミリ秒に、赤線の後の緑線として書き込まれます。</translation>
+        </message>
+        <message>
+            <source>{0} / {1} characters</source>
+            <translation>{0} / {1} 文字</translation>
+        </message>
+        <message>
+            <source>{0} green lines</source>
+            <translation>{0}本の緑線</translation>
+        </message>
+        <message>
+            <source>All difficulties</source>
+            <translation>全難易度</translation>
+        </message>
+        <message>
+            <source>Apply to</source>
+            <translation>適用先</translation>
+        </message>
+        <message>
+            <source>Left blank, the field is not changed.</source>
+            <translation>空欄のままなら、この項目は変更されません。</translation>
+        </message>
+        <message>
+            <source>Nothing typed, nothing to apply.</source>
+            <translation>何も入力されていないため、適用するものがありません。</translation>
+        </message>
+        <message>
+            <source>Separate tags with spaces, not commas: that is what a tag is in the .osu file. Left blank, the tags are not changed.</source>
+            <translation>タグはカンマではなくスペースで区切ってください。.osuファイルではそれがタグの区切りです。空欄のままなら、タグは変更されません。</translation>
         </message>
     </context>
     <context>
@@ -3745,6 +3953,10 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
         <message>
             <source>Beat snap 1/9</source>
             <translation>ビートスナップ 1/9</translation>
+        </message>
+        <message>
+            <source>Scale the selected green lines&apos; SV</source>
+            <translation>選択した緑線のSVをスケール</translation>
         </message>
     </context>
     <context>

@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from unittest import mock
 from unittest.mock import patch
 from pathlib import Path
 
@@ -161,6 +162,69 @@ class NoteEditingTests(unittest.TestCase):
         view.tool = "select"
         _click(view, view.x_for_time(placed.time), Qt.MouseButton.RightButton)
         self.assertNotIn(placed.uid, {n.uid for n in self.state.document.hit_objects})
+
+    def test_right_click_on_a_selected_note_deletes_the_selection(self):
+        """Right click on part of a selection is Delete, not one note;
+        on an unselected note it is still just that note."""
+        view = self._chart_view()
+        view.resize(800, 200)
+        view.window_ms = 2000.0
+        view.tool = "select"
+        picked = sorted(view.notes, key=lambda n: n.time)[:3]
+        view.current_time = picked[0].time
+        view.selected = {note.original_index for note in picked}
+        before = len(self.state.document.hit_objects)
+        _click(view, view.x_for_time(picked[0].time), Qt.MouseButton.RightButton)
+        self.assertEqual(len(self.state.document.hit_objects), before - 3)
+        self.window.undo()
+        self.assertEqual(len(self.state.document.hit_objects), before)
+
+    # -- saving a chosen few ----------------------------------------------------
+
+    def _two_dirty(self):
+        """The open difficulty and a second one, both with unsaved edits."""
+        other_path = self.path.with_name("other.osu")
+        other_path.write_bytes(self.path.read_bytes())
+        other = self.window._ensure_state(other_path)
+        self.state.history.touch()
+        other.history.touch()
+        return other_path, other
+
+    def test_ctrl_s_saves_only_the_open_difficulty(self):
+        other_path, other = self._two_dirty()
+        before = other_path.read_bytes()
+        self.window._save_from_shortcut()
+        self.assertFalse(self.state.history.dirty)
+        self.assertTrue(other.history.dirty)
+        self.assertEqual(other_path.read_bytes(), before)
+
+    def test_save_button_writes_only_what_is_ticked(self):
+        other_path, other = self._two_dirty()
+
+        def answer(dialog):
+            dialog._checks[other_path].setChecked(False)
+            return gui.QDialog.Accepted
+
+        with mock.patch.object(gui.SaveSelectionDialog, "exec", answer):
+            self.window._save_clicked()
+        self.assertFalse(self.state.history.dirty)
+        self.assertTrue(other.history.dirty)
+
+    def test_discard_drops_the_edit_from_the_save_count(self):
+        other_path, other = self._two_dirty()
+        other.document.hit_objects.clear()
+
+        def answer(dialog):
+            buttons = dialog.findChildren(gui.QToolButton)
+            buttons[-1].click()  # the second row: other.osu
+            self.assertEqual(list(dialog._checks), [self.path])
+            return gui.QDialog.Rejected
+
+        with mock.patch.object(gui.QMessageBox, "question", return_value=gui.QMessageBox.Yes),                 mock.patch.object(gui.SaveSelectionDialog, "exec", answer):
+            self.window._save_clicked()
+        self.assertFalse(other.history.dirty)
+        self.assertTrue(other.document.hit_objects)  # reloaded from the file
+        self.assertTrue(self.state.history.dirty)
 
     # -- multi-view refresh -----------------------------------------------------
 

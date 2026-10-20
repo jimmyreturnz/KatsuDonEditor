@@ -267,6 +267,55 @@ class AddViewDialog(QDialog):
         return paths[0] if paths else Path(self._items()[0].data(Qt.UserRole))
 
 
+class SaveSelectionDialog(QDialog):
+    """Save with more than one changed difficulty: pick which to write.
+
+    Edits given up on in another difficulty used to ride along with every
+    Save. Each row's Discard drops them for good (`discard(path)` reloads it
+    from disk and returns whether it did), so the count stops carrying them.
+    """
+
+    def __init__(self, rows: list[tuple[Path, str]], discard, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(tr("MainWindow", "Save changes"))
+        self._discard = discard
+        self._checks: dict[Path, QCheckBox] = {}
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.addWidget(QLabel(tr("MainWindow", "Choose which changed difficulties to save:")))
+        for path, name in rows:
+            row = QWidget()
+            line = QHBoxLayout(row)
+            line.setContentsMargins(0, 0, 0, 0)
+            check = QCheckBox(name)
+            check.setChecked(True)
+            discard_button = QToolButton()
+            discard_button.setText(tr("MainWindow", "Discard"))
+            discard_button.setToolTip(tr("MainWindow", "Throw these edits away and reload the file"))
+            discard_button.clicked.connect(lambda _=False, p=path, r=row: self._discard_row(p, r))
+            line.addWidget(check, 1)
+            line.addWidget(discard_button)
+            layout.addWidget(row)
+            self._checks[path] = check
+        buttons = QDialogButtonBox(QDialogButtonBox.Cancel)
+        save = buttons.addButton(tr("MainWindow", "Save Selected"), QDialogButtonBox.AcceptRole)
+        save.setDefault(True)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _discard_row(self, path: Path, row: QWidget) -> None:
+        if not self._discard(path):
+            return
+        self._checks.pop(path)
+        row.hide()
+        if not self._checks:
+            self.reject()
+
+    def chosen(self) -> list[Path]:
+        return [path for path, check in self._checks.items() if check.isChecked()]
+
+
 class GimmickEntryDialog(QDialog):
     """Asked once per difficulty, the first time the Gimmick tab is opened.
 
@@ -664,11 +713,13 @@ class GimmickConfigDialog(SheetDialog):
         # canonical negative one.
         self.length_spin.setRange(-100000.0, FAKE_SLIDER_MAX_LENGTH)
         self.length_spin.setDecimals(4)
+        self.length_spin.setSingleStep(0.01)
         self.length_spin.setValue(config.fake_slider_length)
 
         self.fake_sv_spin = TrimmedDoubleSpinBox()
         self.fake_sv_spin.setRange(0.01, 100.0)
         self.fake_sv_spin.setDecimals(SV_DECIMALS)
+        self.fake_sv_spin.setSingleStep(0.01)
         self.fake_sv_spin.setValue(config.fake_slider_sv)
 
         self.place_notes_check = QCheckBox(
@@ -746,6 +797,7 @@ class GimmickConfigDialog(SheetDialog):
         self.shiny_bpm_spin = QDoubleSpinBox()
         self.shiny_bpm_spin.setRange(0.001, 1000.0)
         self.shiny_bpm_spin.setDecimals(3)
+        self.shiny_bpm_spin.setSingleStep(0.01)
         self.shiny_bpm_spin.setValue(config.shiny_bpm_multiplier)
 
         # Same trade as fake_red_line_check, for a shiny's own line. Free to
@@ -768,6 +820,7 @@ class GimmickConfigDialog(SheetDialog):
         self.fake_slider_bpm_spin = QDoubleSpinBox()
         self.fake_slider_bpm_spin.setRange(0.001, 1000.0)
         self.fake_slider_bpm_spin.setDecimals(3)
+        self.fake_slider_bpm_spin.setSingleStep(0.01)
         self.fake_slider_bpm_spin.setValue(config.fake_slider_bpm_multiplier)
 
         # The anti-barline converter's four numbers. All four are ratios and
@@ -1479,6 +1532,7 @@ class ConvertNotesDialog(SheetDialog):
         # GimmickConfig would reject -- see GimmickConfigDialog.
         self.length_spin.setRange(-100000.0, FAKE_SLIDER_MAX_LENGTH)
         self.length_spin.setDecimals(4)
+        self.length_spin.setSingleStep(0.01)
         self.length_spin.setValue(config.fake_slider_length)
         section.field(tr("MainWindow", "Fake slider length"), self.length_spin, tr(
             "MainWindow", "Anything longer than 0.001 is a real, hittable drumroll."))
@@ -1486,6 +1540,7 @@ class ConvertNotesDialog(SheetDialog):
         self.fake_sv_spin = TrimmedDoubleSpinBox()
         self.fake_sv_spin.setRange(0.01, 100.0)
         self.fake_sv_spin.setDecimals(SV_DECIMALS)
+        self.fake_sv_spin.setSingleStep(0.01)
         self.fake_sv_spin.setSuffix("\u00d7")
         self.fake_sv_spin.setValue(config.fake_slider_sv)
         section.field(tr("MainWindow", "Gimmick SV"), self.fake_sv_spin, tr(
@@ -1499,6 +1554,7 @@ class ConvertNotesDialog(SheetDialog):
         self.fake_slider_bpm_spin = QDoubleSpinBox()
         self.fake_slider_bpm_spin.setRange(0.001, 1000.0)
         self.fake_slider_bpm_spin.setDecimals(3)
+        self.fake_slider_bpm_spin.setSingleStep(0.01)
         self.fake_slider_bpm_spin.setSuffix("\u00d7")
         self.fake_slider_bpm_spin.setValue(config.fake_slider_bpm_multiplier)
         section.field(tr("MainWindow", "Red line BPM"), self.fake_slider_bpm_spin, tr(
@@ -1614,7 +1670,7 @@ class ConvertNotesDialog(SheetDialog):
         spin = TrimmedDoubleSpinBox()
         spin.setRange(10.0 ** -SV_DECIMALS, 100.0)
         spin.setDecimals(SV_DECIMALS)
-        spin.setSingleStep(0.0001)
+        spin.setSingleStep(0.01)
         spin.setSuffix("\u00d7")
         spin.setValue(value)
         return spin
@@ -1874,7 +1930,7 @@ class BarlineFunctionDialog(SheetDialog):
         self.sv_spin = TrimmedDoubleSpinBox()
         self.sv_spin.setRange(0.01, 100.0)
         self.sv_spin.setDecimals(SV_DECIMALS)
-        self.sv_spin.setSingleStep(0.05)
+        self.sv_spin.setSingleStep(0.01)
         self.sv_spin.setSuffix("\u00d7")
         self.sv_spin.setValue(float(current_sv))
         speed.field(tr("MainWindow", "SV multiplier"), self.sv_spin, tr(
@@ -2152,6 +2208,7 @@ class FakeSliderFunctionDialog(BarlineFunctionDialog):
         self.bpm_multiplier_spin = QDoubleSpinBox()
         self.bpm_multiplier_spin.setRange(0.001, 1000.0)
         self.bpm_multiplier_spin.setDecimals(3)
+        self.bpm_multiplier_spin.setSingleStep(0.01)
 
         self.bpm_multiplier_spin.setSuffix("\u00d7")
 
@@ -2325,10 +2382,18 @@ class TimingLineDialog(SheetDialog):
     means -- BPM on a red line, SV multiplier on a green one. Both carry a time,
     and moving a line is the edit that has no other keyboard route: dragging
     retimes it only as far as the snap grid allows.
+
+    A red line also carries an SV field (owner, 2026-10-18). A red line resets
+    SV to 1.0x, so "SV on a red line" is the green line on its millisecond,
+    after it in file order -- `partner`, or a new one when there is none and
+    the field is moved off 1.0x. One dialog for the pair, because the pair was
+    unreachable: double clicking the shared millisecond only ever opened the
+    green line, and omitting the red line's barline meant dragging one aside.
     """
 
-    def __init__(self, point: TimingPoint, parent=None) -> None:
+    def __init__(self, point: TimingPoint, parent=None, partner: TimingPoint | None = None) -> None:
         self.uninherited = point.uninherited
+        self.partner = partner if point.uninherited else None
         super().__init__(
             tr("MainWindow", "Red line") if self.uninherited else tr("MainWindow", "Green line"),
             format_time(round(point.time)),
@@ -2348,6 +2413,7 @@ class TimingLineDialog(SheetDialog):
         else:
             self.value_spin.setRange(0.01, 100.0)
             self.value_spin.setDecimals(SV_DECIMALS)
+            self.value_spin.setSingleStep(0.01)
             self.value_spin.setSuffix("\u00d7")
             self.value_spin.setValue(point.sv_multiplier)
             section.field(tr("MainWindow", "SV multiplier"), self.value_spin)
@@ -2369,6 +2435,17 @@ class TimingLineDialog(SheetDialog):
             self.meter_spin.setRange(1, 10000)
             self.meter_spin.setValue(max(1, point.meter))
             section.field(tr("MainWindow", "Meter"), self.meter_spin)
+
+        self.sv_spin = None
+        if self.uninherited:
+            self.sv_spin = TrimmedDoubleSpinBox()
+            self.sv_spin.setRange(0.01, 100.0)
+            self.sv_spin.setDecimals(SV_DECIMALS)
+            self.sv_spin.setSingleStep(0.01)
+            self.sv_spin.setSuffix("×")
+            self.sv_spin.setValue(self.partner.sv_multiplier if self.partner is not None else 1.0)
+            section.field(tr("MainWindow", "SV multiplier"), self.sv_spin, tr(
+                "MainWindow", "Written as a green line on this millisecond, after the red line."))
 
         # The two effects bits, editable where the line itself is. Both are
         # things a gimmick has to fix line by line -- a stray bar to hide, a
@@ -2418,6 +2495,75 @@ class TimingLineDialog(SheetDialog):
         if effects != point.effects:
             changes["effects"] = (point.effects, effects)
         return changes
+
+    def partner_changes(self, point: TimingPoint) -> dict:
+        """`EditTimingPoint` changes for the green line partnering red `point`:
+        its SV, the red line's new time, and its kiai bit -- one millisecond
+        must not be kiai on one line and not on the other. {} when nothing
+        moved, or there is no partner (see `new_partner_sv`)."""
+        partner = self.partner
+        if partner is None:
+            return {}
+        changes = {}
+        time_ms = float(self.time_spin.value())
+        if time_ms != partner.time:
+            changes["time"] = (partner.time, time_ms)
+        beat_length = -100.0 / self.sv_spin.value()
+        if beat_length != partner.beat_length:
+            changes["beat_length"] = (partner.beat_length, beat_length)
+        kiai = self.kiai_check.isChecked()
+        effects = (partner.effects | EFFECT_KIAI) if kiai else (partner.effects & ~EFFECT_KIAI)
+        if effects != partner.effects:
+            changes["effects"] = (partner.effects, effects)
+        return changes
+
+    def new_partner_sv(self) -> float | None:
+        """The SV of a green line to add on the red line, or None: there is
+        one already, or the field still says 1.0x, which the red line gives
+        on its own."""
+        if self.sv_spin is None or self.partner is not None or self.sv_spin.value() == 1.0:
+            return None
+        return self.sv_spin.value()
+
+
+class ScaleSvDialog(SheetDialog):
+    """Multiply and/or add to the SV of the selected green lines.
+
+    The copy-paste-rescale workflow (owner, 2026-10-18): an effect that already
+    looks right, pasted somewhere else, wanted at 0.9x of itself. Generate SV
+    writes new lines; this re-values the ones there, shape intact.
+    """
+
+    MAX_RATE = 100.0
+
+    def __init__(self, count: int, parent=None) -> None:
+        super().__init__(
+            tr("MainWindow", "Scale SV"),
+            tr("MainWindow", "{0} green lines").format(count),
+            action=tr("MainWindow", "Apply"), rail=False, explain=False, restore=False, parent=parent)
+        icon = application_icon()
+        if not icon.isNull():
+            self.setWindowIcon(icon)
+        section = self.sheet.add_section("scale", tr("MainWindow", "Scale"))
+        self.factor_spin = TrimmedDoubleSpinBox()
+        self.factor_spin.setRange(0.01, 100.0)
+        self.factor_spin.setDecimals(3)
+        self.factor_spin.setSingleStep(0.01)
+        self.factor_spin.setPrefix("×")
+        self.factor_spin.setValue(0.9)
+        section.field(tr("MainWindow", "Multiply by"), self.factor_spin, tr(
+            "MainWindow", "Every selected line's SV times this."))
+        self.add_spin = TrimmedDoubleSpinBox()
+        self.add_spin.setRange(-100.0, 100.0)
+        self.add_spin.setDecimals(SV_DECIMALS)
+        self.add_spin.setSingleStep(0.01)
+        self.add_spin.setValue(0.0)
+        section.field(tr("MainWindow", "Then add"), self.add_spin, tr(
+            "MainWindow", "Added after multiplying. Negative slows the lines down."))
+        self.resize(420, 240)
+
+    def scaled(self, sv: float) -> float:
+        return max(0.01, min(self.MAX_RATE, sv * self.factor_spin.value() + self.add_spin.value()))
 
 
 class SVFunctionPreview(QWidget):
@@ -2615,7 +2761,7 @@ class SVFunctionDialog(SheetDialog):
         # decimal (e.g. 1.4286x), and 2 was rounding the prefilled "nearest
         # green line" value before Generate ever saw it -- so it looked like
         # the generator wasn't reading the existing line at all.
-        step, decimals = (1.0, 0) if volume else (0.05, SV_DECIMALS)
+        step, decimals = (1.0, 0) if volume else (0.01, SV_DECIMALS)
         suffix = "%" if volume else "\u00d7"
 
         # The result, large, at the top: every value Generate will write.
@@ -2636,6 +2782,7 @@ class SVFunctionDialog(SheetDialog):
             ("true_exp", tr("MainWindow", "True Exp")),
             ("sin", tr("MainWindow", "Sin")),
             ("exp_x", tr("MainWindow", "Exp x")),
+            ("flat", tr("MainWindow", "Flat")),
         )
         self.function_buttons: dict[str, QToolButton] = {}
         self._function_group = QButtonGroup(self)
@@ -2663,7 +2810,8 @@ class SVFunctionDialog(SheetDialog):
             )
             self._function_group.addButton(button)
             self.function_buttons[function_id] = button
-            chip_rows.addWidget(button, index // 4, index % 4)
+            # Three across: nine chips are three full rows, where four left Flat alone.
+            chip_rows.addWidget(button, index // 3, index % 3)
         curve_help = tr("MainWindow", "How the value moves from initial point to final point.")
         sheet.add_widget(sheet.field(tr("MainWindow", "Curve"), chips, curve_help))
         self.remember_curve_check = QCheckBox(tr("MainWindow", "Remember last choice"))
@@ -2713,7 +2861,7 @@ class SVFunctionDialog(SheetDialog):
             check.setChecked(self._setting_bool(f"multiply_{name}", False))
             factor.setRange(0.01, 100.0)
             factor.setDecimals(3)
-            factor.setSingleStep(0.05)
+            factor.setSingleStep(0.01)
             factor.setPrefix("×")
             factor.setValue(self._setting_float(f"{name}_factor", 1.1))
             factor.setProperty("lastValue", factor.value())
@@ -2734,7 +2882,7 @@ class SVFunctionDialog(SheetDialog):
         self.exp_spin = QDoubleSpinBox()
         self.exp_spin.setRange(1.0, 10.0)
         self.exp_spin.setDecimals(2)
-        self.exp_spin.setSingleStep(0.1)
+        self.exp_spin.setSingleStep(0.01)
         # Before the preview is connected: the rest of the dialog is not built yet.
         self.exp_spin.setValue(
             self._setting_float("exponent", 2.0) if self._setting_bool("remember_exponent", False) else 2.0)
@@ -2784,15 +2932,6 @@ class SVFunctionDialog(SheetDialog):
             "every gridline of the snap below."))
         self.placement_combo.setProperty("sheetField", placement.property("sheetField"))
 
-        self.snap_combo = QComboBox()
-        for divisor in SNAP_DIVISORS:
-            self.snap_combo.addItem(f"1/{divisor}", divisor)
-        found = self.snap_combo.findData(int(snap_divisor))
-        self.snap_combo.setCurrentIndex(found if found >= 0 else self.snap_combo.findData(4))
-        self.snap_label = QLabel(tr("MainWindow", "Snap"))
-        where.field(tr("MainWindow", "Snap"), self.snap_combo, tr(
-            "MainWindow", "The gridline spacing for Every snap."))
-
         self.position_offset_spin = QSpinBox()
         self.position_offset_spin.setRange(-5000, 5000)
         self.position_offset_spin.setSuffix(" ms")
@@ -2809,6 +2948,16 @@ class SVFunctionDialog(SheetDialog):
             "MainWindow",
             "How far ahead of its note each line sits. An SV point governs what comes after "
             "it, so a note needs its line slightly early."))
+        # Below the offset, not above it: it is hidden for Each note, and
+        # above, the offset box jumped every time Generate at was switched.
+        self.snap_combo = QComboBox()
+        for divisor in SNAP_DIVISORS:
+            self.snap_combo.addItem(f"1/{divisor}", divisor)
+        found = self.snap_combo.findData(int(snap_divisor))
+        self.snap_combo.setCurrentIndex(found if found >= 0 else self.snap_combo.findData(4))
+        self.snap_label = QLabel(tr("MainWindow", "Snap"))
+        where.field(tr("MainWindow", "Snap"), self.snap_combo, tr(
+            "MainWindow", "The gridline spacing for Every snap."))
 
         self.replace_existing_check = QCheckBox(tr("MainWindow", "Replace existing green lines"))
         self.replace_existing_check.setChecked(self._setting_bool("replace_existing", False))
@@ -2895,10 +3044,12 @@ class SVFunctionDialog(SheetDialog):
         self.length_filter_spin = QDoubleSpinBox()
         self.length_filter_spin.setRange(-100000.0, FAKE_SLIDER_MAX_LENGTH)
         self.length_filter_spin.setDecimals(4)
+        self.length_filter_spin.setSingleStep(0.01)
         self.length_filter_spin.setValue(-0.001)
         self.length_filter_max_spin = QDoubleSpinBox()
         self.length_filter_max_spin.setRange(-100000.0, FAKE_SLIDER_MAX_LENGTH)
         self.length_filter_max_spin.setDecimals(4)
+        self.length_filter_max_spin.setSingleStep(0.01)
         self.length_filter_max_spin.setValue(-0.001)
         if gimmick_layer in ("sv_barline", "sv_fake_slider"):
             filters = sheet.add_section("filters", tr("MainWindow", "Which lines"))
@@ -3109,6 +3260,8 @@ class SVFunctionDialog(SheetDialog):
         for key, button in self.function_buttons.items():
             button.setIcon(QIcon(self._curve_pixmap(self._resolved_function(key), self.CHIP_ICON_SIZE, 1.6)))
         self.preview.set_function(self.selected_function())
+        # Flat never reaches the final rate, so the box would only mislead.
+        self.final_rate_spin.setEnabled(not self.function_buttons["flat"].isChecked())
         self._exp_field.setVisible(self.function_buttons["exp_x"].isChecked())
         if self._remember_exp_field is not None:
             self._remember_exp_field.setVisible(self.function_buttons["exp_x"].isChecked())

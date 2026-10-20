@@ -33,7 +33,7 @@ TS_PATH = ROOT / "translations" / "taiko_ja.ts"
 # Files whose visible strings are looked up through explicit contexts.
 SOURCE_FILES = ("ui/gui.py", "ui/settings_dialog.py", "ui/image_trace_dialog.py", "app/updater.py",
                 "audio/offset_calibration.py", "ui/config_sheet.py",
-                "ui/dialogs.py", "ui/common.py")
+                "ui/dialogs.py", "ui/common.py", "ui/misc_page.py")
 
 _APP: QApplication | None = None
 

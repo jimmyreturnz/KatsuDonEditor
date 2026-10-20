@@ -682,7 +682,10 @@ class SVEditorView(TimeAxisMixin, QWidget):
                 event.accept()
                 return
             point = self._nearest_inherited(event.position().x())
-            if point is not None:
+            if point is not None and point.uid in self.selected_uids:
+                # On a selected point, right click is Delete: all of them.
+                self.points_delete_requested.emit([p.uid for p in self.selected_points()])
+            elif point is not None:
                 self.point_delete_requested.emit(point.uid)
             event.accept()
             return
@@ -729,7 +732,10 @@ class SVEditorView(TimeAxisMixin, QWidget):
         # _drag_axis_for_click. On empty space, start a rubber-band selection
         # over a time range instead -- and clear what was selected, so a
         # plain click deselects.
-        point = self._nearest_point(event.position().x())
+        # scale: the same rubber band and nothing else -- no line is grabbed,
+        # so a drag that starts on one still selects -- and the release scales
+        # what it caught (owner, 2026-10-19: "a selection tool in itself").
+        point = self._nearest_point(event.position().x()) if self.tool != "scale" else None
         if point is not None:
             self._begin_point_drag(point, self._drag_axis_for_click(point, event.position()),
                                    event.position().y())
@@ -881,8 +887,11 @@ class SVEditorView(TimeAxisMixin, QWidget):
         if self.select_anchor_time is not None:
             self.auto_scroll_timer.stop()
             self.releaseMouse()
+            a, b = sorted((self.select_anchor_time, self.time_for_x(self.select_mouse_x)))
             self.select_anchor_time = None
             self.update()
+            if self.tool == "scale" and self.selected_uids:
+                self.function_range_requested.emit(max(0.0, a), max(0.0, b))
             return
         if self._drag_point is not None:
             self.releaseMouse()

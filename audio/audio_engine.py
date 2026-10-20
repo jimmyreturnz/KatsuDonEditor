@@ -889,6 +889,9 @@ class _Engine(QObject):
     position_changed = Signal(float)
     duration_changed = Signal(int)
     state_changed = Signal(object)
+    # Playing, but the track is not decoded as far as the read head yet, so
+    # nothing reaches the device -- see `_set_starved`.
+    starved_changed = Signal(bool)
     error_occurred = Signal(object, str)
 
     def __init__(self) -> None:
@@ -928,6 +931,7 @@ class _Engine(QObject):
         self._segments = []
         self._fade_remaining = 0
         self._state = QMediaPlayer.StoppedState
+        self._starved = False
         self._duration_ms = 0
         # Seek coalescing (SEEK_COALESCE_MS): the timer that lands a parked
         # target, the target itself, and when the last real rebuild landed.
@@ -1067,6 +1071,7 @@ class _Engine(QObject):
             self._seek_timer.stop()
         self._pending_seek_ms = None
         self._last_seek_target = None
+        self._set_starved(False)
         self._set_state(QMediaPlayer.StoppedState)
 
     def _open_sink(self) -> None:
@@ -1146,7 +1151,11 @@ class _Engine(QObject):
         # a fast spin, ~250ms with a 15ms hold. Land where the playhead is.
         elapsed = max(0.0, float(self._last_seek_wall - self._pending_seek_wall))
         hold = self._next_hold_ms
-        position_ms += max(0.0, elapsed - hold) * self._rate
+        # Only while playing: paused since the seek was parked, the playhead
+        # stopped at the bare target, and landing ahead of it put the audio
+        # 50-60ms past the playhead on resume (tools/measure_pause_seek.py).
+        if self._state == QMediaPlayer.PlayingState:
+            position_ms += max(0.0, elapsed - hold) * self._rate
         self._next_hold_ms = max(0.0, hold - elapsed)
         self._land_seek(position_ms)
 
@@ -1332,9 +1341,13 @@ class _Engine(QObject):
                         block = self._fade_in(block)
                     self._device.write(block)
                     self._written += len(block) // (CHANNELS * 2)
+                    self._set_starved(False)
                 elif self._decoder is None or not self._decoder.isDecoding():
                     self.stop()
                     return
+                elif self._sink.bytesFree() >= self._sink.bufferSize():
+                    # Nothing queued and nothing to queue: the device is idle.
+                    self._set_starved(True)
         if self._pending_seek_ms is not None:
             # The sink is still playing the position this seek is leaving.
             # Reporting it pulled gui.py's clock back to the old spot, where
@@ -1344,6 +1357,20 @@ class _Engine(QObject):
             # window already holds the target and extrapolates from it.
             return
         self.position_changed.emit(self._position_ms())
+
+    def _set_starved(self, starved: bool) -> None:
+        """Say when playback is waiting on the decode (owner, 2026-10-18).
+
+        The whole track decodes in the background, an .ogg at ~100x realtime:
+        2.8s for a five-minute song, measured. A seek past what is decoded so
+        far has nothing to play until the decode gets there, and the window's
+        clock, extrapolating, ran on without it -- so the song was mute, and a
+        pause in that window left the playhead seconds past an audio cursor
+        still parked at the seek, which is where the resume then played from.
+        """
+        if starved != self._starved:
+            self._starved = starved
+            self.starved_changed.emit(starved)
 
     def _fade_in(self, block: bytes) -> bytes:
         """Ramp the leading frames up from silence -- what softens the splice
@@ -1446,11 +1473,13 @@ class TrackPlayer(QObject):
         self._engine.position_changed.connect(self._on_position)
         self._engine.duration_changed.connect(self._on_duration)
         self._engine.state_changed.connect(self._on_state)
+        self._engine.starved_changed.connect(self._on_starved)
         self._engine.error_occurred.connect(self.errorOccurred)
 
         self._position_ms = 0.0
         self._duration_ms = 0
         self._state = QMediaPlayer.StoppedState
+        self._starved = False
         self._playback_rate = 1.0
         self._source = ""
         self._thread.start()
@@ -1461,6 +1490,14 @@ class TrackPlayer(QObject):
     def _on_position(self, position_ms: float) -> None:
         self._position_ms = position_ms
         self.positionChanged.emit(position_ms)
+
+    @Slot(bool)
+    def _on_starved(self, starved: bool) -> None:
+        self._starved = starved
+
+    def is_starved(self) -> bool:
+        """Playing, but waiting on the decode: no song time is passing."""
+        return self._starved
 
     @Slot(int)
     def _on_duration(self, duration_ms: int) -> None:

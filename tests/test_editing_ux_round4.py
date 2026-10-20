@@ -419,7 +419,9 @@ class PasteSnapTests(WindowTestCase):
         self.window.paste_clipboard()
 
         pasted = max(self.state.document.timing_points, key=lambda p: p.uid)
-        self.assertEqual(pasted.time, 30000.0)
+        # The snap, then the preset Position offset ahead of it.
+        lead = self.window.settings.int_value("sv_generate/position_offset", -5)
+        self.assertEqual(pasted.time, 30000.0 + lead)
 
     def test_relative_spacing_survives_the_snap(self):
         view = self._chart_view()
@@ -920,6 +922,8 @@ class FunctionChooserTests(unittest.TestCase):
             "linear", "sin_in", "sin_out", "exp1.3", "exp1.6", "true_exp", "sin",
             # The same exp curve with its exponent typed rather than fixed.
             "exp_x",
+            # One SV across the range (owner, 2026-10-18).
+            "flat",
         }
         self.assertEqual(set(dialog.function_buttons), expected)
         for button in dialog.function_buttons.values():

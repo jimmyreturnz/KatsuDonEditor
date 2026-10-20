@@ -154,6 +154,21 @@ class PlaybackTimingTests(unittest.TestCase):
 
         self.assertEqual(predicted, 1005.0)
 
+    def test_the_playhead_waits_while_the_decode_catches_up(self):
+        """Owner, 2026-10-18 (.ogg): a seek past what is decoded so far plays
+        nothing until the decode gets there, and the playhead ran on without
+        the audio -- so a pause there resumed from two different places."""
+        self._make_playing(rate=1.0)
+        clock = self._take_the_clock()
+        self._take_source_clock()
+        self.window.audio_anchor_position = 250000.0
+        self.window.latest_audio_position = 250000.0
+        self.window.player.is_starved = lambda: True
+        for _ in range(30):
+            clock.advance_ms(1000.0 / 120.0)
+            self.window._advance_interpolated_clock(1000.0 / 120.0)
+        self.assertEqual(self.window.audio_anchor_position, 250000.0)
+
     # -- _advance_interpolated_clock: the per-frame blend/snap -----------------
 
     def test_advance_halves_the_error_over_one_half_life(self):

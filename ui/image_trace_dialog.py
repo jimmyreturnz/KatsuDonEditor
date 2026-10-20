@@ -22,8 +22,9 @@ from PySide6.QtGui import (
     QBrush, QColor, QFont, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF,
 )
 from PySide6.QtWidgets import (
-    QAbstractButton, QApplication, QButtonGroup, QCheckBox, QDialog, QDialogButtonBox, QFileDialog,
-    QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QSlider, QVBoxLayout, QWidget,
+    QAbstractButton, QApplication, QButtonGroup, QCheckBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+    QFileDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QSlider, QSpinBox, QVBoxLayout,
+    QWidget,
 )
 
 from chart.image_to_drawing import (
@@ -44,7 +45,6 @@ QLabel { background: transparent; }
 QLabel#groupTitle { color: #aeb8c5; font-size: 12.5px; font-weight: 600; }
 QFrame#traceCard { background: #222a36; border: 0; border-radius: 12px; }
 QLabel#rowLabel { font-size: 13px; font-weight: 600; }
-QLabel#rowValue { color: #ff9dcc; font-size: 13px; font-weight: 600; }
 QLabel#rowNote { color: #aeb8c5; font-size: 12px; }
 QLabel#fileName { color: #e8edf3; font-size: 13px; font-weight: 600; }
 QLabel#traceStatus { color: #7d8794; font-size: 12px; }
@@ -482,19 +482,30 @@ class ImageTraceDialog(QDialog):
         label.setWordWrap(True)
         return label
 
-    def _slider_row(self, inner: QVBoxLayout, label: str, slider: QSlider) -> QLabel:
+    def _slider_row(self, inner: QVBoxLayout, label: str, slider: QSlider, spin, scale: int = 1) -> None:
+        """A slider with a box to type into. The box is the value: it reaches
+        past the slider's end (a speck limit of 500, smoothing of 30px), and
+        the slider just pins at its end and follows it back."""
         row = QHBoxLayout()
         caption = QLabel(label)
         caption.setObjectName("rowLabel")
-        value = QLabel()
-        value.setObjectName("rowValue")
         row.addWidget(caption)
         row.addStretch(1)
-        row.addWidget(value)
+        row.addWidget(spin)
         inner.addLayout(row)
         slider.setAccessibleName(label)
+        spin.setAccessibleName(label)
+        spin.setFixedWidth(96)
         inner.addWidget(slider)
-        return value
+        slider.setValue(round(spin.value() * scale))
+        slider.valueChanged.connect(lambda v: spin.setValue(v / scale if scale != 1 else v))
+
+        def follow(value) -> None:
+            slider.blockSignals(True)
+            slider.setValue(round(value * scale))
+            slider.blockSignals(False)
+
+        spin.valueChanged.connect(follow)
 
     def _build_inspector(self) -> QScrollArea:
         scroll = QScrollArea()
@@ -524,10 +535,12 @@ class ImageTraceDialog(QDialog):
         inner.addWidget(self.mode_note)
 
         inner = self._card(layout, self.tr("What Counts as Artwork"))
-        self.threshold = QSlider(Qt.Horizontal)
+        self.threshold = QSpinBox()
         self.threshold.setRange(0, 255)
         self.threshold.setValue(128)
-        self.threshold_value = self._slider_row(inner, self.tr("Threshold"), self.threshold)
+        self.threshold_slider = QSlider(Qt.Horizontal)
+        self.threshold_slider.setRange(0, 255)
+        self._slider_row(inner, self.tr("Threshold"), self.threshold_slider, self.threshold)
         self.threshold_example = ThresholdExample(self.tr("Traced"), self.tr("Ignored"))
         inner.addWidget(self.threshold_example)
         self.threshold_note = self._note("")
@@ -549,20 +562,27 @@ class ImageTraceDialog(QDialog):
         inner.addLayout(invert_row)
 
         inner = self._card(layout, self.tr("Clean Up"))
-        self.minimum = QSlider(Qt.Horizontal)
-        self.minimum.setRange(4, SPECK_SLIDER_MAX)
+        self.minimum = QSpinBox()
+        self.minimum.setRange(4, 100000)
         self.minimum.setValue(12)
-        self.minimum_value = self._slider_row(inner, self.tr("Ignore Specks"), self.minimum)
+        self.minimum_slider = QSlider(Qt.Horizontal)
+        self.minimum_slider.setRange(4, SPECK_SLIDER_MAX)
+        self._slider_row(inner, self.tr("Ignore Specks"), self.minimum_slider, self.minimum)
         self.specks_example = IgnoreSpecksExample()
         inner.addWidget(self.specks_example)
         inner.addWidget(self._note(self.tr(
             "Drops outlines shorter than this many points: dust, scan noise, stray pixels. Faded specks are removed.")))
         self.minimum.valueChanged.connect(self._refine_settings_changed)
         inner.addSpacing(6)
-        self.simplify = QSlider(Qt.Horizontal)
-        self.simplify.setRange(0, 20 * SMOOTHING_SLIDER_STEPS)
-        self.simplify.setValue(2 * SMOOTHING_SLIDER_STEPS)
-        self.simplify_value = self._slider_row(inner, self.tr("Smoothing"), self.simplify)
+        self.simplify = QDoubleSpinBox()
+        self.simplify.setRange(0.0, 50.0)
+        self.simplify.setDecimals(1)
+        self.simplify.setSingleStep(1 / SMOOTHING_SLIDER_STEPS)
+        self.simplify.setSuffix(" px")
+        self.simplify.setValue(2.0)
+        self.simplify_slider = QSlider(Qt.Horizontal)
+        self.simplify_slider.setRange(0, 20 * SMOOTHING_SLIDER_STEPS)
+        self._slider_row(inner, self.tr("Smoothing"), self.simplify_slider, self.simplify, SMOOTHING_SLIDER_STEPS)
         self.smoothing_example = SmoothingExample(self.tr("points in this circle"))
         inner.addWidget(self.smoothing_example)
         inner.addWidget(self._note(self.tr(
@@ -595,7 +615,7 @@ class ImageTraceDialog(QDialog):
 
     def options(self) -> TraceOptions:
         return TraceOptions(self.mode(), self.threshold.value(), self.minimum.value(),
-                            self.simplify.value() / SMOOTHING_SLIDER_STEPS, self.invert.isChecked())
+                            self.simplify.value(), self.invert.isChecked())
 
     def _sync_examples(self) -> None:
         mode, threshold, invert = self.mode(), self.threshold.value(), self.invert.isChecked()
@@ -611,13 +631,9 @@ class ImageTraceDialog(QDialog):
         else:
             note = self.tr("Pixels this bright or brighter are lines. Lower it to catch dimmer strokes.")
         self.threshold_note.setText(note)
-        self.threshold_value.setText(str(threshold))
         self.threshold_example.set_state(mode, threshold, invert)
-        self.minimum_value.setText(str(self.minimum.value()))
         self.specks_example.set_minimum(self.minimum.value())
-        distance = self.simplify.value() / SMOOTHING_SLIDER_STEPS
-        self.simplify_value.setText(f"{distance:.1f} px")
-        self.smoothing_example.set_distance(distance)
+        self.smoothing_example.set_distance(self.simplify.value())
 
     def _outline_settings_changed(self, *_args) -> None:
         self._sync_examples()

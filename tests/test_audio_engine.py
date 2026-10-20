@@ -362,6 +362,20 @@ class SeekCoalesceTests(unittest.TestCase):
         self.assertGreaterEqual(rebuilds[-1], 1060.0 / 1000.0 * SAMPLE_RATE - 1)
         self.assertLess(rebuilds[-1], 1066.0 / 1000.0 * SAMPLE_RATE)
 
+    def test_a_parked_seek_landing_after_a_pause_lands_on_the_target(self):
+        """Owner, 2026-10-18: paused since the seek was parked, the playhead
+        stopped at the bare target, and extrapolating the landing put the audio
+        50-60ms past it (tools/measure_pause_seek.py)."""
+        from PySide6.QtMultimedia import QMediaPlayer
+
+        engine, _rebuilds = self._playing_engine()
+        engine.seek(1000.0)
+        engine.seek(1020.0)  # parked
+        engine._pending_seek_wall -= 40
+        engine._state = QMediaPlayer.PausedState
+        engine._land_pending_seek()
+        self.assertAlmostEqual(engine._stretcher.source_frame, 1020.0 / 1000.0 * SAMPLE_RATE, delta=1)
+
     def test_a_late_landing_spends_its_hold_first(self):
         engine, rebuilds = self._playing_engine()
         engine.seek(1000.0)

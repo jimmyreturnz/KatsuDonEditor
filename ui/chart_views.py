@@ -805,6 +805,11 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
                 event.accept()
                 return
             note = self._note_near_x(event.position().x(), y=event.position().y())
+            # On something selected, right click is Delete: the whole
+            # selection goes, not just the one under the cursor.
+            if note is not None and note.original_index in self.selected and self._delete_selection():
+                event.accept()
+                return
             if note is not None:
                 self.note_delete_requested.emit(note.uid)
                 event.accept()
@@ -817,7 +822,9 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
                     self._gimmick_centre_near_x(event.position().x())
                     or self._timing_point_near_x(event.position().x())
                 )
-                if point is not None:
+                if point is not None and not (
+                    point.uid in self.selected_timing_uids and self._delete_selection()
+                ):
                     self.timing_lines_delete_requested.emit([point.uid])
             elif self.timing_delete_enabled:
                 # Only the lines this view draws: no structure centre lookup,
@@ -1140,6 +1147,19 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
     def _auto_scroll_selection(self) -> None:
         if self.drag_anchor_time is None: self.auto_scroll_timer.stop(); return
         if self.auto_scroll_step(self.drag_mouse_x): self._update_drag_selection()
+    def _delete_selection(self) -> bool:
+        """Delete and right click on a selected object. Editor-page views
+        only: the shared Fancy Arranger timeline (symmetric=False) is a
+        transform-selection surface, where this would destroy notes someone
+        was only trying to arrange. False when nothing was deleted."""
+        if not self.editor_view or not (self.selected or self.selected_timing_uids):
+            return False
+        if self.selected:
+            self.notes_delete_requested.emit([note.uid for note in self.selected_notes()])
+        if self.selected_timing_uids:
+            self.timing_lines_delete_requested.emit(sorted(self.selected_timing_uids))
+        return True
+
     def mouseReleaseEvent(self,event) -> None:
         if event.button() == Qt.RightButton:
             # A right release only ever matters here as the end of a bar-scrub
@@ -1232,10 +1252,7 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
             # Editor-page views only. The shared Fancy Arranger timeline
             # (symmetric=False) is a transform-selection surface, where
             # Delete would destroy notes someone was only trying to arrange.
-            if self.editor_view and self.selected:
-                self.notes_delete_requested.emit([note.uid for note in self.selected_notes()])
-            if self.editor_view and self.selected_timing_uids:
-                self.timing_lines_delete_requested.emit(sorted(self.selected_timing_uids))
+            self._delete_selection()
             event.accept()
             return
 

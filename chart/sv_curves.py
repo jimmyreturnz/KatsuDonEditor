@@ -81,6 +81,11 @@ def sv_ease(
     between. Only "true_exp" reads them; every other curve is a fixed arc.
     """
     t = max(0.0, min(1.0, t))
+    if function_id == "flat":
+        # One SV across the range (owner, 2026-10-18): never leaves the
+        # initial value. Across a BPM change it is the Relative switches that
+        # decide whether the number or the scroll speed holds.
+        return 0.0
     if function_id == "sin_in":
         return math.sin(t * math.pi / 2)
     if function_id == "sin_out":

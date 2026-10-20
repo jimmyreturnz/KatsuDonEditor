@@ -888,6 +888,14 @@ class GameplayViewerView(QWidget):
             self.refresh_notes(self._document)
         self.update()
 
+    def _animation_ms(self, song_ms: float) -> float:
+        """`song_ms` of song time as the wall-clock ms an animation has run.
+
+        Under DT/NC the song runs 1.5x, so a 150ms drum flash timed on song
+        time was over in 100ms. The hit animations keep nomod's length (owner,
+        2026-10-19); the kiai pulse is per beat and stays on song time."""
+        return song_ms / 1.5 if "DT" in self.mods or "NC" in self.mods else song_ms
+
     def _scroll_length_px(self) -> float:
         """osu!'s scroll length on this view, hit target to screen edge --
         what TaikoModHidden's preempt is a fraction of."""
@@ -1300,8 +1308,8 @@ class GameplayViewerView(QWidget):
             return 0.0
         start = 0.0
         if index > 0:
-            start = _drum_hit_alpha(times[index] - times[index - 1], 0.0)
-        return _drum_hit_alpha(self.current_time - times[index], start)
+            start = _drum_hit_alpha(self._animation_ms(times[index] - times[index - 1]), 0.0)
+        return _drum_hit_alpha(self._animation_ms(self.current_time - times[index]), start)
 
     def _draw_input_drum(self, painter, center_y) -> None:
         """`taiko-bar-left` and the four drum halves, lit by the autoplay.
@@ -1374,9 +1382,9 @@ class GameplayViewerView(QWidget):
         band_start, band_end = self.kiai_bands[band_index]
         now = self.current_time
         if now < band_end:
-            alpha = min(1.0, (now - band_start) / KIAI_GLOW_IN_MS)
+            alpha = min(1.0, self._animation_ms(now - band_start) / KIAI_GLOW_IN_MS)
         else:
-            alpha = 1.0 - (now - band_end) / KIAI_GLOW_OUT_MS
+            alpha = 1.0 - self._animation_ms(now - band_end) / KIAI_GLOW_OUT_MS
         if alpha <= 0.0:
             return
         unit = self.height() / PLAYFIELD_UNIT
@@ -1386,7 +1394,7 @@ class GameplayViewerView(QWidget):
         scale = KIAI_GLOW_SCALE
         index = bisect_right(self._all_hits, now) - 1
         if index >= 0 and now < band_end:
-            since = now - self._all_hits[index]
+            since = self._animation_ms(now - self._all_hits[index])
             if since < KIAI_GLOW_KICK_MS:
                 t = since / KIAI_GLOW_KICK_MS
                 scale += KIAI_GLOW_KICK * (1.0 - t) ** 2

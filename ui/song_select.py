@@ -1323,30 +1323,37 @@ class LibraryPageController:
         play.setStyleSheet("color: transparent;")
         self.play_glyph = PlayPauseGlyph(play, ROW_INK_2, ROW_INK)
 
-        # One quiet menu for three rare actions. Quick Scan is incremental and
-        # Rescan throws the index away -- see `rescan` for why both exist.
+        # The folder button changes the folder; the reloads have their own
+        # button beside it (owner, 2026-10-17) rather than hiding in its menu.
+        # Quick Scan is incremental and Rescan throws the index away -- see
+        # `rescan` for why both exist.
         self.library_folder_label = QToolButton()
         self.library_folder_label.setObjectName("folderMenu")
-        self.library_folder_label.setPopupMode(QToolButton.InstantPopup)
         self.library_folder_label.setToolButtonStyle(Qt.ToolButtonTextOnly)
         self.library_folder_label.setFocusPolicy(Qt.NoFocus)
-        folder_menu = QMenu(self.library_folder_label)
-        quick = folder_menu.addAction(tr("MainWindow", "Quick scan"))
-        quick.setToolTip(tr("MainWindow", "Look for songs added or changed since the last scan"))
-        quick.triggered.connect(self.start_scan)
-        full = folder_menu.addAction(tr("MainWindow", "Rescan everything"))
-        full.setToolTip(tr("MainWindow", "Rebuild the whole index from scratch (slower; use if Quick Scan missed a change)"))
-        full.triggered.connect(self.rescan)
-        reload_song = folder_menu.addAction(tr("MainWindow", "Reload this beatmap") + "\tF5")
+        self.library_folder_label.clicked.connect(self.choose_songs_folder)
+        self.reload_button = QToolButton()
+        self.reload_button.setObjectName("folderMenu")
+        self.reload_button.setPopupMode(QToolButton.InstantPopup)
+        self.reload_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.reload_button.setFocusPolicy(Qt.NoFocus)
+        self.reload_button.setText(tr("MainWindow", "Reload") + "  ▾")
+        reload_menu = QMenu(self.reload_button)
+        reload_song = reload_menu.addAction(tr("MainWindow", "Reload this beatmap") + "\tF5")
         reload_song.setToolTip(tr("MainWindow", "Read the selected song's files again, and nothing else"))
         reload_song.triggered.connect(self.reload_current_song)
-        change =folder_menu.addAction(tr("MainWindow", "Change folder…"))
-        change.triggered.connect(self.choose_songs_folder)
-        folder_menu.setToolTipsVisible(True)
-        self.library_folder_label.setMenu(folder_menu)
+        quick = reload_menu.addAction(tr("MainWindow", "Quick scan"))
+        quick.setToolTip(tr("MainWindow", "Look for songs added or changed since the last scan"))
+        quick.triggered.connect(self.start_scan)
+        full = reload_menu.addAction(tr("MainWindow", "Rescan everything"))
+        full.setToolTip(tr("MainWindow", "Rebuild the whole index from scratch (slower; use if Quick Scan missed a change)"))
+        full.triggered.connect(self.rescan)
+        reload_menu.setToolTipsVisible(True)
+        self.reload_button.setMenu(reload_menu)
         self.set_folder_text("")
         top.addStretch(1)
         top.addWidget(self.library_folder_label)
+        top.addWidget(self.reload_button)
 
         # Two columns (owner, 2026-10-08): the search, Continue and the song
         # list share one width on the left, so the list is exactly as wide as
@@ -1584,8 +1591,9 @@ class LibraryPageController:
         # 160, not 260: this row heads the right column now, and its width is
         # that column's minimum -- at 1366 wide the song list had 360px.
         shown = metrics.elidedText(folder, Qt.ElideMiddle, 160) if folder else tr("MainWindow", "Songs folder")
-        self.library_folder_label.setText(f"{shown}  ▾")
-        self.library_folder_label.setToolTip(folder)
+        self.library_folder_label.setText(shown)
+        change = tr("MainWindow", "Change folder…")
+        self.library_folder_label.setToolTip(f"{folder}\n{change}" if folder else change)
 
     def move_song(self, delta: int) -> None:
         """Up/Down from the search box: the next *song*, over group headers."""

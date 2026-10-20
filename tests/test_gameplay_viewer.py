@@ -794,6 +794,15 @@ class PlayfieldTests(unittest.TestCase):
         self.assertAlmostEqual(view._half_alpha(3), 0.5)
         view.current_time = 1150.0
         self.assertEqual(view._half_alpha(3), 0.0)
+        # DT/NC: the song runs 1.5x, the flash still lasts nomod's 150ms
+        # (owner, 2026-10-19), so it is half gone 187.5ms of song time in.
+        for mod in ("DT", "NC"):
+            view.set_mods({mod})
+            view.current_time = 1000.0 + 125.0 * 1.5
+            self.assertAlmostEqual(view._half_alpha(3), 0.5)
+            view.current_time = 1000.0 + 150.0 * 1.5
+            self.assertEqual(view._half_alpha(3), 0.0)
+        view.set_mods(set())
 
     def test_the_bar_is_stretched_to_the_whole_view(self):
         """1024x200 art "stretched to fit screen width" -- aspect deliberately

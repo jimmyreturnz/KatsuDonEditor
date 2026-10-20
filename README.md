@@ -15,7 +15,7 @@ Taiko Fancy Arranger started as a tool for turning osu!taiko notes into visual p
 
 The editor does not support editing storyboards, breaks, colours, editor bookmarks yet.
 
-> **Current release:** v3.5.5  
+> **Current release:** v3.5.6  
 > **Platform:** Windows x64  
 > **Author:** [jimmyreturnz](https://osu.ppy.sh/users/11306153)
 
@@ -57,15 +57,15 @@ The main inspirations include Alchyr's ranked maps *13 Stairs* and *Helios*, whi
 
 ---
 
-## What is new in 3.5.5
+## What is new in 3.5.6
 
-A small update.
+- **Miscellaneous page:** set metadata on one difficulty or all of them, shift the whole map's offset, and scale every green line.
+- **Scale SV** (`Ctrl+M`): multiply and add to the selected green lines' SV, so a pasted effect can be rescaled.
+- **A red line and the green line on its millisecond open as one dialog.**
+- **Save picks the difficulties**, and Ctrl+S saves the one on screen.
+- **Fixed:** silence after a seek on an .ogg; Generate SV losing the sweep on a note with a red line; one arrow notch moving SV by 1.0.
 
-- **F5 reads the chart from its file**, in song select and (after asking) in the editor. A chart saved in osu!'s editor used to reopen as this app's copy.
-- **Relative to BPM** in Generate SV: hold the scroll speed of a BPM you type.
-- **The Exp x exponent is remembered.**
-
-Details: [`docs/releases/v3.5.5.md`](docs/releases/v3.5.5.md)
+Details: [`docs/releases/v3.5.6.md`](docs/releases/v3.5.6.md)
 
 
 The full development log is in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md).
@@ -74,7 +74,7 @@ The full development log is in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLA
 
 ## Windows SmartScreen notice
 
-Taiko Fancy Arranger v3.5.5 is an unsigned Windows application. The release validates its input files, ships with automated tests, and publishes SHA-256 checksums.
+Taiko Fancy Arranger v3.5.6 is an unsigned Windows application. The release validates its input files, ships with automated tests, and publishes SHA-256 checksums.
 
 Windows Defender SmartScreen may still show an "unrecognized app" warning, because a new executable has no download reputation yet.
 
@@ -136,7 +136,7 @@ Controls:
 - **Sort.** A to Z or Z to A. This reverses the group order too.
 - **Original language metadata.** Shows `ArtistUnicode` and `TitleUnicode` instead of the romanized fields, and falls back to whichever the map actually has.
 - **Music player.** Previous, play and pause, stop, and next. Previous and next walk a shuffled song order that stays fixed for the session, and select that song. **Space** pauses and resumes, except while you type a search.
-- **Songs folder menu.** Quick scan, Rescan everything, **Reload this beatmap** (`F5`, which re-reads only the selected song) and Change folder.
+- **Songs folder and Reload buttons.** Click the folder to change it. **Reload** beside it has **Reload this beatmap** (`F5`, which re-reads only the selected song), Quick scan and Rescan everything.
 
 The preview plays at 1.00x and the song's own pitch whatever mod is selected. Mods apply in the editor.
 
@@ -485,7 +485,7 @@ Do not upload copyrighted audio or private beatmap assets unless permission has 
 
 ## Project status
 
-Version 3.5.5 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
+Version 3.5.6 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
 
 Not yet implemented, and next in line:
 

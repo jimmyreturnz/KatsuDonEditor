@@ -122,6 +122,41 @@ def note_halves(notes, beat_ms: float, style: str, binding: str = "1234",
     return halves
 
 
+
+# -- hitsounds -------------------------------------------------------------
+#
+# Which sample a note asks for. **Circles only.** A drumroll -- which is what
+# every fake slider and every shiny note is -- a spinner, and a timing point
+# are all silent as objects. A *real* drumroll's ticks are not (owner,
+# 2026-10-10): `hitsound_schedule` voices each one as a don, the way the
+# autoplay hits it; a fake slider has no duration and so no ticks. That
+# single rule is the whole of "play them wherever normal chart notes exist, never for fake sliders or barlines", and it needs no
+# special case for the gimmick layers: the hittable note a Don/Kat fake slider
+# or a barline note writes *is* an ordinary circle in the chart, and the player
+# really does hit it, so silencing it would make playback lie about the map.
+HITSOUND_SAMPLES = {
+    "normal": "taiko-normal-hitnormal.wav",   # don
+    "clap": "taiko-normal-hitclap.wav",       # kat
+    "finish": "taiko-normal-hitfinish.wav",   # big don
+    "whistle": "taiko-normal-hitwhistle.wav", # big kat
+}
+
+
+def hitsound_keys(note) -> tuple[str, ...]:
+    """The samples `note` plays, together; empty when it is silent.
+
+    A finisher is its small note's sound with the big one over it, as in game
+    (owner, 2026-10-08): a big don is hitnormal + hitfinish, a big kat hitclap
+    + hitwhistle. Alone, the finish was a cymbal with no drum under it.
+    """
+    if not note.is_circle:
+        return ()
+    small = "clap" if note.is_kat else "normal"
+    if note.is_finisher:
+        return (small, "whistle" if note.is_kat else "finish")
+    return (small,)
+
+
 def roll_halves(tick_times, left_handed: bool = False) -> list[tuple[float, tuple[int, ...]]]:
     """A drumroll's ticks (`gui.drumroll_tick_times`), dons alternating from
     the dominant hand, the way osu!'s autoplay plays one."""

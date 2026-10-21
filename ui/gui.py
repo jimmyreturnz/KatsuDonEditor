@@ -68,6 +68,7 @@ from osu_io.timing import (
 from osu_io.writer import write_osu
 from library.song_library import read_header
 from chart import autoplay
+from chart.autoplay import HITSOUND_SAMPLES, hitsound_keys
 from chart.sv_curves import sv_ease
 from chart.time_axis import (
     KIAI_OPEN_END_MS, SNAP_DIVISORS, TimeAxisMixin, osu_snap_ms, resnap_time, snap_time,
@@ -305,23 +306,7 @@ def is_row_visible(layout: QFormLayout | None, widget: QWidget) -> bool:
     return layout is not None and layout.isRowVisible(widget)
 
 
-# -- hitsounds -------------------------------------------------------------
-#
-# Which sample a note asks for. **Circles only.** A drumroll -- which is what
-# every fake slider and every shiny note is -- a spinner, and a timing point
-# are all silent as objects. A *real* drumroll's ticks are not (owner,
-# 2026-10-10): `hitsound_schedule` voices each one as a don, the way the
-# autoplay hits it; a fake slider has no duration and so no ticks. That single rule is the whole of "play them wherever normal
-# chart notes exist, never for fake sliders or barlines", and it needs no
-# special case for the gimmick layers: the hittable note a Don/Kat fake slider
-# or a barline note writes *is* an ordinary circle in the chart, and the player
-# really does hit it, so silencing it would make playback lie about the map.
-HITSOUND_SAMPLES = {
-    "normal": "taiko-normal-hitnormal.wav",   # don
-    "clap": "taiko-normal-hitclap.wav",       # kat
-    "finish": "taiko-normal-hitfinish.wav",   # big don
-    "whistle": "taiko-normal-hitwhistle.wav", # big kat
-}
+# -- hitsounds: which sample a note asks for is `autoplay.hitsound_keys` ---
 
 def extras_at(note, new_time: float) -> tuple[str, ...]:
     """`note.extras` for the same object moved to `new_time`.
@@ -336,20 +321,6 @@ def extras_at(note, new_time: float) -> tuple[str, ...]:
         return tuple(note.extras)
     return (str(round(new_time + (end - note.time))), *note.extras[1:])
 
-
-def hitsound_keys(note) -> tuple[str, ...]:
-    """The samples `note` plays, together; empty when it is silent.
-
-    A finisher is its small note's sound with the big one over it, as in game
-    (owner, 2026-10-08): a big don is hitnormal + hitfinish, a big kat hitclap
-    + hitwhistle. Alone, the finish was a cymbal with no drum under it.
-    """
-    if not note.is_circle:
-        return ()
-    small = "clap" if note.is_kat else "normal"
-    if note.is_finisher:
-        return (small, "whistle" if note.is_kat else "finish")
-    return (small,)
 
 
 def hitsound_schedule(
@@ -467,6 +438,11 @@ class HitsoundPlayer:
 
     def set_volume(self, fraction: float) -> None:
         self._player.set_hitsound_volume(max(0.0, min(1.0, float(fraction))))
+
+    @property
+    def sample_paths(self) -> dict[str, str]:
+        """The file each hitsound key plays: the skin's, else the built-in."""
+        return dict(self._sent_paths or {})
 
     def set_skin_sounds(self, sounds) -> None:
         if dict(sounds) == self._skin_sounds:

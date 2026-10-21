@@ -2917,6 +2917,66 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>全ての緑線をスケール…</translation>
         </message>
         <message>
+            <source>Taiko to Mania</source>
+            <translation>太鼓からマニアへ</translation>
+        </message>
+        <message>
+            <source>4K: the autoplay's hands</source>
+            <translation>4K：オートプレイの手順</translation>
+        </message>
+        <message>
+            <source>1K: one column</source>
+            <translation>1K：1列</translation>
+        </message>
+        <message>
+            <source>Keys</source>
+            <translation>キー数</translation>
+        </message>
+        <message>
+            <source>4K puts each note in the column of the drum half the autoplay hits. 1K puts every note in one column, with no colours.</source>
+            <translation>4Kでは、各ノーツをオートプレイが叩く太鼓の面の列に置きます。1Kでは全てのノーツを色分けなしで1列に置きます。</translation>
+        </message>
+        <message>
+            <source>Playstyle</source>
+            <translation>プレイスタイル</translation>
+        </message>
+        <message>
+            <source>Left-handed</source>
+            <translation>左利き</translation>
+        </message>
+        <message>
+            <source>Single tap BPM</source>
+            <translation>片手打ちBPM</translation>
+        </message>
+        <message>
+            <source>The beat the playstyle groups notes against: notes half a beat or more apart are a rest, and a group after a rest starts on the dominant hand. Starts at the chart's BPM.</source>
+            <translation>プレイスタイルがノーツをまとめる基準の拍です。半拍以上離れたノーツは休符とみなし、休符の後のまとまりは利き手から始まります。初期値は譜面のBPMです。</translation>
+        </message>
+        <message>
+            <source>Hit finishers single</source>
+            <translation>大音符を片手で叩く</translation>
+        </message>
+        <message>
+            <source>Finishers</source>
+            <translation>大音符</translation>
+        </message>
+        <message>
+            <source>On, a finisher is one note in the hand's column. Off, it is two, on both halves of its colour.</source>
+            <translation>オンでは大音符はその手の列に1つのノーツになります。オフでは同じ色の両面に2つのノーツになります。</translation>
+        </message>
+        <message>
+            <source>Convert to a new difficulty</source>
+            <translation>新しい難易度に変換</translation>
+        </message>
+        <message>
+            <source>Not converted: {0}</source>
+            <translation>変換できませんでした：{0}</translation>
+        </message>
+        <message>
+            <source>Wrote {0}. Press F5 in osu! to see it.</source>
+            <translation>{0} を書き出しました。osu!でF5を押すと表示されます。</translation>
+        </message>
+        <message>
             <source>Select green lines to scale first.</source>
             <translation>先にスケールする緑線を選択してください。</translation>
         </message>

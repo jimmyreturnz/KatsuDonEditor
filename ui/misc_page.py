@@ -1,6 +1,7 @@
 """The Miscellaneous page (owner, 2026-10-18): set-wide chores that have no
 view of their own -- the beatmapset's metadata, shifting the whole map's
-offset, and scaling every green line's SV.
+offset, scaling every green line's SV, and converting a difficulty to
+osu!mania (`chart.taiko_to_mania`).
 
 Everything here is an ordinary undoable edit on each difficulty's own history,
 so the header's Save counts it and the Save dialog can still discard it.
@@ -10,10 +11,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QComboBox, QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDoubleSpinBox, QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from app.i18n import tr
+from chart import autoplay, taiko_to_mania
 from model.commands import CompositeCommand, ReplaceDocumentLines, ShiftChartTimes
 from osu_io import metadata
 from ui.config_sheet import ConfigSheet, set_warning
@@ -114,6 +116,46 @@ class MiscPage(QWidget):
         self.scale_all_button = QPushButton(tr("MainWindow", "Scale every green line…"))
         self.scale_all_button.clicked.connect(self.scale_all_sv)
         sv.add(self.scale_all_button, span=1)
+
+        mania = self.sheet.add_section("mania", tr("MainWindow", "Taiko to Mania"),
+                                       tr("MainWindow", "The difficulty being edited"))
+        self.mania_keys = QComboBox()
+        self.mania_keys.addItem(tr("MainWindow", "4K: the autoplay's hands"), 4)
+        self.mania_keys.addItem(tr("MainWindow", "1K: one column"), 1)
+        self.mania_keys.currentIndexChanged.connect(self._mania_keys_changed)
+        mania.field(tr("MainWindow", "Keys"), self.mania_keys, tr(
+            "MainWindow", "4K puts each note in the column of the drum half the autoplay hits. "
+            "1K puts every note in one column, with no colours."))
+        self.mania_style = QComboBox()
+        for value, label in (
+                (autoplay.FULL_ALT, tr("MainWindow", "kddk full alternate")),
+                (autoplay.SEMI_ALT, tr("MainWindow", "kddk semi alternate")),
+                (autoplay.SINGLE_TAP, tr("MainWindow", "kddk single tap")),
+                (autoplay.ROLL, tr("MainWindow", "kddk roll")),
+                (autoplay.DDKK, "ddkk")):
+            self.mania_style.addItem(label, value)
+        mania.field(tr("MainWindow", "Playstyle"), self.mania_style)
+        self.mania_binding = QComboBox()
+        for binding in autoplay.BINDINGS:
+            self.mania_binding.addItem(binding, binding)
+        mania.field(tr("MainWindow", "Binding (kddk)"), self.mania_binding)
+        self.mania_left = QCheckBox(tr("MainWindow", "Left-handed"))
+        mania.add(self.mania_left, span=1)
+        self.mania_bpm = QDoubleSpinBox()
+        self.mania_bpm.setRange(1.0, 10000.0)
+        self.mania_bpm.setDecimals(2)
+        self.mania_bpm.setSuffix(" BPM")
+        mania.field(tr("MainWindow", "Single tap BPM"), self.mania_bpm, tr(
+            "MainWindow", "The beat the playstyle groups notes against: notes half a beat or "
+            "more apart are a rest, and a group after a rest starts on the dominant hand. "
+            "Starts at the chart's BPM."))
+        self.mania_finisher_single = QCheckBox(tr("MainWindow", "Hit finishers single"))
+        mania.field(tr("MainWindow", "Finishers"), self.mania_finisher_single, tr(
+            "MainWindow", "On, a finisher is one note in the hand's column. Off, it is two, "
+            "on both halves of its colour."))
+        self.mania_button = QPushButton(tr("MainWindow", "Convert to a new difficulty"))
+        self.mania_button.clicked.connect(self.convert_to_mania)
+        mania.add(self.mania_button, span=1)
         self.refresh()
 
     # -- state ----------------------------------------------------------------
@@ -143,9 +185,27 @@ class MiscPage(QWidget):
             self.target_combo.addItem(combo.itemText(index), combo.itemData(index))
         current = state.source_path if state is not None else None
         self.target_combo.blockSignals(False)
-        for widget in (self.apply_metadata_button, self.shift_button, self.scale_all_button):
+        for widget in (self.apply_metadata_button, self.shift_button, self.scale_all_button,
+                       self.mania_button):
             widget.setEnabled(state is not None)
+        self._load_mania_defaults(state)
         self._load_fields(current)
+
+    def _load_mania_defaults(self, state) -> None:
+        """The autoplay's own choice, Off read as full alt, and the chart BPM."""
+        style, binding, left = getattr(self.window, "_autoplay_choice", (None, autoplay.BINDINGS[0], False))
+        self.mania_style.setCurrentIndex(max(0, self.mania_style.findData(style or autoplay.FULL_ALT)))
+        self.mania_binding.setCurrentIndex(max(0, self.mania_binding.findData(binding)))
+        self.mania_left.setChecked(bool(left))
+        if state is not None:
+            self.mania_bpm.setValue(60000.0 / taiko_to_mania.chart_beat_length(state.document))
+        self._mania_keys_changed()
+
+    def _mania_keys_changed(self) -> None:
+        four = self.mania_keys.currentData() == 4
+        for widget in (self.mania_style, self.mania_binding, self.mania_left, self.mania_bpm,
+                       self.mania_finisher_single):
+            widget.setEnabled(four)
 
     def _target_changed(self) -> None:
         data = self.target_combo.currentData()
@@ -225,3 +285,25 @@ class MiscPage(QWidget):
             self.window.show_toast(tr("MainWindow", "This difficulty has no green lines."))
             return
         self.window.scale_sv_points(state.source_path, greens)
+
+    def convert_to_mania(self) -> None:
+        state = getattr(self.window, "state", None)
+        if state is None:
+            return
+        document = state.document
+        hitsounds = getattr(self.window, "hitsounds", None)
+        try:
+            samples = taiko_to_mania.place_samples(
+                document.source_path.parent,
+                {key: Path(path) for key, path in (hitsounds.sample_paths if hitsounds else {}).items()})
+            path = taiko_to_mania.convert(
+                document, keys=int(self.mania_keys.currentData()),
+                style=self.mania_style.currentData(), binding=self.mania_binding.currentData(),
+                left_handed=self.mania_left.isChecked(), single_tap_bpm=self.mania_bpm.value(),
+                finisher_single=self.mania_finisher_single.isChecked(), samples=samples)
+        except (OSError, ValueError) as error:
+            # FileExistsError is an OSError: converting twice with the same
+            # options would overwrite the first, and that is refused.
+            self.window.show_toast(tr("MainWindow", "Not converted: {0}").format(error))
+            return
+        self.window.status.setText(tr("MainWindow", "Wrote {0}. Press F5 in osu! to see it.").format(path.name))

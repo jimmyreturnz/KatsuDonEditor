@@ -8,7 +8,9 @@ from PySide6.QtGui import QImage, QColor, QFont, QFontMetrics, QPainter, QPen, Q
 from PySide6.QtWidgets import QPushButton, QStyle, QStyleOptionButton
 from app.security_utils import resource_roots
 from ui import theme
-from osu_io.timing import active_uninherited_at, sv_at
+from osu_io.timing import (
+    SLIDER_MULTIPLIER_ASSUMED, active_uninherited_at, duration_for_slider_length, sv_at,
+)
 from library.song_library import most_common_beat_length as library_common_beat_length
 
 
@@ -197,29 +199,6 @@ def spinner_pixmap() -> QPixmap:
                     break
     return _SPINNER_PIXMAP
 
-
-# osu!'s own [Difficulty] SliderMultiplier default, and nothing more: the
-# parser now reads the map's real value (`OsuDocument.slider_multiplier`), so
-# this is only the fallback for a file with no SliderMultiplier line at all.
-# It is not a stand-in for the real number -- the whole length<->duration
-# conversion scales linearly with it, so a map authored at 2.0 had every
-# drumroll end drawn at 1.4/2.0 of its true length while this was assumed.
-SLIDER_MULTIPLIER_ASSUMED = 1.4
-
-
-def duration_for_slider_length(
-    length: float, beat_length: float, sv: float,
-    slider_multiplier: float = SLIDER_MULTIPLIER_ASSUMED,
-) -> float:
-    """Inverse of slider_length_for_duration, for hit-testing an existing slider's end.
-
-    `length` is the whole path a drumroll travels -- one slide's length times
-    its slide count -- because osu! charges the per-slide duration once per
-    slide and the two multiplications are the same one.
-    """
-    if beat_length <= 0 or sv <= 0 or slider_multiplier <= 0:
-        return 0.0
-    return length / (slider_multiplier * 100.0 * sv) * beat_length
 
 
 def drumroll_tick_times(note, beat_points, timing_points, slider_multiplier) -> list[float]:

@@ -436,3 +436,28 @@ def validate_timing_points(points: Sequence[TimingPoint]) -> None:
             raise TimingValidationError(f"Timing point at {point.time} has negative effects")
     if not any(point.uninherited for point in points):
         raise TimingValidationError("A map with timing points needs at least one uninherited point")
+
+
+# osu!'s own [Difficulty] SliderMultiplier default, and nothing more: the
+# parser now reads the map's real value (`OsuDocument.slider_multiplier`), so
+# this is only the fallback for a file with no SliderMultiplier line at all.
+# It is not a stand-in for the real number -- the whole length<->duration
+# conversion scales linearly with it, so a map authored at 2.0 had every
+# drumroll end drawn at 1.4/2.0 of its true length while this was assumed.
+SLIDER_MULTIPLIER_ASSUMED = 1.4
+
+
+def duration_for_slider_length(
+    length: float, beat_length: float, sv: float,
+    slider_multiplier: float = SLIDER_MULTIPLIER_ASSUMED,
+) -> float:
+    """Inverse of slider_length_for_duration, for hit-testing an existing slider's end.
+
+    `length` is the whole path a drumroll travels -- one slide's length times
+    its slide count -- because osu! charges the per-slide duration once per
+    slide and the two multiplications are the same one. Here rather than in
+    `ui.common` so the converters in `chart/` can use it without Qt.
+    """
+    if beat_length <= 0 or sv <= 0 or slider_multiplier <= 0:
+        return 0.0
+    return length / (slider_multiplier * 100.0 * sv) * beat_length

@@ -70,6 +70,16 @@ def with_keys(lines: list[str], section: str, values: dict[str, str], ending: st
     return lines[:end] + [f"{k}:{v}{ending}" for k, v in pending.items()] + lines[end:]
 
 
+# Characters Windows will not put in a file name; osu! drops them the same way.
+_UNSAFE = set('\/:*?"<>|')
+
+
+def osu_filename(artist: str, title: str, creator: str, version: str) -> str:
+    """The name osu! gives a difficulty's file: "Artist - Title (Creator) [Version].osu"."""
+    name = f"{artist} - {title} ({creator}) [{version}]"
+    return "".join(c for c in name if c not in _UNSAFE and c >= " ").strip() + ".osu"
+
+
 if __name__ == "__main__":
     sample = ["[General]\r\n", "PreviewTime: 100\r\n", "\r\n", "[Metadata]\r\n", "Title:a\r\n", "\r\n"]
     out = with_keys(sample, "Metadata", {"Title": "b", "Tags": "x y"})
@@ -77,4 +87,5 @@ if __name__ == "__main__":
     out = with_keys(out, "Editor", {"Bookmarks": "1,2"})
     assert read_keys(out, "Editor") == {"Bookmarks": "1,2"} and _header(out[3]) == "Editor", out
     assert read_keys(out, "General") == {"PreviewTime": "100"}
+    assert osu_filename("A", "B?", "C", "x/y") == "A - B (C) [xy].osu"
     print("ok")

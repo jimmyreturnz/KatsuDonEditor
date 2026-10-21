@@ -7,7 +7,9 @@ What a difficulty becomes in the pack:
   system recognises the difficulty and answers "The beatmap you're trying to
   submit isn't yours!".
 * Title and Creator are the user's, the same on every difficulty; Artist is
-  Various Artists; Tags and Source stay the source's own.
+  Various Artists; Tags and Source stay the source's own, and every
+  difficulty's tags gain each original mapper in the pack (once, and not
+  where already tagged), so the set is found by searching any of them.
 * Version defaults to "Artist - Title (Creator) [Version]" from the source's
   romanised fields, so a pack's difficulty list still says what each one was.
 * One background for all by default. Every file is placed by content
@@ -20,6 +22,11 @@ short songs therefore gets a small budget, which is what the Delete difficulty
 is for: two objects 15 minutes apart, silent audio, and the set's length is
 15 minutes. The submission takes its length from the difficulty it is
 submitted from, so it has to be submitted from the longest one.
+
+**A pack is updated by rebuilding it** (`build_pack(..., replace=)`): its own
+difficulties are loaded back as entries, new ones are added, and the whole set
+is written beside the old one before the old one goes to the Recycle Bin. A
+half-written pack therefore never replaces a whole one.
 """
 from __future__ import annotations
 
@@ -30,6 +37,8 @@ import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from PySide6.QtCore import QFile
 
 from osu_io import metadata
 from osu_io.parser import parse_osu
@@ -203,9 +212,8 @@ class Report:
         return size_limit_bytes(self.longest[1])
 
 
-def length_ms(path: Path) -> int:
+def length_ms(document) -> int:
     """The last object's millisecond (a spinner's or hold's end, if later)."""
-    document = parse_osu(path)
     return max((max(n.time, n.end_time or 0) for n in document.hit_objects), default=0)
 
 
@@ -232,14 +240,15 @@ def _write(path: Path, lines: list[str], encoding: str) -> None:
     path.write_bytes(data)
 
 
-def delete_difficulty_lines(title: str, creator: str, background: str | None, mode: str) -> list[str]:
+def delete_difficulty_lines(title: str, creator: str, background: str | None, mode: str,
+                            tags: str = "") -> list[str]:
     n = "\r\n"
     lines = [
         f"osu file format v14{n}", n, f"[General]{n}", f"AudioFilename: {DELETE_AUDIO}{n}",
         f"AudioLeadIn: 0{n}", f"PreviewTime: -1{n}", f"Mode: {mode}{n}", n,
         f"[Metadata]{n}", f"Title:{title}{n}", f"TitleUnicode:{title}{n}",
         f"Artist:{VARIOUS_ARTISTS}{n}", f"ArtistUnicode:{VARIOUS_ARTISTS}{n}", f"Creator:{creator}{n}",
-        f"Version:{DELETE_VERSION}{n}", f"Source:{n}", f"Tags:{n}", f"BeatmapID:0{n}", f"BeatmapSetID:-1{n}", n,
+        f"Version:{DELETE_VERSION}{n}", f"Source:{n}", f"Tags:{tags}{n}", f"BeatmapID:0{n}", f"BeatmapSetID:-1{n}", n,
         f"[Difficulty]{n}", f"HPDrainRate:5{n}", f"CircleSize:5{n}", f"OverallDifficulty:5{n}",
         f"ApproachRate:5{n}", f"SliderMultiplier:1.4{n}", f"SliderTickRate:1{n}", n,
         f"[Events]{n}",
@@ -251,22 +260,89 @@ def delete_difficulty_lines(title: str, creator: str, background: str | None, mo
     return lines
 
 
+def merge_tags(tags: str, extra: str) -> str:
+    """`tags` with each word of `extra` it lacks (ignoring case) appended."""
+    words = tags.split()
+    have = {word.lower() for word in words}
+    for word in extra.split():
+        if word.lower() not in have:
+            have.add(word.lower())
+            words.append(word)
+    return " ".join(words)
+
+
+def load_pack(folder: Path) -> tuple[dict[str, str], list[Path], Path | None]:
+    """An existing pack's (Metadata of one difficulty, its difficulties, its
+    Delete difficulty if any), for editing it."""
+    paths = sorted(Path(folder).glob("*.osu"))
+    if not paths:
+        raise ValueError(f"{Path(folder).name} has no difficulties.")
+    delete = None
+    rest = []
+    for path in paths:
+        values = metadata.read_keys(parse_osu(path).lines, "Metadata")
+        if values.get("Version") == DELETE_VERSION:
+            delete = path
+        else:
+            rest.append(path)
+    return metadata.read_keys(parse_osu((rest or paths)[0]).lines, "Metadata"), rest, delete
+
+
 def build_pack(entries: list[Entry], title: str, creator: str, songs_folder: Path,
-               background: Path | None = None, include_delete: bool = False) -> Report:
-    """Write the pack to `songs_folder / "Various Artists - <title>"`."""
+               background: Path | None = None, include_delete: bool = False,
+               tag_creators: bool = True, delete_tags: str | None = None,
+               replace: Path | None = None) -> Report:
+    """Write the pack to `songs_folder / "Various Artists - <title>"`.
+    `delete_tags` are the Delete difficulty's (the page's collected, edited
+    tags of the whole pack); None gives it just the mappers. `replace` is a
+    pack being updated: entries may be read from it, and it goes to the
+    Recycle Bin once the new one is whole."""
     if not entries:
         raise ValueError("The pack has no difficulties.")
     if len(entries) + include_delete > DIFFICULTY_LIMIT:
         raise ValueError(f"A set can hold at most {DIFFICULTY_LIMIT} difficulties.")
-    folder = Path(songs_folder) / safe_name(f"{VARIOUS_ARTISTS} - {title}")
+    final = Path(songs_folder) / safe_name(f"{VARIOUS_ARTISTS} - {title}")
+    replace = Path(replace).resolve() if replace else None
+    if final.exists() and final.resolve() != replace:
+        raise FileExistsError(f"{final.name} already exists in the Songs folder.")
+    folder = final.with_name(final.name + " (updating)") if replace else final
     if folder.exists():
-        raise FileExistsError(f"{folder.name} already exists in the Songs folder.")
+        shutil.rmtree(folder)  # our own leftover from an update that failed
     folder.mkdir(parents=True)
+    try:
+        report = _fill_pack(folder, entries, title, creator, background, include_delete,
+                            tag_creators, delete_tags)
+    except BaseException:
+        if replace:
+            shutil.rmtree(folder, ignore_errors=True)
+        raise
+    if replace:
+        # osu! holds the selected set's audio open, and then neither move can happen.
+        if replace.exists() and not QFile.moveToTrash(str(replace)):
+            shutil.rmtree(folder, ignore_errors=True)
+            raise OSError(f"{replace.name} is in use: select another set in osu! and try again.")
+        folder.rename(final)
+        report.folder = final
+        report.files = [final / p.name for p in report.files]
+    return report
+
+
+def _fill_pack(folder: Path, entries: list[Entry], title: str, creator: str,
+               background: Path | None, include_delete: bool, tag_creators: bool,
+               delete_tags: str | None) -> Report:
     report = Report(folder)
     shared_background = place_file(background, folder).name if background else None
     sample_sources: dict[str, Path] = {}
-    for entry in entries:
-        document = parse_osu(entry.path)
+    documents = [parse_osu(entry.path) for entry in entries]
+    seen: dict[str, str] = {}
+    for document in documents if tag_creators else ():
+        name = metadata.read_keys(document.lines, "Metadata").get("Creator", "").strip()
+        # A difficulty loaded back from the pack already carries the pack's
+        # creator, and its original mapper is already in its tags.
+        if name and name.lower() != creator.lower():
+            seen.setdefault(name.lower(), name)
+    creators = list(seen.values())
+    for entry, document in zip(entries, documents):
         source_folder = document.source_path.parent
         audio = resolve_ci(source_folder, document.audio_filename)
         if audio is None:
@@ -292,8 +368,9 @@ def build_pack(entries: list[Entry], title: str, creator: str, songs_folder: Pat
             shutil.copy2(source, folder / source.name)
         ending = document.line_ending
         lines = metadata.with_keys(document.lines, "General", {"AudioFilename": f" {audio_name}"}, ending)
+        tags = merge_tags(metadata.read_keys(lines, "Metadata").get("Tags", ""), " ".join(creators))
         lines = metadata.with_keys(lines, "Metadata", {
-            "Title": title, "TitleUnicode": title, "Artist": VARIOUS_ARTISTS,
+            "Tags": tags, "Title": title, "TitleUnicode": title, "Artist": VARIOUS_ARTISTS,
             "ArtistUnicode": VARIOUS_ARTISTS, "Creator": creator, "Version": entry.version,
             "BeatmapID": "0", "BeatmapSetID": "-1"}, ending)
         lines = with_events(lines, image, ending)
@@ -310,9 +387,10 @@ def build_pack(entries: list[Entry], title: str, creator: str, songs_folder: Pat
             report.longest = (entry.version, length)
     if include_delete:
         (folder / DELETE_AUDIO).write_bytes(silent_mp3(DELETE_LENGTH_MS))
-        mode = metadata.read_keys(parse_osu(entries[0].path).lines, "General").get("Mode", "1")
+        mode = metadata.read_keys(documents[0].lines, "General").get("Mode", "1")
         destination = folder / metadata.osu_filename(VARIOUS_ARTISTS, title, creator, DELETE_VERSION)
-        _write(destination, delete_difficulty_lines(title, creator, shared_background, mode), "utf-8")
+        tags = " ".join(creators) if delete_tags is None else merge_tags("", delete_tags)
+        _write(destination, delete_difficulty_lines(title, creator, shared_background, mode, tags), "utf-8")
         report.files.append(destination)
         report.longest = (DELETE_VERSION, DELETE_LENGTH_MS)
     report.total_bytes = sum(p.stat().st_size for p in folder.iterdir() if p.is_file())

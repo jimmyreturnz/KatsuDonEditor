@@ -1,7 +1,9 @@
 """The Mappack Creator: what each difficulty becomes, and files stored once."""
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from library import mappack
 from osu_io import metadata
@@ -91,7 +93,7 @@ class ResolveTests(unittest.TestCase):
 
 
 class PackTests(unittest.TestCase):
-    def build(self, include_delete=False):
+    def build(self, include_delete=False, **options):
         root = Path(self.tmp.name)
         a = make_set(root, "set a", b"song", b"image", title="Song A", artist="Art A", version="Oni")
         b = make_set(root, "set b", b"song", b"image", last=200000, title="Song B", artist="Art B",
@@ -100,7 +102,7 @@ class PackTests(unittest.TestCase):
                    for p in (a, b)]
         songs = root / "Songs"
         songs.mkdir()
-        return mappack.build_pack(entries, "My Pack", "me", songs, include_delete=include_delete)
+        return mappack.build_pack(entries, "My Pack", "me", songs, include_delete=include_delete, **options)
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -116,8 +118,21 @@ class PackTests(unittest.TestCase):
         self.assertEqual(values["BeatmapSetID"], "-1")
         self.assertEqual((values["Title"], values["TitleUnicode"], values["Creator"]), ("My Pack", "My Pack", "me"))
         self.assertEqual((values["Artist"], values["ArtistUnicode"]), ("Various Artists",) * 2)
-        self.assertEqual((values["Tags"], values["Source"]), ("a b", "src"))
+        # Both sets are by "mapper": tagged once, after the source's own.
+        self.assertEqual((values["Tags"], values["Source"]), ("a b mapper", "src"))
         self.assertEqual(values["Version"], "Art A - Song A (mapper) [Oni]")
+
+    def test_mappers_stay_out_of_the_tags_when_asked(self):
+        report = self.build(tag_creators=False)
+        self.assertEqual(metadata.read_keys(parse_osu(report.files[0]).lines, "Metadata")["Tags"], "a b")
+
+    def test_a_mapper_already_tagged_is_not_added_again(self):
+        self.assertEqual(mappack.merge_tags("x Mapper", "mapper other  x"), "x Mapper other")
+
+    def test_the_delete_difficulty_carries_the_pages_tags(self):
+        report = self.build(include_delete=True, delete_tags="a b  mapper extra")
+        delete = parse_osu(report.folder / "Various Artists - My Pack (me) [Delete].osu")
+        self.assertEqual(metadata.read_keys(delete.lines, "Metadata")["Tags"], "a b mapper extra")
 
     def test_shared_files_are_stored_once_and_storyboards_go(self):
         report = self.build()
@@ -142,6 +157,38 @@ class PackTests(unittest.TestCase):
         self.assertEqual(report.longest, ("Delete", 900000))
         self.assertTrue((report.folder / "delete.mp3").is_file())
         self.assertEqual(report.limit_bytes, 100 * mappack.MB)
+
+    def test_a_loaded_pack_is_updated_in_place_with_a_new_difficulty(self):
+        report = self.build(include_delete=True, delete_tags="a b mapper edited")
+        values, paths, delete = mappack.load_pack(report.folder)
+        self.assertEqual((values["Title"], len(paths), delete.name),
+                         ("My Pack", 2, "Various Artists - My Pack (me) [Delete].osu"))
+        new = make_set(Path(self.tmp.name), "set c", b"other", b"image", title="Song C",
+                       artist="Art C", version="Hard")
+        entries = [mappack.Entry(p, metadata.read_keys(parse_osu(p).lines, "Metadata")["Version"])
+                   for p in paths] + [mappack.Entry(new, "C")]
+        trash = mock.patch.object(mappack.QFile, "moveToTrash",
+                                  side_effect=lambda p: shutil.rmtree(p) is None)
+        with trash as moved:
+            updated = mappack.build_pack(entries, "My Pack", "me", report.folder.parent,
+                                         include_delete=True, delete_tags="a b mapper edited",
+                                         replace=report.folder)
+        moved.assert_called_once()
+        self.assertEqual(updated.folder, report.folder)
+        self.assertEqual(len(list(updated.folder.glob("*.osu"))), 4)
+        self.assertFalse(report.folder.with_name(report.folder.name + " (updating)").exists())
+        loaded = metadata.read_keys(parse_osu(updated.files[0]).lines, "Metadata")
+        # Its Creator is the pack's own now: "me" is not tagged as a mapper.
+        self.assertEqual(loaded["Tags"], "a b mapper")
+
+    def test_an_update_osu_holds_open_leaves_the_old_pack_whole(self):
+        report = self.build()
+        entries = [mappack.Entry(p, p.stem) for p in mappack.load_pack(report.folder)[1]]
+        with mock.patch.object(mappack.QFile, "moveToTrash", return_value=False):
+            with self.assertRaises(OSError):
+                mappack.build_pack(entries, "My Pack", "me", report.folder.parent, replace=report.folder)
+        self.assertEqual(len(list(report.folder.glob("*.osu"))), 2)
+        self.assertFalse(report.folder.with_name(report.folder.name + " (updating)").exists())
 
     def test_an_existing_folder_is_never_written_into(self):
         self.build()

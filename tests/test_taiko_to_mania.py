@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from chart import autoplay
-from chart.taiko_to_mania import convert
+from chart.taiko_to_mania import convert, place_samples
 from osu_io import metadata
 from osu_io.parser import parse_osu
 
@@ -87,6 +87,26 @@ class ColumnTests(unittest.TestCase):
         self.assertEqual(sorted(samples[4:]), ["0:0:0:0:taiko-normal-hitclap.wav",
                                                "0:0:0:0:taiko-normal-hitwhistle.wav"])
         self.assertEqual({n.hit_sound for n in document.hit_objects}, {0})
+
+    def test_skin_sounds_arrive_beside_the_sets_own_and_off_copies_nothing(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            skin, folder = root / "skin", root / "set"
+            skin.mkdir(); folder.mkdir()
+            (skin / "taiko-normal-hitnormal.wav").write_bytes(b"skin")
+            (folder / "taiko-normal-hitnormal.wav").write_bytes(b"set's own")
+            sources = {"normal": skin / "taiko-normal-hitnormal.wav"}
+            off = place_samples(folder, sources, from_skin=False)
+            self.assertEqual((off["normal"], off["clap"]), ("taiko-normal-hitnormal.wav", ""))
+            self.assertEqual(len(list(folder.iterdir())), 1)
+            on = place_samples(folder, sources, from_skin=True)
+            self.assertEqual(on["normal"], "taiko-normal-hitnormal_2.wav")
+            self.assertEqual((folder / "taiko-normal-hitnormal.wav").read_bytes(), b"set's own")
+
+    def test_a_note_without_a_file_keeps_its_hitsound_for_the_players_skin(self):
+        document, _ = converted(KDDK, samples={"normal": "", "clap": "", "whistle": "", "finish": ""})
+        self.assertEqual(document.hit_objects[0].hit_sample, "0:0:0:0:")
+        self.assertIn(8, {n.hit_sound for n in document.hit_objects})  # the kat's clap
 
     def test_drumroll_is_a_hold_and_a_fake_slider_is_gone(self):
         document, _ = converted(

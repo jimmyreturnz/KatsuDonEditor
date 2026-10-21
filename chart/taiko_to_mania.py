@@ -27,12 +27,12 @@ since a finish sample by itself is a cymbal with no drum under it.
 from __future__ import annotations
 
 import os
-import shutil
 from dataclasses import replace
 from pathlib import Path
 
 from chart import autoplay
 from chart.gimmick_session import FAKE_SLIDER_MAX_LENGTH
+from library.mappack import place_file
 from library.song_library import most_common_beat_length
 from model.hit_object import TYPE_CIRCLE, TYPE_HOLD, HitObject
 from osu_io import metadata
@@ -99,11 +99,14 @@ def mania_objects(document, keys: int, style: str, binding: str, left_handed: bo
                 continue
             busy[column] = end if end is not None else note.time
             sample = samples[sounds[min(index, len(sounds) - 1)]]
+            # No file: the note keeps its whistle/clap/finish for the
+            # player's own skin to voice.
+            bits = 0 if sample else note.hit_sound
             x = int((column + 0.5) * 512 / keys)
             if end is None:
-                objects.append(HitObject(x, 192, note.time, TYPE_CIRCLE, 0, (), f"0:0:0:{volume}:{sample}"))
+                objects.append(HitObject(x, 192, note.time, TYPE_CIRCLE, bits, (), f"0:0:0:{volume}:{sample}"))
             else:
-                objects.append(HitObject(x, 192, note.time, TYPE_HOLD, 0, (), f"{end}:0:0:0:{volume}:{sample}"))
+                objects.append(HitObject(x, 192, note.time, TYPE_HOLD, bits, (), f"{end}:0:0:0:{volume}:{sample}"))
     return objects
 
 
@@ -130,13 +133,14 @@ def mania_timing(points, chart_beat: float) -> list:
     return out
 
 
-def place_samples(folder: Path, sources: dict[str, Path]) -> dict[str, str]:
-    """The file each hitsound key names, put in `folder` when it is missing.
+def place_samples(folder: Path, sources: dict[str, Path], from_skin: bool = True) -> dict[str, str]:
+    """The file each hitsound key names in `folder`; "" for none.
 
-    A sample the set already ships (any of osu!'s three extensions) is the one
-    taiko played there, so it is used as it is; otherwise the app's own --
-    the skin's, or the built-in one -- is copied in under its own name, which
-    keeps a skin's .ogg an .ogg.
+    `from_skin`: the app's own sound -- the current skin's, else the built-in
+    -- is placed in the folder and used, by `place_file`, so a set's own
+    different file by that name stays for its taiko difficulties and the
+    skin's arrives as `_2`. Off, a sample the set already ships (any of
+    osu!'s three extensions) is used, and nothing is copied.
     """
     try:
         with os.scandir(folder) as entries:
@@ -148,11 +152,9 @@ def place_samples(folder: Path, sources: dict[str, Path]) -> dict[str, str]:
         stem = default.rsplit(".", 1)[0]
         found = next((present[stem + ext] for ext in (".wav", ".ogg", ".mp3") if stem + ext in present), None)
         source = sources.get(key)
-        if found is None and source is not None and Path(source).is_file():
-            found = Path(source).name
-            shutil.copy2(source, Path(folder) / found)
-            present[found.lower()] = found
-        names[key] = found or default
+        if from_skin and source is not None and Path(source).is_file():
+            found = place_file(Path(source), Path(folder)).name
+        names[key] = found or ""
     return names
 
 

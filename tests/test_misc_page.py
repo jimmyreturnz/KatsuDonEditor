@@ -3,6 +3,7 @@ scale every green line, Taiko to Mania, the Mappack Creator."""
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 
@@ -117,8 +118,123 @@ class MiscPageTests(WindowTestCase):
         self.page.pack_title.setText("Pack")
         self.page.pack_creator.setText("me")
         self.assertTrue(self.page.pack_create.isEnabled())
-        self.page.pack_delete.setChecked(True)
+        self.assertTrue(self.page.pack_delete.isChecked())  # on by default
         self.assertEqual(self.page.pack_count.format(), f"2 / {mappack.DIFFICULTY_LIMIT}")
+
+    def test_tags_are_collected_for_the_delete_difficulty_and_counted(self):
+        self.window.show_toast = lambda _: None
+        values = metadata.read_keys(self.state.document.lines, "Metadata")
+        self.page.add_difficulty(self.path)
+        expected = mappack.merge_tags(values.get("Tags", ""), values.get("Creator", ""))
+        self.assertEqual(self.page.pack_tags.text(), expected)
+        self.page.add_difficulty(self.path)  # refused: nothing added twice
+        self.assertEqual(self.page.pack_tags.text(), expected)
+        self.page.pack_title.setText("Pack")
+        self.page.pack_creator.setText("me")
+        self.assertTrue(self.page.pack_create.isEnabled())
+        self.page.pack_tags.setText("x" * 1001)
+        self.assertIn("1001 / 1000", self.page.pack_tags_count.text())
+        self.assertFalse(self.page.pack_create.isEnabled())
+        self.page.pack_delete.setChecked(False)  # no Delete, so no limit to keep
+        self.assertTrue(self.page.pack_create.isEnabled())
+
+    def test_a_loaded_pack_takes_new_difficulties_and_updates(self):
+        from unittest import mock
+        self.window.show_toast = lambda _: None
+        import tempfile
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        songs = Path(temporary.name)
+        self.window.settings.set_value("library/songs_folder", str(songs))
+        self.page.add_difficulty(self.path)
+        self.page.pack_title.setText("Pack")
+        self.page.pack_creator.setText("me")
+        self.assertFalse(self.page.pack_update.isEnabled())  # nothing loaded
+        self.page.pack_tags.setText("hand edited")
+        self.page.create_pack()
+        folder = songs / "Various Artists - Pack"
+        self.page.pack_tags.setText("")
+        self.page.load_pack(folder)
+        self.assertEqual(self.page.pack_title.text(), "Pack")
+        self.assertEqual(self.page.pack_table.rowCount(), 1)
+        self.assertIn("hand", self.page.pack_tags.text().split())
+        self.page.pack_title.setText("Pack Two")
+        with mock.patch.object(mappack.QFile, "moveToTrash",
+                               side_effect=lambda p: __import__("shutil").rmtree(p) is None):
+            self.page.create_pack(update=True)
+        self.assertFalse(folder.exists())
+        self.assertEqual(self.page.pack_source, (songs / "Various Artists - Pack Two").resolve())
+        self.assertEqual(self.page.pack_table.rowCount(), 1)
+
+    def test_a_tags_only_edit_updates_the_delete_difficulty_and_stays_removed(self):
+        from unittest import mock
+        import shutil, tempfile
+        self.window.show_toast = lambda _: None
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        songs = Path(temporary.name)
+        self.window.settings.set_value("library/songs_folder", str(songs))
+        self.page.add_difficulty(self.path)
+        self.page.pack_title.setText("Pack")
+        self.page.pack_creator.setText("me")
+        self.page.create_pack()
+        folder = songs / "Various Artists - Pack"
+        self.page.load_pack(folder)
+        dropped = self.page.pack_tags.text().split()[0]  # one of the difficulty's own
+        self.page.pack_tags.setText(" ".join(self.page.pack_tags.text().split()[1:] + ["new"]))
+        with mock.patch.object(mappack.QFile, "moveToTrash", side_effect=lambda p: shutil.rmtree(p) is None):
+            self.page.create_pack(update=True)
+        delete = folder / "Various Artists - Pack (me) [Delete].osu"
+        written = metadata.read_keys(parse_osu(delete).lines, "Metadata")["Tags"].split()
+        self.assertIn("new", written)
+        self.assertNotIn(dropped, written)
+        self.assertNotIn(dropped, self.page.pack_tags.text().split())  # reloaded as written
+
+    def test_only_the_packs_own_box_asks_for_a_drop(self):
+        self.assertIn("Select a difficulty", self.page.pack_original.text())
+        self.assertIn("Drop", self.page.pack_well.text())
+
+    def test_remove_duplicates_ignores_capitals_and_keeps_the_first(self):
+        self.page.pack_tags.setText("Taiko taiko\nOni TAIKO oni x")
+        self.page.pack_dedup.click()
+        self.assertEqual(self.page.pack_tags.text(), "Taiko Oni x")
+
+    def test_the_selected_rows_own_background_shows_beside_the_packs(self):
+        self.window.show_toast = lambda _: None
+        self.page.add_difficulty(self.path)
+        self.page.pack_table.setCurrentCell(0, 0)
+        own = next(iter(self.page._pack_info[self.page.pack_entries[0].path][2]), None)
+        if own is None:
+            self.assertIn("no background", self.page.pack_original.text())
+        else:
+            self.assertFalse(self.page.pack_original.pixmap().isNull())
+        self.page._set_pack_background(self.path)  # not an image: the well stays empty
+        self.assertIn("on the right", self.page.pack_original.text())
+
+    def test_tags_boxes_are_tall_enough_for_the_whole_allowance(self):
+        for box in (self.page.pack_tags, self.page.fields["Tags"]):
+            box.resize(400, 40)
+            box.fit_height()  # hidden, its resizeEvent waits for show()
+            per_line = box.viewport().width() // box.fontMetrics().averageCharWidth()
+            self.assertGreaterEqual(box.minimumHeight(), 1000 // per_line * box.fontMetrics().lineSpacing())
+
+    def test_osus_current_difficulty_converts_without_opening_it(self):
+        from unittest import mock
+        self.page.mania_keys.setCurrentIndex(self.page.mania_keys.findData(1))
+        with mock.patch.object(self.page, "_osu_current_path", return_value=self.path):
+            self.page.convert_osu_to_mania()
+        written = [p for p in self.path.parent.glob("*.osu") if p != self.path]
+        self.assertEqual(len(written), 1)
+
+    def test_typing_the_title_reads_no_difficulty_again(self):
+        """Owner, 2026-10-21: typing lagged, because every key re-parsed
+        every difficulty in the pack (28ms each)."""
+        self.window.show_toast = lambda _: None
+        self.page.add_difficulty(self.path)
+        from unittest import mock
+        with mock.patch.object(misc_page, "parse_osu", side_effect=AssertionError("parsed")):
+            self.page.pack_title.setText("Pack")
+            self.page.pack_delete.setChecked(False)
 
     def test_song_selects_shortcut_adds_the_selected_difficulty(self):
         added = []

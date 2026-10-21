@@ -2953,12 +2953,20 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>選択…</translation>
         </message>
         <message>
-            <source>Each keeps its own</source>
-            <translation>各難易度のものを使う</translation>
+            <source>Use original background</source>
+            <translation>元の背景を使う</translation>
         </message>
         <message>
-            <source>One image for every difficulty. Without one, each keeps its own. Identical files are stored once, whichever difficulties use them.</source>
-            <translation>全ての難易度で1枚の画像を使います。指定しない場合は各難易度の背景を残します。同一のファイルは、どの難易度が使っていても1つだけ保存されます。</translation>
+            <source>Add the original mappers to the tags</source>
+            <translation>元のマッパーをタグに追加</translation>
+        </message>
+        <message>
+            <source>Every difficulty's tags, each word once, collected as they are added. Edit them freely; the "Delete" difficulty is written with exactly these.</source>
+            <translation>追加された全難易度のタグを、各単語1回ずつ集めたものです。自由に編集できます。「Delete」難易度にはこのタグがそのまま書き込まれます。</translation>
+        </message>
+        <message>
+            <source>Every difficulty's tags gain each original mapper in the pack, once, so searching any of them finds the set.</source>
+            <translation>パック内の元のマッパー全員を、重複なしで各難易度のタグに追加します。誰の名前で検索してもセットが見つかります。</translation>
         </message>
         <message>
             <source>Include a "Delete" difficulty</source>
@@ -2977,8 +2985,72 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>容量</translation>
         </message>
         <message>
-            <source>Create the pack</source>
-            <translation>パックを作成</translation>
+            <source>Load osu!'s current pack</source>
+            <translation>osu!で選択中のパックを読み込む</translation>
+        </message>
+        <message>
+            <source>Edit a pack made earlier: select any of its difficulties in osu!, load it, add or remove difficulties, then Update pack.</source>
+            <translation>以前作ったパックを編集します：osu!でそのパックのどれかの難易度を選択して読み込み、難易度を追加・削除してから「パックを更新」を押します。</translation>
+        </message>
+        <message>
+            <source>Export new pack</source>
+            <translation>新しいパックとして書き出す</translation>
+        </message>
+        <message>
+            <source>Update pack</source>
+            <translation>パックを更新</translation>
+        </message>
+        <message>
+            <source>Include hitsounds from the current skin</source>
+            <translation>現在のスキンのヒットサウンドを含める</translation>
+        </message>
+        <message>
+            <source>On, every note plays the current skin's taiko sound, copied into the set. Off, the set's own taiko samples are used where it has them, and other notes keep their whistle, clap and finish for the player's skin.</source>
+            <translation>オンにすると、全ての音符が現在のスキンの太鼓の音を鳴らし、その音はセットにコピーされます。オフにすると、セット自身の太鼓のサンプルがあればそれを使い、それ以外の音符はホイッスル・クラップ・フィニッシュを残してプレイヤーのスキンで鳴らします。</translation>
+        </message>
+        <message>
+            <source>Convert osu!'s current difficulty</source>
+            <translation>osu!で選択中の難易度を変換</translation>
+        </message>
+        <message>
+            <source>The difficulty selected in osu!, without opening it here. Its single tap BPM is its own chart BPM.</source>
+            <translation>osu!で選択中の難易度を、ここで開かずに変換します。単打BPMはその譜面自身のBPMになります。</translation>
+        </message>
+        <message>
+            <source>Mappers</source>
+            <translation>マッパー</translation>
+        </message>
+        <message>
+            <source>Left: the selected difficulty's own background. Right: one image for every difficulty; without one, each keeps its own. Identical files are stored once, whichever difficulties use them.</source>
+            <translation>左：選択中の難易度の元の背景。右：全ての難易度で使う1枚の画像。指定しない場合は各難易度の背景を残します。同一のファイルは、どの難易度が使っていても1つだけ保存されます。</translation>
+        </message>
+        <message>
+            <source>Remove duplicates</source>
+            <translation>重複を削除</translation>
+        </message>
+        <message>
+            <source>Keep each tag once, ignoring capitals: the first spelling stays.</source>
+            <translation>大文字・小文字を区別せず、各タグを1つだけ残します。最初の表記が残ります。</translation>
+        </message>
+        <message>
+            <source>Every difficulty uses the image on the right</source>
+            <translation>全ての難易度で右の画像を使います</translation>
+        </message>
+        <message>
+            <source>Select a difficulty to see its background</source>
+            <translation>難易度を選択すると背景が表示されます</translation>
+        </message>
+        <message>
+            <source>This difficulty has no background</source>
+            <translation>この難易度には背景がありません</translation>
+        </message>
+        <message>
+            <source>Rewrite the loaded pack in the Songs folder. The old one goes to the Recycle Bin.</source>
+            <translation>読み込んだパックをSongsフォルダに書き直します。古いパックはごみ箱に移動します。</translation>
+        </message>
+        <message>
+            <source>Loaded {0}: {1} difficulties.</source>
+            <translation>{0} を読み込みました：{1} 個の難易度。</translation>
         </message>
         <message>
             <source>Drop an image here</source>
@@ -3045,12 +3117,12 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>太鼓からマニアへ</translation>
         </message>
         <message>
-            <source>4K: the autoplay's hands</source>
-            <translation>4K：オートプレイの手順</translation>
+            <source>4 Keys</source>
+            <translation>4キー</translation>
         </message>
         <message>
-            <source>1K: one column</source>
-            <translation>1K：1列</translation>
+            <source>1 Key</source>
+            <translation>1キー</translation>
         </message>
         <message>
             <source>Keys</source>
@@ -3077,8 +3149,8 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>プレイスタイルがノーツをまとめる基準の拍です。半拍以上離れたノーツは休符とみなし、休符の後のまとまりは利き手から始まります。初期値は譜面のBPMです。</translation>
         </message>
         <message>
-            <source>Hit finishers single</source>
-            <translation>大音符を片手で叩く</translation>
+            <source>Hit finishers as single note</source>
+            <translation>大音符を単音で叩く</translation>
         </message>
         <message>
             <source>Finishers</source>

@@ -6,7 +6,6 @@ import os
 import random
 import csv
 import dataclasses
-import shutil
 import sys
 from collections import deque
 from contextlib import contextmanager
@@ -69,6 +68,7 @@ from osu_io.writer import write_osu
 from library.song_library import read_header
 from chart import autoplay
 from chart.autoplay import HITSOUND_SAMPLES, hitsound_keys
+from library.mappack import place_file, resolve_ci
 from chart.sv_curves import sv_ease
 from chart.time_axis import (
     KIAI_OPEN_END_MS, SNAP_DIVISORS, TimeAxisMixin, osu_snap_ms, resnap_time, snap_time,
@@ -196,6 +196,11 @@ def resolve_song_asset(song_folder: Path, raw_name: str, allowed_suffixes: set[s
         raise ValueError(f"Beatmap asset escapes the song folder: {raw_name}") from error
     if candidate.suffix.lower() not in allowed_suffixes:
         raise ValueError(f"Unsupported beatmap asset type: {candidate.suffix}")
+    if not candidate.exists():
+        # osu! on Windows ignores case, and plenty of maps name their audio
+        # in a case the file does not have; a case-sensitive filesystem would
+        # refuse to open them.
+        return resolve_ci(candidate.parent, candidate.name) or candidate
     return candidate
 
 
@@ -4254,6 +4259,9 @@ class MainWindow(QMainWindow):
         if app is None:
             return
         app.removeEventFilter(self)
+        if hasattr(self, "misc_page"):
+            # A system-wide key: held past close, the next window cannot have it.
+            self.misc_page.release_hotkey()
         try:
             app.focusChanged.disconnect(self._editor_view_focus_changed)
         except (RuntimeError, TypeError):
@@ -9644,6 +9652,7 @@ class MainWindow(QMainWindow):
         # Checked whenever one plays, so it is sized for its bold label.
         for button, _actions in getattr(self, "_autoplay_menus", ()):
             fit_button_width(button)
+        self.misc_page.fit_buttons()
         # One size for every tool button, across both rows: they swap in and out
         # of the same spot, so per-label widths made the row re-flow on every
         # switch. Here rather than at build time because the toggle style above
@@ -10164,14 +10173,10 @@ class MainWindow(QMainWindow):
         source = Path(dropped_path).resolve()
         destination = self.source_path.parent / source.name
         if source != destination:
-            if destination.exists():
-                stem, suffix = source.stem, source.suffix
-                number = 2
-                while destination.exists():
-                    destination = self.source_path.parent / f"{stem}_{number}{suffix}"
-                    number += 1
+            # A byte-identical image already in the set is used as it is,
+            # rather than copied in again as name_2.jpg.
             try:
-                shutil.copy2(source, destination)
+                destination = place_file(source, self.source_path.parent)
             except Exception as error:
                 QMessageBox.critical(self, tr("MainWindow", "Background copy failed"), str(error))
                 return

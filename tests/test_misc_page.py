@@ -1,11 +1,12 @@
 """The Miscellaneous page (owner, 2026-10-18): metadata, offset shift,
-scale every green line."""
+scale every green line, Taiko to Mania, the Mappack Creator."""
 from __future__ import annotations
 
 import unittest
 
 from PySide6.QtWidgets import QApplication
 
+from library import mappack
 from osu_io import metadata
 from osu_io.parser import parse_osu
 from ui import gui, misc_page
@@ -96,6 +97,39 @@ class MiscPageTests(WindowTestCase):
         self.state.history.undo(self.state)
         self.assertEqual([n.time for n in self.state.document.hit_objects], notes)
         self.assertEqual([p.time for p in self.state.document.timing_points], points)
+
+    def test_converting_to_mania_writes_a_new_difficulty_beside_the_open_one(self):
+        self.page.mania_keys.setCurrentIndex(self.page.mania_keys.findData(1))
+        self.page.convert_to_mania()
+        written = [p for p in self.path.parent.glob("*.osu") if p != self.path]
+        self.assertEqual(len(written), 1)
+        self.assertEqual(metadata.read_keys(parse_osu(written[0]).lines, "General")["Mode"], "3")
+        self.assertTrue((self.path.parent / "taiko-normal-hitnormal.wav").is_file())
+
+    def test_a_difficulty_is_added_to_the_pack_once(self):
+        toasts = []
+        self.window.show_toast = toasts.append
+        self.page.add_difficulty(self.path)
+        self.page.add_difficulty(self.path)
+        self.assertEqual(self.page.pack_table.rowCount(), 1)
+        self.assertEqual(len(toasts), 2)
+        self.assertFalse(self.page.pack_create.isEnabled())  # no title, no creator yet
+        self.page.pack_title.setText("Pack")
+        self.page.pack_creator.setText("me")
+        self.assertTrue(self.page.pack_create.isEnabled())
+        self.page.pack_delete.setChecked(True)
+        self.assertEqual(self.page.pack_count.format(), f"2 / {mappack.DIFFICULTY_LIMIT}")
+
+    def test_song_selects_shortcut_adds_the_selected_difficulty(self):
+        added = []
+        self.page.add_difficulty = added.append
+        library = self.window._library
+        library.difficulty_list.addItem("x")
+        item = library.difficulty_list.item(library.difficulty_list.count() - 1)
+        item.setData(gui.Qt.UserRole, str(self.path))
+        library.difficulty_list.setCurrentItem(item)
+        library.add_selected_to_mappack()
+        self.assertEqual([str(p) for p in added], [str(self.path)])
 
 
 

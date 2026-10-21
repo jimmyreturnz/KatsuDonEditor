@@ -1,23 +1,32 @@
 """The Miscellaneous page (owner, 2026-10-18): set-wide chores that have no
 view of their own -- the beatmapset's metadata, shifting the whole map's
 offset, scaling every green line's SV, and converting a difficulty to
-osu!mania (`chart.taiko_to_mania`).
+osu!mania (`chart.taiko_to_mania`); and the Mappack Creator
+(`library.mappack`), which gathers difficulties from other sets into a new one.
 
 Everything here is an ordinary undoable edit on each difficulty's own history,
 so the header's Save counts it and the Save dialog can still discard it.
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
+from PySide6.QtCore import QAbstractNativeEventFilter, QByteArray, Qt, Signal
+from PySide6.QtGui import QGuiApplication, QPixmap
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget,
+    QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QHeaderView,
+    QLabel, QLineEdit, QProgressBar, QPushButton, QSpinBox, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
 from app.i18n import tr
 from chart import autoplay, taiko_to_mania
+from library import mappack, osu_memory
 from model.commands import CompositeCommand, ReplaceDocumentLines, ShiftChartTimes
 from osu_io import metadata
+from osu_io.parser import parse_osu
+from ui.common import equalize_button_widths
 from ui.config_sheet import ConfigSheet, set_warning
 
 
@@ -59,6 +68,87 @@ def metadata_values(texts: dict[str, str]) -> dict[str, str]:
         if text:
             values[key] = text
     return values
+
+
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+
+
+class BackgroundWell(QLabel):
+    """The pack's background: a thumbnail, and somewhere to drop an image.
+    Dropping is never the only way in -- Select sits under it."""
+    dropped = Signal(str)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setAcceptDrops(True)
+        self.setAlignment(Qt.AlignCenter)
+        self.setFixedSize(224, 126)  # 16:9, the shape osu! shows it in
+        self.setObjectName("fieldNote")
+        self.setStyleSheet("QLabel { border: 1px dashed #f3a6bd; border-radius: 6px; }")
+        self.show_image(None)
+
+    def show_image(self, path: Path | None) -> None:
+        pixmap = QPixmap(str(path)) if path else QPixmap()
+        if pixmap.isNull():
+            self.setPixmap(QPixmap())
+            self.setText(tr("MainWindow", "Drop an image here"))
+        else:
+            self.setPixmap(pixmap.scaled(self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
+
+    def dragEnterEvent(self, event) -> None:
+        if any(Path(u.toLocalFile()).suffix.lower() in IMAGE_SUFFIXES for u in event.mimeData().urls()):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        for url in event.mimeData().urls():
+            path = Path(url.toLocalFile())
+            if path.suffix.lower() in IMAGE_SUFFIXES and path.is_file():
+                self.dropped.emit(str(path))
+                event.acceptProposedAction()
+                return
+
+
+class OsuHotkey(QAbstractNativeEventFilter):
+    """Alt+Shift+A from anywhere, osu! included: the old MapPackCreator's key.
+
+    `RegisterHotKey` with no window posts WM_HOTKEY to this thread's queue,
+    which Qt hands to native event filters before anything else sees it.
+    Windows only, and never on the offscreen platform, where every test
+    window would otherwise compete for the one system-wide key.
+    """
+    ID = 0x7A1
+    WM_HOTKEY = 0x0312
+
+    def __init__(self, callback) -> None:
+        super().__init__()
+        self.callback = callback
+        self.registered = False
+        if sys.platform != "win32" or QGuiApplication.platformName() != "windows":
+            return
+        import ctypes
+        self._user32 = ctypes.WinDLL("user32", use_last_error=True)
+        # MOD_ALT | MOD_SHIFT | MOD_NOREPEAT, "A"
+        self.registered = bool(self._user32.RegisterHotKey(None, self.ID, 0x1 | 0x4 | 0x4000, ord("A")))
+        if self.registered:
+            QGuiApplication.instance().installNativeEventFilter(self)
+
+    def nativeEventFilter(self, event_type, message):
+        if event_type != QByteArray(b"windows_generic_MSG"):
+            return False, 0
+        from ctypes import wintypes
+        msg = wintypes.MSG.from_address(int(message))
+        if msg.message == self.WM_HOTKEY and msg.wParam == self.ID:
+            self.callback()
+            return True, 0
+        return False, 0
+
+    def release(self) -> None:
+        if self.registered:
+            self._user32.UnregisterHotKey(None, self.ID)
+            app = QGuiApplication.instance()
+            if app is not None:
+                app.removeNativeEventFilter(self)
+            self.registered = False
 
 
 class MiscPage(QWidget):
@@ -156,6 +246,7 @@ class MiscPage(QWidget):
         self.mania_button = QPushButton(tr("MainWindow", "Convert to a new difficulty"))
         self.mania_button.clicked.connect(self.convert_to_mania)
         mania.add(self.mania_button, span=1)
+        self._build_mappack()
         self.refresh()
 
     # -- state ----------------------------------------------------------------
@@ -307,3 +398,251 @@ class MiscPage(QWidget):
             self.window.show_toast(tr("MainWindow", "Not converted: {0}").format(error))
             return
         self.window.status.setText(tr("MainWindow", "Wrote {0}. Press F5 in osu! to see it.").format(path.name))
+
+    # -- mappack --------------------------------------------------------------
+
+    def _build_mappack(self) -> None:
+        self.pack_entries: list[mappack.Entry] = []
+        self.pack_background: Path | None = None
+        self._pack_lengths: dict[Path, int] = {}
+        pack = self.sheet.add_section("mappack", tr("MainWindow", "Mappack Creator"),
+                                      tr("MainWindow", "Difficulties from any set, as one new set"))
+        self.pack_title = QLineEdit()
+        self.pack_title.setPlaceholderText(tr("MainWindow", "Pack title"))
+        pack.field(tr("MainWindow", "Title"), self.pack_title, tr(
+            "MainWindow", "The same on every difficulty. The artist is Various Artists; "
+            "each difficulty keeps its own tags and source."))
+        self.pack_creator = QLineEdit()
+        self.pack_creator.setText(self.window.settings.string_value("mappack/creator", ""))
+        pack.field(tr("MainWindow", "Creator"), self.pack_creator, tr(
+            "MainWindow", "Your osu! username: the set is submitted as yours."))
+        for edit in (self.pack_title, self.pack_creator):
+            edit.textChanged.connect(self._update_pack)
+
+        self.pack_hint = QLabel(tr(
+            "MainWindow", "Add a difficulty in any of three ways: the button below while it is "
+            "selected in osu!; Alt+Shift+A from anywhere, osu! included; or Ctrl+Shift+= on "
+            "this app's song select."))
+        self.pack_hint.setObjectName("fieldNote")
+        self.pack_hint.setWordWrap(True)
+        pack.add(self.pack_hint, span=2)
+
+        buttons = QWidget()
+        row = QHBoxLayout(buttons)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.pack_add_osu = QPushButton(tr("MainWindow", "Add osu!'s current difficulty"))
+        self.pack_add_osu.clicked.connect(self.add_from_osu)
+        self.pack_add_osu.setVisible(sys.platform == "win32")
+        self.pack_remove = QPushButton(tr("MainWindow", "Remove selected"))
+        self.pack_remove.clicked.connect(self._remove_pack_rows)
+        row.addWidget(self.pack_add_osu)
+        row.addWidget(self.pack_remove)
+        row.addStretch(1)
+        pack.add(buttons, span=2)
+
+        self.pack_table = QTableWidget(0, 2)
+        self.pack_table.setHorizontalHeaderLabels(
+            [tr("MainWindow", "Difficulty name in the pack"), tr("MainWindow", "From")])
+        header = self.pack_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        # The source folder is long and secondary: elided, the whole path in its tooltip.
+        header.setSectionResizeMode(1, QHeaderView.Interactive)
+        self.pack_table.setColumnWidth(1, 280)
+        self.pack_table.verticalHeader().setVisible(False)
+        self.pack_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.pack_table.setMinimumHeight(180)
+        self.pack_table.itemChanged.connect(self._pack_item_changed)
+        pack.add(self.pack_table, span=2)
+
+        self.pack_well = BackgroundWell()
+        self.pack_well.dropped.connect(lambda path: self._set_pack_background(Path(path)))
+        pack.field(tr("MainWindow", "Background"), self.pack_well, tr(
+            "MainWindow", "One image for every difficulty. Without one, each keeps its own. "
+            "Identical files are stored once, whichever difficulties use them."), span=2)
+        # A row of its own, not inside the field: the field's box is
+        # transparent all the way down, and a button in it lost its body.
+        well_buttons = QWidget()
+        well_row = QHBoxLayout(well_buttons)
+        well_row.setContentsMargins(0, 0, 0, 0)
+        select = QPushButton(tr("MainWindow", "Select…"))
+        select.clicked.connect(self._choose_pack_background)
+        clear = QPushButton(tr("MainWindow", "Each keeps its own"))
+        clear.clicked.connect(lambda: self._set_pack_background(None))
+        self._pack_side_buttons = (select, clear)
+        well_row.addWidget(select)
+        well_row.addWidget(clear)
+        well_row.addStretch(1)
+        pack.add(well_buttons, span=2)
+
+        self.pack_delete = QCheckBox(tr("MainWindow", "Include a \"Delete\" difficulty"))
+        self.pack_delete.toggled.connect(self._update_pack)
+        pack.field(tr("MainWindow", "Size limit"), self.pack_delete, tr(
+            "MainWindow", "A set may weigh 5 MB plus 10 MB per minute of its longest difficulty, "
+            "at most 100 MB. \"Delete\" is 15 minutes long with two objects, which lifts a pack "
+            "of short songs to the 100 MB cap. It is the well-known workaround; delete it after "
+            "submitting."), span=2)
+        self.pack_size = QProgressBar()
+        self.pack_count = QProgressBar()
+        self.pack_count.setRange(0, mappack.DIFFICULTY_LIMIT)
+        for bar in (self.pack_size, self.pack_count):
+            bar.setTextVisible(True)
+        pack.field(tr("MainWindow", "Size"), self.pack_size)
+        pack.field(tr("MainWindow", "Difficulties"), self.pack_count)
+        self.pack_create = QPushButton(tr("MainWindow", "Create the pack"))
+        self.pack_create.clicked.connect(self.create_pack)
+        pack.add(self.pack_create, span=1)
+        self.pack_result = QLabel()
+        self.pack_result.setObjectName("caution")
+        self.pack_result.setWordWrap(True)
+        self.pack_result.setVisible(False)
+        pack.add(self.pack_result, span=2)
+        self.hotkey = OsuHotkey(self.add_from_osu)
+        self._update_pack()
+
+    def fit_buttons(self) -> None:
+        """Called from MainWindow.showEvent: measured once the window's sheet
+        has given the buttons their padding, or the longer labels clip."""
+        equalize_button_widths((self.pack_add_osu, self.pack_remove), widths=False)
+        equalize_button_widths(self._pack_side_buttons)
+
+    def release_hotkey(self) -> None:
+        self.hotkey.release()
+
+    def add_difficulty(self, path: Path) -> None:
+        """Add `path` to the pack, and say so wherever the user is."""
+        path = Path(path).resolve()
+        if any(entry.path == path for entry in self.pack_entries):
+            self.window.show_toast(tr("MainWindow", "Already in the Mappack Creator."))
+            return
+        try:
+            document = parse_osu(path)
+            self._pack_lengths[path] = mappack.length_ms(path)
+        except (OSError, ValueError) as error:
+            self.window.show_toast(tr("MainWindow", "Could not read that difficulty: {0}").format(error))
+            return
+        values = metadata.read_keys(document.lines, "Metadata")
+        entry = mappack.Entry(path, mappack.default_version(values))
+        self.pack_entries.append(entry)
+        row = self.pack_table.rowCount()
+        self.pack_table.blockSignals(True)
+        self.pack_table.insertRow(row)
+        self.pack_table.setItem(row, 0, QTableWidgetItem(entry.version))
+        source = QTableWidgetItem(path.parent.name)
+        source.setFlags(source.flags() & ~Qt.ItemIsEditable)
+        source.setToolTip(str(path))
+        self.pack_table.setItem(row, 1, source)
+        self.pack_table.blockSignals(False)
+        self.pack_result.setVisible(False)
+        self._update_pack()
+        self.window.show_toast(tr("MainWindow", "Added {0} to the Mappack Creator.").format(
+            values.get("Version", path.stem)))
+
+    def add_from_osu(self) -> None:
+        try:
+            folder, name = osu_memory.current_difficulty()
+        except osu_memory.OsuNotFound as error:
+            self.window.show_toast(str(error))
+            return
+        songs = self.window.settings.string_value("library/songs_folder", "")
+        path = mappack.resolve_ci(Path(songs) / folder, name) if songs else None
+        if path is None:
+            self.window.show_toast(tr("MainWindow", "osu! has {0} selected, but it is not in the "
+                                      "Songs folder set on song select.").format(name))
+            return
+        self.add_difficulty(path)
+
+    def _remove_pack_rows(self) -> None:
+        for row in sorted({index.row() for index in self.pack_table.selectedIndexes()}, reverse=True):
+            self.pack_table.removeRow(row)
+            del self.pack_entries[row]
+        self._update_pack()
+
+    def _pack_item_changed(self, item) -> None:
+        if item.column() == 0 and item.row() < len(self.pack_entries):
+            self.pack_entries[item.row()].version = item.text().strip()
+            self._update_pack()
+
+    def _choose_pack_background(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("MainWindow", "Background"), "",
+            tr("MainWindow", "Images") + " (*.jpg *.jpeg *.png *.webp *.bmp)")
+        if path:
+            self._set_pack_background(Path(path))
+
+    def _set_pack_background(self, path: Path | None) -> None:
+        self.pack_background = path
+        self.pack_well.show_image(path)
+        self._update_pack()
+
+    def _pack_estimate(self) -> tuple[int, int]:
+        """(bytes, longest ms) the pack would have, before writing it.
+        ponytail: the same song in two folders counts twice here; `build_pack`
+        stores it once, so the meter errs high, never low."""
+        files: dict[Path, int] = {}
+        for entry in self.pack_entries:
+            try:
+                files[entry.path] = entry.path.stat().st_size
+                document = parse_osu(entry.path)
+                audio = mappack.resolve_ci(entry.path.parent, document.audio_filename)
+                own = None if self.pack_background else mappack.background_name(document.lines)
+                for extra in (audio, mappack.resolve_ci(entry.path.parent, own) if own else None):
+                    if extra is not None:
+                        files[extra.resolve()] = extra.stat().st_size
+            except (OSError, ValueError):
+                continue
+        if self.pack_background and self.pack_background.is_file():
+            files[self.pack_background] = self.pack_background.stat().st_size
+        total = sum(files.values())
+        longest = max((self._pack_lengths.get(e.path, 0) for e in self.pack_entries), default=0)
+        if self.pack_delete.isChecked():
+            total += len(mappack.silent_mp3(mappack.DELETE_LENGTH_MS))
+            longest = mappack.DELETE_LENGTH_MS
+        return total, longest
+
+    def _update_pack(self) -> None:
+        total, longest = self._pack_estimate()
+        limit = mappack.size_limit_bytes(longest)
+        mb = mappack.MB
+        self.pack_size.setRange(0, max(1, limit // 1024))
+        self.pack_size.setValue(min(limit, total) // 1024)
+        self.pack_size.setFormat(tr("MainWindow", "{0:.1f} of {1:.0f} MB").format(total / mb, limit / mb))
+        count = len(self.pack_entries) + self.pack_delete.isChecked()
+        self.pack_count.setValue(min(count, mappack.DIFFICULTY_LIMIT))
+        self.pack_count.setFormat(f"{count} / {mappack.DIFFICULTY_LIMIT}")
+        set_warning(self.pack_size, total > limit)
+        set_warning(self.pack_count, count > mappack.DIFFICULTY_LIMIT)
+        names = [entry.version for entry in self.pack_entries]
+        self.pack_create.setEnabled(
+            bool(self.pack_entries) and bool(self.pack_title.text().strip())
+            and bool(self.pack_creator.text().strip()) and count <= mappack.DIFFICULTY_LIMIT
+            and all(names) and len(set(names)) == len(names))
+        if total > limit and not self.pack_delete.isChecked():
+            self.pack_size.setToolTip(tr("MainWindow", "Over the limit: include the \"Delete\" difficulty."))
+        else:
+            self.pack_size.setToolTip("")
+
+    def create_pack(self) -> None:
+        songs = self.window.settings.string_value("library/songs_folder", "")
+        if not songs or not Path(songs).is_dir():
+            self.window.show_toast(tr("MainWindow", "Set the osu! Songs folder on song select first."))
+            return
+        creator = self.pack_creator.text().strip()
+        self.window.settings.set_value("mappack/creator", creator)
+        try:
+            report = mappack.build_pack(
+                self.pack_entries, self.pack_title.text().strip(), creator, Path(songs),
+                self.pack_background, self.pack_delete.isChecked())
+        except (OSError, ValueError) as error:
+            self.window.show_toast(tr("MainWindow", "The pack was not created: {0}").format(error))
+            return
+        lines = [tr("MainWindow", "Created {0} ({1:.1f} MB). Press F5 in osu! to see it.").format(
+                     report.folder.name, report.total_bytes / mappack.MB),
+                 tr("MainWindow", "Submit it from the longest difficulty, [{0}]. The submission "
+                    "measures the set by the difficulty it is submitted from, and a shorter one "
+                    "gets its size budget and cuts or pads the others.").format(report.longest[0])]
+        if report.clashes:
+            lines.append(tr("MainWindow", "These hitsounds share a name with a different sound "
+                            "from another set, and the first one is used: {0}").format(
+                                ", ".join(report.clashes)))
+        self.pack_result.setText("\n\n".join(lines))
+        self.pack_result.setVisible(True)

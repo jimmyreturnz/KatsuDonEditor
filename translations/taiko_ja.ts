@@ -2917,6 +2917,130 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>全ての緑線をスケール…</translation>
         </message>
         <message>
+            <source>Mappack Creator</source>
+            <translation>マップパック作成</translation>
+        </message>
+        <message>
+            <source>Difficulties from any set, as one new set</source>
+            <translation>どのセットの難易度でも、1つの新しいセットにまとめます</translation>
+        </message>
+        <message>
+            <source>Pack title</source>
+            <translation>パックのタイトル</translation>
+        </message>
+        <message>
+            <source>The same on every difficulty. The artist is Various Artists; each difficulty keeps its own tags and source.</source>
+            <translation>全ての難易度で同じになります。アーティストは Various Artists になり、タグとソースは各難易度のものを残します。</translation>
+        </message>
+        <message>
+            <source>Your osu! username: the set is submitted as yours.</source>
+            <translation>あなたのosu!ユーザー名です。セットはあなたの譜面として提出されます。</translation>
+        </message>
+        <message>
+            <source>Add a difficulty in any of three ways: the button below while it is selected in osu!; Alt+Shift+A from anywhere, osu! included; or Ctrl+Shift+= on this app's song select.</source>
+            <translation>難易度は3通りの方法で追加できます：osu!で選択中に下のボタンを押す、osu!を含むどこからでもAlt+Shift+Aを押す、またはこのアプリの選曲画面でCtrl+Shift+=を押す。</translation>
+        </message>
+        <message>
+            <source>Add osu!'s current difficulty</source>
+            <translation>osu!で選択中の難易度を追加</translation>
+        </message>
+        <message>
+            <source>Remove selected</source>
+            <translation>選択したものを削除</translation>
+        </message>
+        <message>
+            <source>Select…</source>
+            <translation>選択…</translation>
+        </message>
+        <message>
+            <source>Each keeps its own</source>
+            <translation>各難易度のものを使う</translation>
+        </message>
+        <message>
+            <source>One image for every difficulty. Without one, each keeps its own. Identical files are stored once, whichever difficulties use them.</source>
+            <translation>全ての難易度で1枚の画像を使います。指定しない場合は各難易度の背景を残します。同一のファイルは、どの難易度が使っていても1つだけ保存されます。</translation>
+        </message>
+        <message>
+            <source>Include a "Delete" difficulty</source>
+            <translation>「Delete」難易度を含める</translation>
+        </message>
+        <message>
+            <source>Size limit</source>
+            <translation>容量制限</translation>
+        </message>
+        <message>
+            <source>A set may weigh 5 MB plus 10 MB per minute of its longest difficulty, at most 100 MB. "Delete" is 15 minutes long with two objects, which lifts a pack of short songs to the 100 MB cap. It is the well-known workaround; delete it after submitting.</source>
+            <translation>セットの容量は5MBに、最も長い難易度1分につき10MBを加えた値までで、上限は100MBです。「Delete」は2つのオブジェクトだけを持つ15分の難易度で、短い曲のパックでも上限を100MBまで引き上げます。よく知られた回避策で、提出後に削除します。</translation>
+        </message>
+        <message>
+            <source>Size</source>
+            <translation>容量</translation>
+        </message>
+        <message>
+            <source>Create the pack</source>
+            <translation>パックを作成</translation>
+        </message>
+        <message>
+            <source>Drop an image here</source>
+            <translation>ここに画像をドロップ</translation>
+        </message>
+        <message>
+            <source>Difficulty name in the pack</source>
+            <translation>パック内の難易度名</translation>
+        </message>
+        <message>
+            <source>From</source>
+            <translation>元のセット</translation>
+        </message>
+        <message>
+            <source>Already in the Mappack Creator.</source>
+            <translation>すでにマップパック作成に追加されています。</translation>
+        </message>
+        <message>
+            <source>Images</source>
+            <translation>画像</translation>
+        </message>
+        <message>
+            <source>Over the limit: include the "Delete" difficulty.</source>
+            <translation>容量制限を超えています：「Delete」難易度を含めてください。</translation>
+        </message>
+        <message>
+            <source>Set the osu! Songs folder on song select first.</source>
+            <translation>先に選曲画面でosu!のSongsフォルダを設定してください。</translation>
+        </message>
+        <message>
+            <source>Added {0} to the Mappack Creator.</source>
+            <translation>{0} をマップパック作成に追加しました。</translation>
+        </message>
+        <message>
+            <source>{0:.1f} of {1:.0f} MB</source>
+            <translation>{0:.1f} / {1:.0f} MB</translation>
+        </message>
+        <message>
+            <source>Created {0} ({1:.1f} MB). Press F5 in osu! to see it.</source>
+            <translation>{0}（{1:.1f} MB）を作成しました。osu!でF5を押すと表示されます。</translation>
+        </message>
+        <message>
+            <source>Submit it from the longest difficulty, [{0}]. The submission measures the set by the difficulty it is submitted from, and a shorter one gets its size budget and cuts or pads the others.</source>
+            <translation>最も長い難易度 [{0}] から提出してください。提出はその時開いている難易度でセットの長さを測るため、短い難易度から提出すると容量の上限が小さくなり、他の難易度が切られたり余白が付いたりします。</translation>
+        </message>
+        <message>
+            <source>osu! has {0} selected, but it is not in the Songs folder set on song select.</source>
+            <translation>osu!では {0} が選択されていますが、選曲画面で設定したSongsフォルダにはありません。</translation>
+        </message>
+        <message>
+            <source>These hitsounds share a name with a different sound from another set, and the first one is used: {0}</source>
+            <translation>次のヒットサウンドは別のセットの異なる音と同じ名前のため、最初のものを使いました：{0}</translation>
+        </message>
+        <message>
+            <source>Could not read that difficulty: {0}</source>
+            <translation>その難易度を読み込めませんでした：{0}</translation>
+        </message>
+        <message>
+            <source>The pack was not created: {0}</source>
+            <translation>パックを作成できませんでした：{0}</translation>
+        </message>
+        <message>
             <source>Taiko to Mania</source>
             <translation>太鼓からマニアへ</translation>
         </message>

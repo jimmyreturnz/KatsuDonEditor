@@ -139,7 +139,8 @@ def place_samples(folder: Path, sources: dict[str, Path]) -> dict[str, str]:
     keeps a skin's .ogg an .ogg.
     """
     try:
-        present = {entry.name.lower(): entry.name for entry in os.scandir(folder) if entry.is_file()}
+        with os.scandir(folder) as entries:
+            present = {entry.name.lower(): entry.name for entry in entries if entry.is_file()}
     except OSError:
         present = {}
     names = {}

@@ -28,6 +28,8 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtGui import (
+    QKeySequence,
+    QShortcut,
     QImage,
     QImageReader,
     QColor,
@@ -63,6 +65,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QSizePolicy,
 )
+from library.mappack import resolve_ci
 from library import osu_db
 from ui.motion import (
     MorphRect,
@@ -146,6 +149,11 @@ STAR_TEXT_SPECTRUM = (
 
 STAR_UNRATED = "#aaaaaa"
 
+
+def song_file(folder: Path, name: str) -> Path:
+    """`folder / name`, found without regard to case (osu! on Windows ignores
+    it, and a case-sensitive filesystem would not find half the songs)."""
+    return resolve_ci(folder, name) or folder / name
 
 def _sample_spectrum(stops, value: float) -> QColor:
     """osu!-web's d3 scale: clamped, interpolated at gamma 2.2."""
@@ -1543,6 +1551,13 @@ class LibraryPageController:
         for widget in (self.library_search, self.song_list, self.difficulty_list):
             widget.installEventFilter(self.keys)
 
+        # Into the Mappack Creator, from here (owner, 2026-10-21). Not shown on
+        # this page; the creator's own section names it. With Shift held the =
+        # key reports itself as +, so both spellings are bound.
+        for sequence in ("Ctrl+Shift+=", "Ctrl+Shift++"):
+            shortcut = QShortcut(QKeySequence(sequence), page)
+            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(self.add_selected_to_mappack)
         self.page = page
         self.restyle()
         self.refresh_continue_row()
@@ -2220,7 +2235,7 @@ class LibraryPageController:
         and a full version, or songs at different tempos, each difficulty
         naming its own AudioFilename and timing.
         """
-        audio = difficulty.folder / difficulty.audio if difficulty.audio else None
+        audio = song_file(difficulty.folder, difficulty.audio) if difficulty.audio else None
         tempo = self._tempo_cache.get(difficulty.path)
         if tempo is None:
             tempo = self._tempo_cache[difficulty.path] = heard_tempo(difficulty.path)
@@ -2506,7 +2521,7 @@ class LibraryPageController:
             preview_ms = int(float(difficulty.preview))
         except ValueError:
             preview_ms = -1
-        self._preview_pending = (difficulty.folder / difficulty.audio, preview_ms)
+        self._preview_pending = (song_file(difficulty.folder, difficulty.audio), preview_ms)
         self.preview_timer.start()
 
     def start_preview(self) -> None:
@@ -2622,6 +2637,11 @@ class LibraryPageController:
             tr("MainWindow", "Edit {version}  ↵").format(version=item.text()) if item is not None
             else tr("MainWindow", "Edit This Difficulty")
         )
+
+    def add_selected_to_mappack(self) -> None:
+        item = self.difficulty_list.currentItem()
+        if item is not None:
+            self.window.misc_page.add_difficulty(Path(item.data(Qt.UserRole)))
 
     def open_selected_difficulty(self) -> None:
         item = self.difficulty_list.currentItem()

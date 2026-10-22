@@ -243,31 +243,37 @@ class BackgroundJobs(QObject):
 
     _done = Signal(object)
 
-    def __init__(self, parent: QObject | None = None) -> None:
+    def __init__(self, parent: QObject | None = None, executor=None) -> None:
         super().__init__(parent)
-        self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="song-select")
+        # Any concurrent.futures executor: the Rate Changer hands it a process
+        # pool, because its work holds the GIL and a thread would not help.
+        self._pool = executor or ThreadPoolExecutor(max_workers=2, thread_name_prefix="song-select")
         self._pending: set = set()
         self._done.connect(self._deliver)
 
-    def submit(self, work, deliver) -> None:
+    def submit(self, work, deliver, failed=None) -> None:
         try:
             future = self._pool.submit(work)
         except RuntimeError:
             return  # shut down with the window: a late selection has nobody to show it to
         self._pending.add(future)
-        future.add_done_callback(lambda done: self._emit(done, deliver))
+        future.add_done_callback(lambda done: self._emit(done, deliver, failed))
 
-    def _emit(self, future, deliver) -> None:
+    def _emit(self, future, deliver, failed) -> None:
         try:
-            self._done.emit((future, deliver))
+            self._done.emit((future, deliver, failed))
         except RuntimeError:
             pass  # the window, and this object with it, is already gone
 
     def _deliver(self, payload) -> None:
-        future, deliver = payload
+        future, deliver, failed = payload
         self._pending.discard(future)
-        if future.cancelled() or future.exception() is not None:
-            return  # an unreadable file keeps what was shown, as before
+        if future.cancelled():
+            return
+        if future.exception() is not None:
+            if failed is not None:
+                failed(future.exception())
+            return  # otherwise an unreadable file keeps what was shown, as before
         deliver(future.result())
 
     def drain(self) -> None:

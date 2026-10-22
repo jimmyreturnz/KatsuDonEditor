@@ -3113,6 +3113,146 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>パックを作成できませんでした：{0}</translation>
         </message>
         <message>
+            <source>Rate Changer</source>
+            <translation>レートチェンジャー</translation>
+        </message>
+        <message>
+            <source>Change pitch</source>
+            <translation>ピッチを変える</translation>
+        </message>
+        <message>
+            <source>Pitch</source>
+            <translation>ピッチ</translation>
+        </message>
+        <message>
+            <source>OD</source>
+            <translation>OD</translation>
+        </message>
+        <message>
+            <source>A conversion is already running.</source>
+            <translation>変換はすでに実行中です。</translation>
+        </message>
+        <message>
+            <source>Not converted: {0} already exists.</source>
+            <translation>変換しませんでした：{0} はすでに存在します。</translation>
+        </message>
+        <message>
+            <source>This difficulty's audio file is missing.</source>
+            <translation>この難易度の音声ファイルが見つかりません。</translation>
+        </message>
+        <message>
+            <source>Reading the song…</source>
+            <translation>曲を読み込み中…</translation>
+        </message>
+        <message>
+            <source>Rendering: %v of %m rates done</source>
+            <translation>レンダリング中：%m 件中 %v 件完了</translation>
+        </message>
+        <message>
+            <source>Wrote {0} difficulties. Press F5 in osu! to see them.</source>
+            <translation>{0} 個の難易度を書き出しました。osu!でF5を押すと表示されます。</translation>
+        </message>
+        <message>
+            <source>HP</source>
+            <translation>HP</translation>
+        </message>
+        <message>
+            <source>{0:.0f} BPM  ·  {1}  ·  OD {2:g}  ·  HP {3:g}</source>
+            <translation>{0:.0f} BPM  ·  {1}  ·  OD {2:g}  ·  HP {3:g}</translation>
+        </message>
+        <message>
+            <source>+ Add</source>
+            <translation>+ 追加</translation>
+        </message>
+        <message>
+            <source>Pick as many as you like, or type one from 0.5 to 2 and add it. Each becomes a difficulty of its own, with its own audio file, timed as the rate mod would play it.</source>
+            <translation>好きなだけ選ぶか、0.5〜2の値を入力して追加します。それぞれが専用の音声ファイルを持つ別の難易度になり、レートModで遊んだときと同じタイミングになります。</translation>
+        </message>
+        <message>
+            <source>Keep</source>
+            <translation>保つ</translation>
+        </message>
+        <message>
+            <source>Change</source>
+            <translation>変える</translation>
+        </message>
+        <message>
+            <source>Keep plays the song as Double Time does; Change plays it higher as it gets faster, as Nightcore does. Sets every rate; the table can change one.</source>
+            <translation>「保つ」はDouble Timeと同じく曲を再生し、「変える」はNightcoreのように速くなるほど音が高くなります。すべてのレートに適用され、表で個別に変更できます。</translation>
+        </message>
+        <message>
+            <source>Manual</source>
+            <translation>手動</translation>
+        </message>
+        <message>
+            <source>Manual: each rate's OD is what its row says. Scale: each row gets the OD that makes its timing windows as strict as the rate mod would, up to OD 10.</source>
+            <translation>手動：各レートのODは行の値になります。スケール：レートModと同じだけ判定幅が厳しくなるODが各行に入ります（OD 10まで）。</translation>
+        </message>
+        <message>
+            <source>Rate</source>
+            <translation>レート</translation>
+        </message>
+        <message>
+            <source>Difficulty name</source>
+            <translation>難易度名</translation>
+        </message>
+        <message>
+            <source>One row per rate, each its own difficulty. Its pitch, OD and HP are its own.</source>
+            <translation>1行が1つのレートで、それぞれ別の難易度になります。ピッチ、OD、HPは行ごとに設定できます。</translation>
+        </message>
+        <message>
+            <source>Create Map(s)</source>
+            <translation>譜面を作成</translation>
+        </message>
+        <message>
+            <source>Already rendered, reused: {0}</source>
+            <translation>レンダリング済みのため再利用：{0}</translation>
+        </message>
+        <message>
+            <source>Original</source>
+            <translation>元の譜面</translation>
+        </message>
+        <message>
+            <source>osu!'s selected difficulty, or else the one being edited</source>
+            <translation>osu!で選択中の難易度、なければ編集中の難易度</translation>
+        </message>
+        <message>
+            <source>Select a map in osu!, or open one here.</source>
+            <translation>osu!で譜面を選ぶか、ここで開いてください。</translation>
+        </message>
+        <message>
+            <source>selected in osu!</source>
+            <translation>osu!で選択中</translation>
+        </message>
+        <message>
+            <source>being edited</source>
+            <translation>編集中</translation>
+        </message>
+        <message>
+            <source>No background</source>
+            <translation>背景なし</translation>
+        </message>
+        <message>
+            <source>[{0}] mapped by {1}</source>
+            <translation>[{0}]  譜面: {1}</translation>
+        </message>
+        <message>
+            <source>Audio is written as {0}.</source>
+            <translation>音声は{0}で書き出されます。</translation>
+        </message>
+        <message>
+            <source>Audio is written as WAV: install ffmpeg for MP3 or OGG, a fifth the size.</source>
+            <translation>音声はWAVで書き出されます。ffmpegを入れるとMP3かOGG（約5分の1のサイズ）になります。</translation>
+        </message>
+        <message>
+            <source>The format each rate's song is written in. Both land on the same millisecond in osu!; MP3 is what osu-trainer writes. Needs ffmpeg, without which it is WAV.</source>
+            <translation>各レートの曲を書き出す形式です。どちらもosu!で同じタイミングになります。MP3はosu-trainerと同じ形式です。ffmpegが必要で、ない場合はWAVになります。</translation>
+        </message>
+        <message>
+            <source>Audio</source>
+            <translation>音声</translation>
+        </message>
+        <message>
             <source>Taiko to Mania</source>
             <translation>太鼓からマニアへ</translation>
         </message>

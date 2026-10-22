@@ -1,7 +1,8 @@
 """The Miscellaneous page (owner, 2026-10-18): set-wide chores that have no
 view of their own -- the beatmapset's metadata, shifting the whole map's
 offset, scaling every green line's SV, and converting a difficulty to
-osu!mania (`chart.taiko_to_mania`); and the Mappack Creator
+osu!mania (`chart.taiko_to_mania`); a difficulty at other rates, song and
+all (`chart.rate_change`, `audio.rate_render`); and the Mappack Creator
 (`library.mappack`), which gathers difficulties from other sets into a new one.
 
 Everything here is an ordinary undoable edit on each difficulty's own history,
@@ -9,11 +10,18 @@ so the header's Save counts it and the Save dialog can still discard it.
 """
 from __future__ import annotations
 
+import copy
+from html import escape
+import shutil
 import sys
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 
-from PySide6.QtCore import QAbstractNativeEventFilter, QByteArray, Qt, Signal
-from PySide6.QtGui import QGuiApplication, QPixmap
+from PySide6.QtCore import QAbstractNativeEventFilter, QByteArray, QRectF, QSize, QTimer, QUrl, Qt, Signal
+from PySide6.QtGui import QGuiApplication, QImage, QPainter, QPainterPath, QPixmap
+from PySide6.QtMultimedia import QAudioDecoder, QAudioFormat
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QPlainTextEdit, QProgressBar, QPushButton, QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem,
@@ -21,36 +29,23 @@ from PySide6.QtWidgets import (
 )
 
 from app.i18n import tr
-from chart import autoplay, taiko_to_mania
+from audio import rate_render
+from audio.audio_engine import CHANNELS, SAMPLE_RATE
+from chart import autoplay, rate_change, taiko_to_mania
 from library import mappack, osu_memory
 from model.commands import CompositeCommand, ReplaceDocumentLines, ShiftChartTimes
 from osu_io import metadata
 from osu_io.parser import parse_osu
 from ui.common import equalize_button_widths
-from ui.config_sheet import ConfigSheet, set_warning
+from ui.config_sheet import SEGMENT_STYLE, ConfigSheet, bind_segments, segmented, set_warning
+from ui.song_select import BackgroundJobs, decode_background_image
 
 
 def shifted_lines(lines: list[str], delta_ms: int, ending: str) -> list[str]:
-    """`lines` with [Editor] Bookmarks and [General] PreviewTime moved by
-    `delta_ms`. A PreviewTime of -1 means "none" and stays."""
-    def as_int(value: str) -> int | None:
-        # A value that is not a whole number (a hand-edited file) is kept as
-        # it was: raising here left the set half shifted. Parsed, not
-        # pre-checked: isdigit() passes "²" and "--5", which int() rejects.
-        try:
-            return int(value)
-        except ValueError:
-            return None
-
-    bookmarks = metadata.read_keys(lines, "Editor").get("Bookmarks", "")
-    if bookmarks:
-        values = [value.strip() for value in bookmarks.split(",") if value.strip()]
-        moved = ",".join(value if as_int(value) is None else str(as_int(value) + delta_ms) for value in values)
-        lines = metadata.with_keys(lines, "Editor", {"Bookmarks": moved}, ending)
-    preview = as_int(metadata.read_keys(lines, "General").get("PreviewTime", ""))
-    if preview is not None and preview >= 0:
-        lines = metadata.with_keys(lines, "General", {"PreviewTime": str(preview + delta_ms)}, ending)
-    return lines
+    """`lines` with [Editor] Bookmarks, [General] PreviewTime and [Events]
+    breaks and video moved by `delta_ms`. A PreviewTime of -1 means "none"
+    and stays."""
+    return rate_change.mapped_lines(lines, lambda time: time + delta_ms, ending)
 
 
 def metadata_values(texts: dict[str, str]) -> dict[str, str]:
@@ -77,24 +72,44 @@ class BackgroundWell(QLabel):
     """The pack's background: a thumbnail, and somewhere to drop an image.
     Dropping is never the only way in -- Select sits under it."""
     dropped = Signal(str)
+    WIDTH = 224
 
     def __init__(self, drops: bool = True) -> None:
         super().__init__()
         self.setAcceptDrops(drops)
         self.setAlignment(Qt.AlignCenter)
         self.setWordWrap(True)
-        self.setFixedSize(224, 126)  # 16:9, the shape osu! shows it in
+        self.setFixedSize(self.WIDTH, 126)  # 16:9, the shape osu! shows it in
         self.setObjectName("fieldNote")
-        self.setStyleSheet("QLabel { border: 1px dashed #f3a6bd; border-radius: 6px; }")
+        # Dashed says "drop here", so only a well that takes drops draws it.
+        self.setStyleSheet("QLabel { border: 1px %s #f3a6bd; border-radius: 6px; }"
+                           % ("dashed" if drops else "solid"))
         self.show_image(None)
 
-    def show_image(self, path: Path | None, empty: str = "") -> None:
-        pixmap = QPixmap(str(path)) if path else QPixmap()
+    def show_image(self, path: "Path | QImage | None", empty: str = "") -> None:
+        if isinstance(path, QImage):
+            pixmap = QPixmap.fromImage(path)
+        else:
+            pixmap = QPixmap(str(path)) if path else QPixmap()
         if pixmap.isNull():
             self.setPixmap(QPixmap())
             self.setText(empty or tr("MainWindow", "Drop an image here"))
         else:
-            self.setPixmap(pixmap.scaled(self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
+            # Inside the 1px border, cropped to fill and clipped to its
+            # rounded corner: scaled to the whole label, the image was drawn
+            # over the border, which then showed on two sides only.
+            size = self.size() - QSize(2, 2)
+            scaled = pixmap.scaled(size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            framed = QPixmap(size)
+            framed.fill(Qt.transparent)
+            painter = QPainter(framed)
+            painter.setRenderHint(QPainter.Antialiasing)
+            clip = QPainterPath()
+            clip.addRoundedRect(QRectF(0, 0, size.width(), size.height()), 5, 5)
+            painter.setClipPath(clip)
+            painter.drawPixmap((size.width() - scaled.width()) // 2, (size.height() - scaled.height()) // 2, scaled)
+            painter.end()
+            self.setPixmap(framed)
 
     def dragEnterEvent(self, event) -> None:
         if any(Path(u.toLocalFile()).suffix.lower() in IMAGE_SUFFIXES for u in event.mimeData().urls()):
@@ -107,6 +122,69 @@ class BackgroundWell(QLabel):
                 self.dropped.emit(str(path))
                 event.acceptProposedAction()
                 return
+
+
+# The Rate Changer's pills (owner, 2026-10-23): a rate below 0.8 or above 1.5
+# is typed instead.
+PRESET_RATES = (0.8, 0.9, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5)
+
+# The typed rate and its + Add sit in a pill group of their own, reading as
+# pills: the box as a filled one, + Add in the bright ink rather than the
+# group's grey, since it is an action and not a choice.
+RATE_INPUT_STYLE = """
+QFrame#segment QDoubleSpinBox#rateInput {
+    background: #2f3947; color: #e8edf3; border: 0; border-radius: 4px;
+    padding: 0; font-size: 12px; font-weight: 600;
+}
+QFrame#segment QPushButton#rateAdd { color: #e8edf3; }
+"""
+
+
+@dataclass
+class RateRow:
+    """One difficulty the Rate Changer will write."""
+    rate: float
+    pitch: bool
+    od: float
+    hp: float
+
+
+# How often the Rate Changer asks osu! what it has selected, while it is on
+# screen. The read is five 4-byte reads once attached; a second is quick
+# enough to follow a click in song select and costs nothing between.
+OSU_POLL_MS = 1000
+
+
+def rate_background(document) -> QImage | None:
+    """The map's background at thumbnail size. Decoded off the GUI thread
+    where it can be: a 4K one at full size is a visible pause (song select,
+    tools/measure_song_switch.py)."""
+    name = mappack.background_name(document.lines)
+    path = mappack.resolve_ci(document.source_path.parent, name) if name else None
+    return decode_background_image(path, 2 * BackgroundWell.WIDTH) if path is not None else None
+
+
+def read_osu_selection(songs: Path, known):
+    """Worker thread: (key, document, background) for the difficulty osu! has
+    selected, the document None when the key is still `known`; None when
+    osu! cannot say (not running, nothing selected, not under `songs`)."""
+    try:
+        folder, name = osu_memory.current_difficulty()
+    except osu_memory.OsuNotFound:
+        return None
+    key = (folder, name)
+    if key == known:
+        return key, None, None
+    path = mappack.resolve_ci(songs / folder, name)
+    if path is None:
+        return None
+    document = parse_osu(path)
+    return key, document, rate_background(document)
+
+
+def _clock(ms: float) -> str:
+    seconds = int(ms // 1000)
+    return f"{seconds // 60}:{seconds % 60:02d}"
 
 
 COUNT_WARN_SHEET = 'QLabel[warn="true"] { color: #ff5c5c; }'
@@ -294,6 +372,7 @@ class MiscPage(QWidget):
         self.mania_osu.clicked.connect(self.convert_osu_to_mania)
         self.mania_osu.setVisible(sys.platform == "win32")
         mania.add(self.mania_osu, span=1)
+        self._build_rates()
         self._build_mappack()
         self.refresh()
 
@@ -328,6 +407,7 @@ class MiscPage(QWidget):
                        self.mania_button):
             widget.setEnabled(state is not None)
         self._load_mania_defaults(state)
+        self._set_rate_source()
         self._load_fields(current)
 
     def _load_mania_defaults(self, state) -> None:
@@ -464,6 +544,441 @@ class MiscPage(QWidget):
             self.window.show_toast(tr("MainWindow", "Not converted: {0}").format(error))
             return
         self.window.status.setText(tr("MainWindow", "Wrote {0}. Press F5 in osu! to see it.").format(path.name))
+
+    # -- rate changer ---------------------------------------------------------
+
+    def _build_rates(self) -> None:
+        # The pool is made on the first conversion, not here: one per window
+        # would start worker processes in every test that builds a window.
+        self._rate_pool: ProcessPoolExecutor | None = None
+        self.rate_jobs: BackgroundJobs | None = None
+        self._rate_run: dict | None = None
+        self.rate_rows: list[RateRow] = []
+        # The source chart's own numbers: what a new row starts from.
+        self._rate_chart = (0.0, 0, 5.0, 5.0)  # BPM, length ms, OD, HP
+        # The difficulty osu! has selected, while it has one (owner,
+        # 2026-10-23); otherwise the one being edited.
+        self._od_typing = False
+        self._osu_document = None
+        self._osu_background = None
+        self._osu_key = None
+        self._osu_jobs: BackgroundJobs | None = None
+        self._osu_polling = False
+        self._rate_document = None
+        self._osu_timer = QTimer(self)
+        self._osu_timer.setInterval(OSU_POLL_MS)
+        self._osu_timer.timeout.connect(self._poll_osu)
+        # Never on the offscreen platform: a test window would load whatever
+        # osu! has selected on the machine running the suite.
+        if sys.platform == "win32" and QGuiApplication.platformName() == "windows":
+            self._osu_timer.start()
+        rates = self.sheet.add_section("rate", tr("MainWindow", "Rate Changer"),
+                                       tr("MainWindow", "osu!'s selected difficulty, or else the one being edited"))
+        self.rate_original = QLabel()
+        self.rate_original.setTextFormat(Qt.RichText)
+        self.rate_background = BackgroundWell(drops=False)
+        original = QWidget()
+        original_row = QHBoxLayout(original)
+        original_row.setContentsMargins(0, 0, 0, 0)
+        original_row.setSpacing(12)
+        original_row.addWidget(self.rate_background)
+        original_row.addWidget(self.rate_original, 1)
+        rates.field(tr("MainWindow", "Original"), original, span=2)
+
+        # One pill per rate; a rate typed below joins as a pill of its own, so
+        # every row in the table is a pill that is on, and off removes it.
+        self.rate_buttons: dict[float, QPushButton] = {}
+        self.rate_presets = segmented([self._rate_pill(rate) for rate in PRESET_RATES])
+        self.rate_customs = segmented([])
+        self.rate_customs.setVisible(False)
+        self.rate_custom = QDoubleSpinBox()
+        self.rate_custom.setObjectName("rateInput")
+        self.rate_custom.setRange(rate_change.MIN_RATE, rate_change.MAX_RATE)
+        self.rate_custom.setDecimals(2)
+        self.rate_custom.setSingleStep(0.05)
+        self.rate_custom.setValue(1.05)
+        self.rate_custom.setSuffix("x")
+        self.rate_custom.setButtonSymbols(QDoubleSpinBox.NoButtons)
+        self.rate_custom.setAlignment(Qt.AlignCenter)
+        self.rate_custom.setKeyboardTracking(False)
+        self.rate_add = QPushButton(tr("MainWindow", "+ Add"))
+        self.rate_add.setObjectName("rateAdd")
+        self.rate_add.clicked.connect(self._add_custom_rate)
+        self.rate_custom.lineEdit().returnPressed.connect(self._add_custom_rate)
+        manual = segmented([self.rate_add])
+        manual.layout().insertWidget(0, self.rate_custom)
+        for frame in (self.rate_presets, self.rate_customs, manual):
+            # The source, never styleSheet(): that is the active theme's
+            # translation, and appending to it pins these to that theme.
+            frame.setStyleSheet(SEGMENT_STYLE + RATE_INPUT_STYLE)
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        for frame in (self.rate_presets, self.rate_customs, manual):
+            layout.addWidget(frame)
+        layout.addStretch(1)
+        rates.field(tr("MainWindow", "Rates"), row, tr(
+            "MainWindow", "Pick as many as you like, or type one from 0.5 to 2 and add it. Each becomes a "
+            "difficulty of its own, with its own audio file, timed as the rate mod would play it."), span=2)
+
+        self.rate_pitch = QComboBox()
+        self.rate_pitch.addItem(tr("MainWindow", "Keep"), False)
+        self.rate_pitch.addItem(tr("MainWindow", "Change"), True)
+        self.rate_pitch.currentIndexChanged.connect(self._pitch_for_every_row)
+        rates.field(tr("MainWindow", "Pitch"), bind_segments(self.rate_pitch), tr(
+            "MainWindow", "Keep plays the song as Double Time does; Change plays it higher as it gets "
+            "faster, as Nightcore does. Sets every rate; the table can change one."))
+        self.rate_od_mode = QComboBox()
+        self.rate_od_mode.addItem(tr("MainWindow", "Manual"), False)
+        self.rate_od_mode.addItem(tr("MainWindow", "Scale"), True)
+        self.rate_od_mode.currentIndexChanged.connect(self._od_mode_changed)
+        rates.field(tr("MainWindow", "OD"), bind_segments(self.rate_od_mode), tr(
+            "MainWindow", "Manual: each rate's OD is what its row says. Scale: each row gets the OD that "
+            "makes its timing windows as strict as the rate mod would, up to OD 10."))
+        self.rate_format = QComboBox()
+        self.rate_format.addItem("MP3", ".mp3")
+        self.rate_format.addItem("OGG", ".ogg")
+        self.rate_format.setCurrentIndex(max(0, self.rate_format.findData(
+            self.window.settings.string_value("rates/audio_format", ".mp3"))))
+        self.rate_format.currentIndexChanged.connect(self._format_changed)
+        rates.field(tr("MainWindow", "Audio"), bind_segments(self.rate_format), tr(
+            "MainWindow", "The format each rate's song is written in. Both land on the same millisecond in "
+            "osu!; MP3 is what osu-trainer writes. Needs ffmpeg, without which it is WAV."))
+
+        columns = [tr("MainWindow", "Rate"), tr("MainWindow", "BPM"), tr("MainWindow", "Length"),
+                   tr("MainWindow", "Change pitch"), tr("MainWindow", "OD"), tr("MainWindow", "HP"),
+                   tr("MainWindow", "Difficulty name")]
+        self.rate_table = QTableWidget(0, len(columns))
+        self.rate_table.setHorizontalHeaderLabels(columns)
+        header = self.rate_table.horizontalHeader()
+        for column in range(len(columns) - 1):
+            header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(len(columns) - 1, QHeaderView.Stretch)
+        self.rate_table.verticalHeader().setVisible(False)
+        self.rate_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.rate_table.setSelectionMode(QAbstractItemView.NoSelection)
+        self.rate_table.setFocusPolicy(Qt.NoFocus)
+        rates.field(tr("MainWindow", "Difficulties"), self.rate_table, tr(
+            "MainWindow", "One row per rate, each its own difficulty. Its pitch, OD and HP are its own."),
+            span=2)
+
+        actions = QWidget()
+        actions_row = QHBoxLayout(actions)
+        actions_row.setContentsMargins(0, 0, 0, 0)
+        actions_row.setSpacing(12)
+        self.rate_button = QPushButton(tr("MainWindow", "Create Map(s)"))
+        self.rate_button.clicked.connect(self.convert_rates)
+        self.rate_note = QLabel()
+        self.rate_note.setObjectName("fieldNote")
+        self.rate_note.setWordWrap(True)
+        actions_row.addWidget(self.rate_button)
+        actions_row.addWidget(self.rate_note, 1)
+        rates.add(actions, span=2)
+        self.rate_progress = QProgressBar()
+        self.rate_progress.setTextVisible(True)
+        self.rate_progress.setVisible(False)
+        rates.add(self.rate_progress, span=2)
+        self._fill_rate_table()
+
+    def _rate_pill(self, rate: float) -> QPushButton:
+        button = QPushButton(f"{rate:g}x")
+        button.setCheckable(True)
+        button.toggled.connect(lambda on, rate=rate: self._rate_toggled(rate, on))
+        self.rate_buttons[rate] = button
+        return button
+
+    def _fit_rate_pills(self) -> None:
+        """Every pill, the typed rate and + Add the same size: measured once
+        the sheet has given them their padding (see `fit_buttons`)."""
+        widgets = [*self.rate_buttons.values(), self.rate_add]
+        width = max(button.sizeHint().width() for button in widgets)
+        width = max(width, self.rate_custom.fontMetrics().horizontalAdvance("0.55x") + 20)
+        height = max(button.sizeHint().height() for button in widgets)
+        for widget in (*widgets, self.rate_custom):
+            widget.setFixedSize(width, height)
+
+    def _poll_osu(self) -> None:
+        # Only while the section is on screen, and one read at a time.
+        if self._osu_polling or not self.sheet.sections["rate"].isVisible():
+            return
+        songs = self.window.settings.string_value("library/songs_folder", "")
+        if not songs:
+            return
+        if self._osu_jobs is None:
+            # A thread, not the GUI: attaching scans osu!'s memory (11ms
+            # measured, up to a second when the code sits late in it), and
+            # finding osu! is not running costs ~4ms a poll. Once attached a
+            # poll is 0.024ms (2026-10-23).
+            self._osu_jobs = BackgroundJobs(self)
+        self._osu_polling = True
+        self._osu_jobs.submit(partial(read_osu_selection, Path(songs), self._osu_key),
+                              self._osu_read, lambda _error: self._osu_read(None))
+
+    def _osu_read(self, result) -> None:
+        self._osu_polling = False
+        if result is not None and result[1] is None:
+            return  # the same difficulty as last time
+        had = self._osu_document is not None
+        self._osu_key, self._osu_document, self._osu_background = result if result is not None else (None,) * 3
+        if had or self._osu_document is not None:
+            self._set_rate_source()
+
+    def _set_rate_source(self) -> None:
+        state = getattr(self.window, "state", None)
+        self._rate_document = self._osu_document or (state.document if state is not None else None)
+        # The edited chart's is decoded here: it changes once per opened map.
+        image = (self._osu_background if self._osu_document is not None
+                 else rate_background(self._rate_document) if self._rate_document is not None else None)
+        self.rate_background.show_image(image, tr("MainWindow", "No background"))
+        self._load_rate_chart(self._rate_document)
+
+    def _load_rate_chart(self, document) -> None:
+        if document is None:
+            self._rate_chart = (0.0, 0, 5.0, 5.0)
+        else:
+            self._rate_chart = (60000.0 / taiko_to_mania.chart_beat_length(document), mappack.length_ms(document),
+                                rate_change.difficulty_setting(document.lines, "OverallDifficulty"),
+                                rate_change.difficulty_setting(document.lines, "HPDrainRate"))
+        # A new chart: every row starts again from its numbers.
+        for row in self.rate_rows:
+            row.od, row.hp = self._row_od(row.rate), self._rate_chart[3]
+        self._fill_rate_table()
+
+    def _row_od(self, rate: float) -> float:
+        od = self._rate_chart[2]
+        return rate_change.dt_od(od, rate) if self.rate_od_mode.currentData() else od
+
+    def _rate_toggled(self, rate: float, on: bool) -> None:
+        if on:
+            self.rate_rows.append(RateRow(rate, bool(self.rate_pitch.currentData()), self._row_od(rate),
+                                          self._rate_chart[3]))
+            self.rate_rows.sort(key=lambda row: row.rate)
+        else:
+            self.rate_rows = [row for row in self.rate_rows if row.rate != rate]
+        self._fill_rate_table()
+
+    def _add_custom_rate(self) -> None:
+        rate = round(self.rate_custom.value(), 2)
+        if rate == 1.0:
+            return
+        if rate not in self.rate_buttons:
+            pill = self._rate_pill(rate)
+            pill.setFixedSize(self.rate_add.size())
+            self.rate_customs.layout().addWidget(pill)
+            self.rate_customs.setVisible(True)
+        self.rate_buttons[rate].setChecked(True)
+
+    def _pitch_for_every_row(self) -> None:
+        for row in self.rate_rows:
+            row.pitch = bool(self.rate_pitch.currentData())
+        self._fill_rate_table()
+
+    def _format_changed(self) -> None:
+        self.window.settings.set_value("rates/audio_format", self.rate_format.currentData())
+        self._fill_rate_table()
+
+    def _od_mode_changed(self) -> None:
+        # Both ways: Manual is the chart's own OD again, not the scaled one
+        # left behind (owner, 2026-10-23) -- except when a typed OD is what
+        # switched it, which must neither be undone nor have its box rebuilt
+        # under the cursor.
+        if self._od_typing:
+            return
+        for row in self.rate_rows:
+            row.od = self._row_od(row.rate)
+        self._fill_rate_table()
+
+    def _row_od_typed(self, row: "RateRow", value: float) -> None:
+        row.od = value
+        # A typed OD is not the scaled one any more, and Scale would say it was.
+        # Not blockSignals: the pills follow the combo by that same signal,
+        # and blocked they went on showing Scale, so the next click on Manual
+        # changed nothing and reverted nothing.
+        if self.rate_od_mode.currentData():
+            self._od_typing = True
+            self.rate_od_mode.setCurrentIndex(0)
+            self._od_typing = False
+
+    def _row_pitch_toggled(self, row: "RateRow", on: bool) -> None:
+        row.pitch = on
+        self._fill_rate_table()
+
+    def _fill_rate_table(self) -> None:
+        bpm, length, od, hp = self._rate_chart
+        document = self._rate_document
+        if document is None:
+            self.rate_original.setText(tr("MainWindow", "Select a map in osu!, or open one here."))
+        else:
+            values = metadata.read_keys(document.lines, "Metadata")
+            where = (tr("MainWindow", "selected in osu!") if document is self._osu_document
+                     else tr("MainWindow", "being edited"))
+            # As osu-trainer lays it out: the song big, then who and which
+            # difficulty, then the numbers every row starts from.
+            self.rate_original.setText("<br>".join((
+                f"<span style='font-size:15px; font-weight:700'>{escape(values.get('Title', ''))}</span>",
+                escape(values.get("Artist", "")),
+                tr("MainWindow", "[{0}] mapped by {1}").format(
+                    escape(values.get("Version", document.version)), escape(values.get("Creator", ""))),
+                tr("MainWindow", "{0:.0f} BPM  ·  {1}  ·  OD {2:g}  ·  HP {3:g}").format(bpm, _clock(length), od, hp),
+                f"<i>{where}</i>")))
+        table = self.rate_table
+        table.setRowCount(len(self.rate_rows))
+        for index, row in enumerate(self.rate_rows):
+            texts = (f"{row.rate:g}x", f"{bpm * row.rate:.0f}", _clock(length / row.rate))
+            for column, text in enumerate(texts):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignCenter)
+                table.setItem(index, column, item)
+            pitch = QCheckBox()
+            pitch.setChecked(row.pitch)
+            pitch.toggled.connect(partial(self._row_pitch_toggled, row))
+            holder = QWidget()
+            centre = QHBoxLayout(holder)
+            centre.setContentsMargins(0, 0, 0, 0)
+            centre.addWidget(pitch, 0, Qt.AlignCenter)
+            table.setCellWidget(index, 3, holder)
+            for column, value, typed in ((4, row.od, self._row_od_typed), (5, row.hp, None)):
+                spin = QDoubleSpinBox()
+                spin.setRange(0.0, 10.0)
+                spin.setDecimals(1)
+                spin.setSingleStep(0.1)
+                spin.setValue(value)
+                spin.setFrame(False)
+                spin.valueChanged.connect(partial(typed, row) if typed else partial(setattr, row, "hp"))
+                table.setCellWidget(index, column, spin)
+            name = rate_change.version_name(document, row.rate) if document is not None else ""
+            table.setItem(index, 6, QTableWidgetItem(name))
+            table.setRowHeight(index, 34)
+        # The table is as tall as its rows: no scrolling inside a scrolling page.
+        table.setFixedHeight(table.horizontalHeader().height() + 34 * max(1, len(self.rate_rows)) + 4)
+        count = len(self.rate_rows)
+        self.rate_button.setEnabled(document is not None and count > 0 and self._rate_run is None)
+        notes = [tr("MainWindow", "Audio is written as {0}.").format(self.rate_format.currentText())
+                 if shutil.which("ffmpeg")
+                 else tr("MainWindow", "Audio is written as WAV: install ffmpeg for MP3 or OGG, a fifth the size.")]
+        if document is not None:
+            reused = [row for row in self.rate_rows if self._existing_audio(document, row) is not None]
+            if reused:
+                notes.append(tr("MainWindow", "Already rendered, reused: {0}").format(
+                    ", ".join(f"{row.rate:g}x" for row in reused)))
+        self.rate_note.setText("  ·  ".join(notes))
+
+    def _existing_audio(self, document, row: "RateRow") -> str | None:
+        stem = rate_change.audio_name(document.audio_filename, row.rate, row.pitch, "")
+        folder = document.source_path.parent
+        # The chosen format only: picking OGG and getting an old MP3 back
+        # would ignore the choice. WAV is what either becomes without ffmpeg.
+        return next((stem + ext for ext in (self.rate_format.currentData(), ".wav")
+                     if (folder / (stem + ext)).exists()), None)
+
+    def convert_rates(self) -> None:
+        """Decode the song once, render each (rate, pitch) missing its audio in
+        a worker process, then write every row as its own difficulty. Audio
+        already in the folder (another difficulty converted earlier) is reused."""
+        document = self._rate_document
+        if self._rate_run is not None or document is None or not self.rate_rows:
+            return
+        rows = [replace(row) for row in self.rate_rows]
+        # Refused before the render rather than after it, as mania refuses.
+        taken = [rate_change.destination(document, row.rate) for row in rows]
+        taken = [path for path in taken if path.exists()]
+        if taken:
+            self.window.show_toast(tr("MainWindow", "Not converted: {0} already exists.").format(taken[0].name))
+            return
+        source = mappack.resolve_ci(document.source_path.parent, document.audio_filename)
+        if source is None:
+            self.window.show_toast(tr("MainWindow", "This difficulty's audio file is missing."))
+            return
+        audio = {(row.rate, row.pitch): self._existing_audio(document, row) for row in rows}
+        suffix = self.rate_format.currentData()
+        # A snapshot: the chart may be edited while the song renders, and what
+        # is written is the chart as it was when Create was pressed.
+        self._rate_run = {"document": copy.deepcopy(document), "rows": rows, "audio": audio, "format": suffix,
+                          "failed": None, "decoder": None}
+        self.rate_button.setEnabled(False)
+        missing = [key for key, name in audio.items() if name is None]
+        if not missing:
+            self._finish_rates()
+            return
+        self.rate_progress.setRange(0, 0)  # busy until the decode is in
+        self.rate_progress.setFormat(tr("MainWindow", "Reading the song…"))
+        self.rate_progress.setVisible(True)
+        fmt = QAudioFormat()
+        fmt.setSampleRate(SAMPLE_RATE)
+        fmt.setChannelCount(CHANNELS)
+        fmt.setSampleFormat(QAudioFormat.Int16)
+        decoder = self._rate_run["decoder"] = QAudioDecoder(self)
+        decoder.setAudioFormat(fmt)
+        chunks: list[bytes] = []
+        decoder.bufferReady.connect(lambda: chunks.append(bytes(decoder.read().constData())))
+        decoder.finished.connect(lambda: self._render_rates(b"".join(chunks), missing))
+        decoder.error.connect(lambda _error: self._rates_failed(decoder.errorString()))
+        decoder.setSource(QUrl.fromLocalFile(str(source)))
+        decoder.start()
+
+    def _render_rates(self, pcm: bytes, missing: list[tuple[float, bool]]) -> None:
+        run = self._rate_run
+        run.pop("decoder").deleteLater()
+        if self.rate_jobs is None:
+            # Three, as the test suite runs three: more made the owner's
+            # machine lag while he was using it (2026-10-08).
+            self._rate_pool = ProcessPoolExecutor(max_workers=3)
+            self.rate_jobs = BackgroundJobs(self, executor=self._rate_pool)
+        run["left"] = len(missing)
+        self.rate_progress.setRange(0, len(missing))
+        self.rate_progress.setValue(0)
+        self.rate_progress.setFormat(tr("MainWindow", "Rendering: %v of %m rates done"))
+        document = run["document"]
+        for rate, pitch in missing:
+            stem = document.source_path.parent / rate_change.audio_name(document.audio_filename, rate, pitch, "")
+            self.rate_jobs.submit(partial(rate_render.render_to_file, pcm, rate, pitch, str(stem), run["format"]),
+                                  partial(self._rate_rendered, (rate, pitch)), self._rate_render_failed)
+
+    def _rate_rendered(self, key: tuple[float, bool], path: str) -> None:
+        self._rate_run["audio"][key] = Path(path).name
+        self._rate_step()
+
+    def _rate_render_failed(self, error: BaseException) -> None:
+        self._rate_run["failed"] = str(error)
+        self._rate_step()
+
+    def _rate_step(self) -> None:
+        run = self._rate_run
+        run["left"] -= 1
+        self.rate_progress.setValue(self.rate_progress.maximum() - run["left"])
+        if run["left"] == 0:
+            self._finish_rates()
+
+    def _rates_failed(self, message: str) -> None:
+        decoder = self._rate_run.pop("decoder", None)
+        if decoder is not None:
+            decoder.deleteLater()
+        self._rate_run = None
+        self.rate_progress.setVisible(False)
+        self._fill_rate_table()
+        self.window.show_toast(tr("MainWindow", "Not converted: {0}").format(message))
+
+    def _finish_rates(self) -> None:
+        run = self._rate_run
+        self._rate_run = None
+        self.rate_progress.setVisible(False)
+        written = []
+        for row in run["rows"]:
+            audio_file = run["audio"][(row.rate, row.pitch)]
+            if audio_file is None:
+                continue  # its render failed, and a chart without its song is no use
+            try:
+                written.append(rate_change.write(run["document"], row.rate, row.pitch, audio_file,
+                                                 od=row.od, hp=row.hp))
+            except (OSError, ValueError) as error:
+                run["failed"] = str(error)
+        self._fill_rate_table()
+        if run["failed"]:
+            self.window.show_toast(tr("MainWindow", "Not converted: {0}").format(run["failed"]))
+        if written:
+            self.window.status.setText(tr("MainWindow", "Wrote {0} difficulties. Press F5 in osu! to see them.")
+                                       .format(len(written)))
 
     # -- mappack --------------------------------------------------------------
 
@@ -638,9 +1153,17 @@ class MiscPage(QWidget):
         equalize_button_widths(self._pack_side_buttons)
         equalize_button_widths((self.pack_dedup,), widths=False)
         equalize_button_widths((self.mania_button, self.mania_osu), widths=False)
+        equalize_button_widths((self.rate_button,), widths=False)
+        self._fit_rate_pills()
 
-    def release_hotkey(self) -> None:
+    def release(self) -> None:
+        """The window is closing: the hotkey, and any render still running."""
         self.hotkey.release()
+        self._osu_timer.stop()
+        if self._osu_jobs is not None:
+            self._osu_jobs.shutdown()
+        if self._rate_pool is not None:
+            self._rate_pool.shutdown(wait=False, cancel_futures=True)
 
     def add_difficulty(self, path: Path, version: str | None = None) -> None:
         """Add `path` to the pack, and say so wherever the user is. A

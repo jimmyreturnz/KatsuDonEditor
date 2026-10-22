@@ -4262,7 +4262,7 @@ class MainWindow(QMainWindow):
         app.removeEventFilter(self)
         if hasattr(self, "misc_page"):
             # A system-wide key: held past close, the next window cannot have it.
-            self.misc_page.release_hotkey()
+            self.misc_page.release()
         try:
             app.focusChanged.disconnect(self._editor_view_focus_changed)
         except (RuntimeError, TypeError):

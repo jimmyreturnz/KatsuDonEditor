@@ -180,6 +180,18 @@ recovery -- two real bugs inherited from reading a stale copy.
   and the playhead ran on without it. `--settle 0.05` reproduces it; with
   the default 1.5s every run was clean, which is why it looked unreproducible.
   The engine now reports `starved_changed` and the clock holds.
+- `tools/measure_rate_export.py <map.osu> [rate ...] [--pitch]` -- whether
+  the Rate Changer's notes still sit on the music: render, write, decode back,
+  and the averaged attack against the converted chart must be the original's
+  divided by the rate (Libertas: +18ms -> 15.0 expected, 14/15 measured at
+  1.2x; 0.75x is 12ms off without `grain_offset_ms`'s padding, 1ms with it).
+  `shared` is distinct times that had to share a millisecond: an isolated 1ms
+  pair never does, a run on every millisecond must (2026-10-23). Qt cannot
+  write the file: its MP3 is Media Foundation at a fixed 96 kbps with a header
+  that decoded 0.89s of 3s, so it is MP3 (LAME V0, as osu-trainer writes it)
+  through `ffmpeg` on PATH, else WAV. LAME's leading delay is left to its
+  gapless header: decoded back it is 0 frames off, and the attacks are the
+  same 14/13/23ms Ogg gave at 1.2/1.5/0.75x (2026-10-23).
 - `tools/play_with_hitsounds.py <map.osu> [rate] [seconds] [start_ms]` — the
   whole path, audibly: parse, schedule, decode, stretch, mix, sink. `voiced`
   and `offered` must be equal, or the 1/rate dedupe has leaked and every note

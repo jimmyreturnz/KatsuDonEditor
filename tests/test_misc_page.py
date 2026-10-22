@@ -5,11 +5,13 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication, QCheckBox, QPushButton
 
 from library import mappack
 from osu_io import metadata
 from osu_io.parser import parse_osu
+from chart import rate_change
 from ui import gui, misc_page
 from tests.test_editing_ux_round3 import WindowTestCase
 
@@ -106,6 +108,128 @@ class MiscPageTests(WindowTestCase):
         self.assertEqual(len(written), 1)
         self.assertEqual(metadata.read_keys(parse_osu(written[0]).lines, "General")["Mode"], "3")
         self.assertTrue((self.path.parent / "taiko-normal-hitnormal.wav").is_file())
+
+    def _written(self):
+        return sorted((p for p in self.path.parent.glob("*.osu") if p != self.path), key=lambda p: p.name)
+
+    def test_rates_whose_audio_exists_are_written_without_rendering(self):
+        """A second difficulty converted at the same rate reuses the song the
+        first one rendered; nothing is decoded, no worker is started."""
+        toasts = []
+        self.window.show_toast = toasts.append
+        for rate in (1.2, 1.5):
+            (self.path.parent / f"audio {rate:g}x.mp3").write_bytes(b"0")
+            self.page.rate_buttons[rate].click()
+        self.assertIn("1.2x, 1.5x", self.page.rate_note.text())
+        self.page.rate_button.click()
+        self.assertIsNone(self.page._rate_pool)
+        self.assertEqual([parse_osu(p).audio_filename for p in self._written()],
+                         ["audio 1.2x.mp3", "audio 1.5x.mp3"])
+        self.assertEqual(toasts, [])
+        self.page.convert_rates()  # the same again is refused before any work
+        self.assertIn("already exists", toasts[-1])
+
+    def test_the_chosen_format_is_the_one_reused_and_is_remembered(self):
+        page = self.page
+        (self.path.parent / "audio 1.2x.mp3").write_bytes(b"0")
+        page.rate_buttons[1.2].click()
+        self.assertIn("1.2x", page.rate_note.text())
+        page.rate_format.setCurrentIndex(page.rate_format.findData(".ogg"))
+        self.assertNotIn("reused", page.rate_note.text())  # an MP3 is not the OGG asked for
+        self.assertEqual(self.window.settings.string_value("rates/audio_format"), ".ogg")
+
+    def test_a_pill_is_a_row_and_rows_start_at_the_chart(self):
+        page = self.page
+        self.assertFalse(page.rate_button.isEnabled())
+        page.rate_buttons[1.3].click()
+        page.rate_buttons[1.1].click()
+        lines = self.state.document.lines
+        od, hp = (rate_change.difficulty_setting(lines, key) for key in ("OverallDifficulty", "HPDrainRate"))
+        self.assertEqual([(r.rate, r.od, r.hp) for r in page.rate_rows], [(1.1, od, hp), (1.3, od, hp)])
+        self.assertEqual(page.rate_table.rowCount(), 2)
+        self.assertTrue(page.rate_button.isEnabled())
+        page.rate_buttons[1.1].click()
+        self.assertEqual([r.rate for r in page.rate_rows], [1.3])
+
+    def test_a_typed_rate_becomes_a_pill_and_a_preset_one_presses_its_own(self):
+        page = self.page
+        page.rate_custom.setValue(1.7)
+        page.rate_add.click()
+        self.assertTrue(page.rate_buttons[1.7].isChecked())
+        self.assertFalse(page.rate_customs.isHidden())
+        page.rate_custom.setValue(1.2)
+        page.rate_add.click()
+        self.assertTrue(page.rate_buttons[1.2].isChecked())
+        self.assertEqual([r.rate for r in page.rate_rows], [1.2, 1.7])
+
+    def test_pitch_sets_every_row_and_a_row_can_differ(self):
+        page = self.page
+        for rate in (1.1, 1.2):
+            page.rate_buttons[rate].click()
+        page.rate_pitch.setCurrentIndex(1)
+        self.assertEqual([r.pitch for r in page.rate_rows], [True, True])
+        box = page.rate_table.cellWidget(0, 3).findChild(QCheckBox)
+        box.click()
+        self.assertEqual([r.pitch for r in page.rate_rows], [False, True])
+        self.assertTrue(page.rate_table.item(1, 6).text().startswith(self.state.version + " 1.2x ("))
+
+    def test_scale_fills_od_and_typing_one_goes_back_to_manual(self):
+        page = self.page
+        page.rate_buttons[1.5].click()
+        od = rate_change.difficulty_setting(self.state.document.lines, "OverallDifficulty")
+        page.rate_od_mode.setCurrentIndex(1)
+        self.assertEqual(page.rate_rows[0].od, rate_change.dt_od(od, 1.5))
+        page.rate_od_mode.setCurrentIndex(0)
+        self.assertEqual(page.rate_rows[0].od, od)  # Manual is the chart's own again
+        page.rate_od_mode.setCurrentIndex(1)
+        page.rate_table.cellWidget(0, 4).setValue(4.0)
+        self.assertEqual((page.rate_rows[0].od, page.rate_od_mode.currentIndex()), (4.0, 0))
+        # The pills follow, so Scale then Manual by clicking still reverts.
+        pills = {b.text(): b for b in page.rate_od_mode.parentWidget().findChildren(QPushButton)}
+        self.assertTrue(pills["Manual"].isChecked())
+        pills["Scale"].click()
+        pills["Manual"].click()
+        self.assertEqual(page.rate_rows[0].od, od)
+
+    def test_each_row_writes_its_own_od_and_hp(self):
+        self.window.show_toast = lambda _: None
+        for rate in (1.3, 1.4):
+            (self.path.parent / f"audio {rate:g}x.mp3").write_bytes(b"0")
+            self.page.rate_buttons[rate].click()
+        self.page.rate_table.cellWidget(0, 4).setValue(7.5)
+        self.page.rate_table.cellWidget(1, 5).setValue(2)
+        self.page.convert_rates()
+        values = [metadata.read_keys(parse_osu(p).lines, "Difficulty") for p in self._written()]
+        self.assertEqual(values[0]["OverallDifficulty"], "7.5")
+        self.assertEqual(values[1]["HPDrainRate"], "2")
+
+    def test_osus_selection_becomes_the_source_and_falls_back_when_it_goes(self):
+        page = self.page
+        selected = parse_osu(self.path)  # a separate document: the one osu! has
+        page.rate_buttons[1.2].click()
+        image = QImage(32, 18, QImage.Format_RGB32)
+        image.fill(0xff3366)
+        page._osu_read((("folder", self.path.name), selected, image))
+        self.assertIs(page._rate_document, selected)
+        self.assertFalse(page.rate_background.pixmap().isNull())  # osu!'s map's background
+        self.assertIn("selected in osu!", page.rate_original.text())
+        page._osu_read((("folder", self.path.name), None, None))  # unchanged: nothing moves
+        self.assertIs(page._rate_document, selected)
+        page._osu_read(None)  # osu! closed
+        self.assertIs(page._rate_document, self.state.document)
+        self.assertIn("being edited", page.rate_original.text())
+
+    def test_reading_osu_parses_only_a_new_selection(self):
+        from unittest import mock
+        from library import osu_memory
+        songs = self.path.parent.parent
+        key = (self.path.parent.name, self.path.name)
+        with mock.patch.object(osu_memory, "current_difficulty", return_value=key):
+            found = misc_page.read_osu_selection(songs, None)
+            self.assertEqual((found[0], found[1].source_path.name), (key, self.path.name))
+            self.assertEqual(misc_page.read_osu_selection(songs, key), (key, None, None))
+        with mock.patch.object(osu_memory, "current_difficulty", side_effect=osu_memory.OsuNotFound("x")):
+            self.assertIsNone(misc_page.read_osu_selection(songs, key))
 
     def test_a_difficulty_is_added_to_the_pack_once(self):
         toasts = []

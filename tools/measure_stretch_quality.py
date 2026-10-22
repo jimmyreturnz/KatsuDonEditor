@@ -58,8 +58,15 @@ def decode(path: str, app: QApplication) -> array.array:
     decoder.finished.connect(app.quit)
     decoder.setSource(QUrl.fromLocalFile(path))
     decoder.start()
-    QTimer.singleShot(60000, app.quit)
+    # A timer of its own, stopped after: a bare singleShot outlives this call
+    # and quits a *later* decode's loop mid-file, which read as a rate whose
+    # notes could not be measured.
+    timeout = QTimer()
+    timeout.setSingleShot(True)
+    timeout.timeout.connect(app.quit)
+    timeout.start(60000)
     app.exec()
+    timeout.stop()
     pcm = array.array("h")
     pcm.frombytes(b"".join(chunks))
     return pcm

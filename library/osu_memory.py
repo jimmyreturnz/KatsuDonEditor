@@ -12,6 +12,7 @@ Read-only (`PROCESS_VM_READ`): nothing here writes to the game.
 from __future__ import annotations
 
 import sys
+import threading
 
 BASE_SIGNATURE = bytes.fromhex("F8 01 74 04 83 65")
 BEATMAP_FROM_BASE = -0xC
@@ -158,15 +159,19 @@ def _osu_pid() -> int | None:
 
 
 _process: OsuProcess | None = None
+# The Rate Changer polls from a worker thread while the Mappack Creator asks
+# from the GUI one: without this, both could start the one-second scan.
+_lock = threading.Lock()
 
 
 def current_difficulty() -> tuple[str, str]:
     """(folder under Songs, .osu file name) osu! has selected. Raises
     `OsuNotFound` with a sentence to show when it cannot say."""
     global _process
-    if _process is None or not _process.alive():
-        _process = OsuProcess()
-    folder, name = _process.current()
+    with _lock:
+        if _process is None or not _process.alive():
+            _process = OsuProcess()
+        folder, name = _process.current()
     if not folder or not name:
         raise OsuNotFound("osu! has no beatmap selected.")
     return folder, name

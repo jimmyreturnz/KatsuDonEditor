@@ -391,6 +391,10 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
         # The y a rubber band started at, which on a split layer is the row it
         # selects in. None for every drag that is not a selection.
         self._drag_y: float | None = None
+        # What a Ctrl rubber band adds to: (note indexes, line uids) selected
+        # when it started. None for a plain band, which replaces.
+        self._band_base: tuple[set, set] | None = None
+        self._move_clicked: tuple = (None, None)
 
         # Slider/spinner placement is click-drag (start -> stop), not a
         # single click with a fixed length.
@@ -942,10 +946,16 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
 
         # A left click clears the selection before the drag rebuilds it, so a
         # plain click with no drag deselects rather than silently keeping a
-        # selection the user has visibly moved on from.
-        if self.selected:
-            self.selected.clear()
-            self.selection_changed.emit(set())
+        # selection the user has visibly moved on from. Ctrl adds the band to
+        # it instead, osu!'s rule -- and with the select tool Ctrl is free here,
+        # since its whole-millisecond meaning only matters where something lands.
+        if event.modifiers() & Qt.ControlModifier:
+            self._band_base = (set(self.selected), set(self.selected_timing_uids))
+        else:
+            self._band_base = None
+            if self.selected:
+                self.selected.clear()
+                self.selection_changed.emit(set())
         self.drag_start_x=event.position().x(); self.drag_mouse_x=self.drag_start_x
         self._drag_y = event.position().y()
         self.drag_anchor_time=self.time_for_x(self.drag_start_x); self.grabMouse(); self.auto_scroll_timer.start(); self.update()
@@ -965,6 +975,8 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
             note is not None and note.original_index in self.selected
             or point is not None and point.uid in self.selected_timing_uids
         )
+        # The object under the cursor alone, for a Ctrl+click that never drags.
+        self._move_clicked = (note, point)
         if in_selection:
             self._move_note_uids = [n.uid for n in self.selected_notes()]
             self._move_point_uids = sorted(self.selected_timing_uids)
@@ -1019,7 +1031,7 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
         self._move_delta = max(-self._move_origin, target - self._move_origin)
         self.update()
 
-    def _finish_move(self) -> None:
+    def _finish_move(self, toggle: bool = False) -> None:
         self.releaseMouse()
         delta = self._move_delta
         note_uids, point_uids = self._move_note_uids, self._move_point_uids
@@ -1053,10 +1065,19 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
             # governs what a press *off* the body grabs, so a drag started
             # beside a note on a dense chart still boxes rather than nudging.
             grabbed = set(note_uids)
-            self.selected = {
+            indexes = {
                 note.original_index for note in self.notes if note.uid in grabbed
             }
-            self.selected_timing_uids = set(point_uids)
+            if toggle:
+                # Ctrl+click adds or removes the one object, so picking the
+                # K's out of `d kdd K d K` is three clicks. Not the grabbed
+                # uids: a press on a selected note grabbed the whole selection.
+                note, point = self._move_clicked
+                self.selected ^= {note.original_index} if note is not None else set()
+                self.selected_timing_uids ^= {point.uid} if point is not None else set()
+            else:
+                self.selected = indexes
+                self.selected_timing_uids = set(point_uids)
             self.selection_changed.emit(set(self.selected))
         self.update()
 
@@ -1080,6 +1101,9 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
                 for point in self.timing_points
                 if a <= point.time <= b and self._owns_timing_point(point)
             }
+        if self._band_base is not None:
+            self.selected |= self._band_base[0]
+            self.selected_timing_uids |= self._band_base[1]
         self.selection_changed.emit(set(self.selected)); self.update()
     def mouseMoveEvent(self,event) -> None:
         if self._bar_scrubbing:
@@ -1170,7 +1194,7 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
             event.accept()
             return
         if self._move_origin is not None:
-            self._finish_move()
+            self._finish_move(toggle=bool(event.modifiers() & Qt.ControlModifier))
             return
         if self._placing_tool is not None:
             self.releaseMouse()
@@ -1221,7 +1245,7 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
         # someone clicked inside them to select/place/inspect a note.
         if not self.editor_view and abs(event.position().x()-(self.drag_start_x or 0.0))<5:
             self.current_time=self.snap_ms(self.time_for_x(event.position().x())); self.seek_requested.emit(self.current_time)
-        self.drag_start_x=None; self.drag_anchor_time=None; self.update()
+        self.drag_start_x=None; self.drag_anchor_time=None; self._band_base=None; self.update()
         # Previewing on every mouse-move would be far too expensive, so the
         # expensive refresh is deferred until the drag actually ends.
         self.selection_finalized.emit(set(self.selected))

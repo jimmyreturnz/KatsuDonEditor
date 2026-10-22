@@ -4226,6 +4226,7 @@ class MainWindow(QMainWindow):
             self.gameplay_render_timer.stop()
             self.info_timer.stop()
             self.settings.set_value("fancy/dock_state", self.fancy_docks.saveState())
+            self.settings.set_value("window/geometry", self.saveGeometry())
             self._release_application_hooks()
             self._release_audio_file()
             self._library.stop_preview()
@@ -9231,6 +9232,8 @@ class MainWindow(QMainWindow):
                     at for at in selected
                     if round(at) in lengths and low_length <= lengths[round(at)] <= high_length
                 ]
+            if layer_id == "sv_chart":
+                selected = self._only_selected_notes(state, selected)
             return selected
         placement = params.get("placement", "notes")
         if placement == "snaps":
@@ -9251,11 +9254,26 @@ class MainWindow(QMainWindow):
                     break
                 cursor += step
             return times
-        return sorted({
+        return self._only_selected_notes(state, sorted({
             float(note.time)
             for note in state.document.hit_objects
             if start_ms - 0.001 <= note.time <= end_ms + 0.001
-        })
+        }))
+
+    def _only_selected_notes(self, state: DifficultyState, times: list[float]) -> list[float]:
+        """`times` cut down to the notes selected in this difficulty's chart
+        views, or all of them when none of those is in `times` -- so
+        Ctrl+clicking the K's of `d kdd K d K` and then dragging Generate over
+        the run puts SV on the K's alone, while a forgotten selection somewhere
+        else in the map does not turn a Generate here into nothing."""
+        chosen = {
+            round(note.time)
+            for frame in [*self._editor_views, *self._gimmick_views]
+            if getattr(frame, "chart_view", None) is not None
+            and self._states.get(getattr(frame, "difficulty_path", None)) is state
+            for note in frame.chart_view.selected_notes()
+        }
+        return [at for at in times if round(at) in chosen] or times
 
     def _generate_sv(
         self, difficulty_path: Path, start_ms: float, end_ms: float, params: dict,
@@ -11430,7 +11448,13 @@ def main() -> None:
     icon=application_icon()
     if not icon.isNull():app.setWindowIcon(icon)
     window = MainWindow()
-    window.showMaximized()
+    # Last session's size and place, maximized or not; restoreGeometry also
+    # pulls a window back onto the screen if its monitor has since gone.
+    geometry = settings.value("window/geometry")
+    if isinstance(geometry, (QByteArray, bytes)) and geometry and window.restoreGeometry(QByteArray(geometry)):
+        window.show()
+    else:
+        window.showMaximized()
     window._library.start()
     if update_failure:
         QMessageBox.warning(

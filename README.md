@@ -15,7 +15,7 @@ Taiko Fancy Arranger started as a tool for turning osu!taiko notes into visual p
 
 The editor does not support editing storyboards, breaks, colours, editor bookmarks yet.
 
-> **Current release:** v3.5.7  
+> **Current release:** v3.5.8  
 > **Platform:** Windows x64  
 > **Author:** [jimmyreturnz](https://osu.ppy.sh/users/11306153)
 
@@ -57,13 +57,13 @@ The main inspirations include Alchyr's ranked maps *13 Stairs* and *Helios*, whi
 
 ---
 
-## What is new in 3.5.7
+## What is new in 3.5.8
 
-- **Taiko to Mania:** a taiko difficulty as a 4K osu!mania chart in the autoplay's hands (every playstyle and binding), or 1K, scrolling at the chart BPM, with hitsounds on the notes.
-- **Mappack Creator:** difficulties from any sets as one submittable set, with a Delete difficulty for the 100 MB cap, collected tags, and Load / Update to edit a pack later.
-- **Add from osu!:** Alt+Shift+A, or a button, reads the difficulty osu! has selected.
+- **Rate Changer:** the difficulty selected in osu! at any rate from 0.5x to 2x, as new difficulties with their own MP3 or OGG, pitch kept or changed, OD scaled or typed, and every 1ms gimmick structure intact.
+- **Ctrl+click** adds or removes one note from the selection.
+- **The window reopens at the size it was closed at.**
 
-Details: [`docs/releases/v3.5.7.md`](docs/releases/v3.5.7.md)
+Details: [`docs/releases/v3.5.8.md`](docs/releases/v3.5.8.md)
 
 
 The full development log is in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md).
@@ -72,7 +72,7 @@ The full development log is in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLA
 
 ## Windows SmartScreen notice
 
-Taiko Fancy Arranger v3.5.7 is an unsigned Windows application. The release validates its input files, ships with automated tests, and publishes SHA-256 checksums.
+Taiko Fancy Arranger v3.5.8 is an unsigned Windows application. The release validates its input files, ships with automated tests, and publishes SHA-256 checksums.
 
 Windows Defender SmartScreen may still show an "unrecognized app" warning, because a new executable has no download reputation yet.
 
@@ -483,7 +483,7 @@ Do not upload copyrighted audio or private beatmap assets unless permission has 
 
 ## Project status
 
-Version 3.5.7 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
+Version 3.5.8 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
 
 Not yet implemented, and next in line:
 

@@ -15,7 +15,7 @@ Taiko Fancy Arranger started as a tool for turning osu!taiko notes into visual p
 
 The editor does not support editing storyboards, breaks, colours, editor bookmarks yet.
 
-> **Current release:** v3.5.8  
+> **Current release:** v3.5.9  
 > **Platform:** Windows x64  
 > **Author:** [jimmyreturnz](https://osu.ppy.sh/users/11306153)
 
@@ -57,13 +57,14 @@ The main inspirations include Alchyr's ranked maps *13 Stairs* and *Helios*, whi
 
 ---
 
-## What is new in 3.5.8
+## What is new in 3.5.9
 
-- **Rate Changer:** the difficulty selected in osu! at any rate from 0.5x to 2x, as new difficulties with their own MP3 or OGG, pitch kept or changed, OD scaled or typed, and every 1ms gimmick structure intact.
-- **Ctrl+click** adds or removes one note from the selection.
-- **The window reopens at the size it was closed at.**
+- **Rate Changer without ffmpeg works again**: it failed with "mode must be r, rb, w, or wb" whenever it had to write WAV.
+- **Rate Changer:** a target BPM instead of a rate, any rate up to 1000 BPM, every cell of the table typeable, resizable columns, a remove button per row, and names from a template such as `{name} at {bpm}BPM ({rate}x)`.
+- **One copy across gimmick layers:** notes and a barline structure picked in different layers paste together.
+- **The tab switch sound can be turned off.**
 
-Details: [`docs/releases/v3.5.8.md`](docs/releases/v3.5.8.md)
+Details: [`docs/releases/v3.5.9.md`](docs/releases/v3.5.9.md)
 
 
 The full development log is in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md).
@@ -72,7 +73,7 @@ The full development log is in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLA
 
 ## Windows SmartScreen notice
 
-Taiko Fancy Arranger v3.5.8 is an unsigned Windows application. The release validates its input files, ships with automated tests, and publishes SHA-256 checksums.
+Taiko Fancy Arranger v3.5.9 is an unsigned Windows application. The release validates its input files, ships with automated tests, and publishes SHA-256 checksums.
 
 Windows Defender SmartScreen may still show an "unrecognized app" warning, because a new executable has no download reputation yet.
 
@@ -483,7 +484,7 @@ Do not upload copyrighted audio or private beatmap assets unless permission has 
 
 ## Project status
 
-Version 3.5.8 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
+Version 3.5.9 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
 
 Not yet implemented, and next in line:
 

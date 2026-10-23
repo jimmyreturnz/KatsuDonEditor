@@ -73,7 +73,10 @@ def write_audio(pcm: bytes, path_stem: Path, suffix: str = ".mp3") -> Path:
             return target
         target.unlink(missing_ok=True)  # a build without that encoder: WAV it is
     target = path_stem.with_name(path_stem.name + ".wav")
-    with wave.open(str(target), "xb") as handle:
+    # "xb" through open(), not wave.open(): wave takes only r/rb/w/wb, so
+    # every machine without ffmpeg failed here ("mode must be r, rb, w, or
+    # wb", a user's report 2026-10-23). x keeps an existing file untouched.
+    with open(target, "xb") as raw, wave.open(raw, "wb") as handle:
         handle.setnchannels(CHANNELS)
         handle.setsampwidth(2)
         handle.setframerate(SAMPLE_RATE)

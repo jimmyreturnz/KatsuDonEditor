@@ -171,7 +171,8 @@ class MiscPageTests(WindowTestCase):
         box = page.rate_table.cellWidget(0, 3).findChild(QCheckBox)
         box.click()
         self.assertEqual([r.pitch for r in page.rate_rows], [False, True])
-        self.assertTrue(page.rate_table.item(1, 6).text().startswith(self.state.version + " 1.2x ("))
+        name = page.rate_table.cellWidget(1, misc_page.COL_NAME)
+        self.assertTrue(name.placeholderText().startswith(self.state.version + " 1.2x ("))
 
     def test_scale_fills_od_and_typing_one_goes_back_to_manual(self):
         page = self.page
@@ -211,13 +212,62 @@ class MiscPageTests(WindowTestCase):
         image.fill(0xff3366)
         page._osu_read((("folder", self.path.name), selected, image))
         self.assertIs(page._rate_document, selected)
-        self.assertFalse(page.rate_background.pixmap().isNull())  # osu!'s map's background
+        self.assertIsNotNone(page.rate_banner._art)  # osu!'s map's background
         self.assertIn("selected in osu!", page.rate_original.text())
         page._osu_read((("folder", self.path.name), None, None))  # unchanged: nothing moves
         self.assertIs(page._rate_document, selected)
         page._osu_read(None)  # osu! closed
         self.assertIs(page._rate_document, self.state.document)
         self.assertIn("being edited", page.rate_original.text())
+
+    def test_a_bpm_becomes_the_rate_that_reaches_it(self):
+        page = self.page
+        bpm = page._rate_chart[0]
+        page.rate_bpm.setValue(round(bpm * 1.19, 1))
+        page.rate_add_bpm.click()
+        (row,) = page.rate_rows
+        self.assertAlmostEqual(bpm * row.rate, round(bpm * 1.19, 1), delta=0.01)
+        self.assertEqual(row.rate, round(row.rate, rate_change.RATE_DECIMALS))
+        self.assertAlmostEqual(page.rate_table.cellWidget(0, misc_page.COL_BPM).value(), bpm * row.rate, places=1)
+
+    def test_editing_a_row_moves_its_pill_and_remove_unchecks_it(self):
+        page = self.page
+        page.rate_buttons[1.2].click()
+        page.rate_table.cellWidget(0, misc_page.COL_RATE).setValue(1.3)
+        self.assertEqual([r.rate for r in page.rate_rows], [1.3])
+        self.assertEqual((page.rate_buttons[1.2].isChecked(), page.rate_buttons[1.3].isChecked()), (False, True))
+        page.rate_table.cellWidget(0, misc_page.COL_REMOVE).click()
+        self.assertEqual(page.rate_rows, [])
+        self.assertFalse(page.rate_buttons[1.3].isChecked())
+
+    def test_the_name_template_and_a_typed_name(self):
+        page = self.page
+        page.rate_buttons[1.2].click()
+        # The suite shares one settings file, and every later test would
+        # read this template.
+        self.addCleanup(self.window.settings.set_value, "rates/name_template", rate_change.DEFAULT_NAME_TEMPLATE)
+        page.rate_name_template.setText("{name} at {bpm}BPM ({rate}x)")
+        bpm = round(page._rate_chart[0] * 1.2)
+        name = page.rate_table.cellWidget(0, misc_page.COL_NAME)
+        self.assertEqual(name.placeholderText(), f"{self.state.version} at {bpm}BPM (1.2x)")
+        self.assertEqual(self.window.settings.string_value("rates/name_template"), "{name} at {bpm}BPM ({rate}x)")
+        page._row_name_typed(page.rate_rows[0], "Mine")
+        self.assertEqual(page._row_version(page._rate_document, page.rate_rows[0]), "Mine")
+
+    def test_one_name_twice_is_refused_before_any_work(self):
+        toasts = []
+        self.window.show_toast = toasts.append
+        page = self.page
+        # The suite shares one settings file, and every later test would
+        # read this template.
+        self.addCleanup(self.window.settings.set_value, "rates/name_template", rate_change.DEFAULT_NAME_TEMPLATE)
+        page.rate_name_template.setText("{name} fast")
+        for rate in (1.2, 1.3):
+            page.rate_buttons[rate].click()
+        page.convert_rates()
+        self.assertIn("more than one difficulty", toasts[-1])
+        self.assertIsNone(page._rate_run)
+        self.assertEqual(self._written(), [])
 
     def test_reading_osu_parses_only_a_new_selection(self):
         from unittest import mock

@@ -403,6 +403,11 @@ class SettingsDialog(QDialog):
                       "Measured in real time, so one value stays correct at every "
                       "playback speed."
                   ), scrub=self.output_offset_ms)
+
+        interface = page.group(self.tr("Interface"))
+        # Some players hate it (owner, 2026-10-23).
+        self.page_click_enabled = QCheckBox(self.tr("Tab switch sound"))
+        interface.switch(self.page_click_enabled, self.tr("The click when you change page."))
         return page
 
     def _skin_page(self, title: str) -> QWidget:
@@ -620,6 +625,7 @@ class SettingsDialog(QDialog):
             self.settings.bool_value(updater.SETTING_CHECK_ON_STARTUP, True)
         )
         self.hitsounds_enabled.setChecked(self.settings.bool_value("audio/hitsounds_enabled", True))
+        self.page_click_enabled.setChecked(self.settings.bool_value("audio/page_click", True))
         self.hitsound_volume.setValue(self.settings.int_value("audio/hitsound_volume", 70))
         self.hitsound_offset_ms.setValue(self.settings.int_value(
             "audio/hitsound_offset_ms", DEFAULT_HITSOUND_OFFSET_MS))
@@ -671,6 +677,7 @@ class SettingsDialog(QDialog):
             self.check_updates_on_startup.setChecked(True)
         elif page == "audio":
             self.hitsounds_enabled.setChecked(True)
+            self.page_click_enabled.setChecked(True)
             self.hitsound_volume.setValue(70)
             self.hitsound_offset_ms.setValue(DEFAULT_HITSOUND_OFFSET_MS)
             self.output_offset_ms.setValue(0)
@@ -733,6 +740,7 @@ class SettingsDialog(QDialog):
             updater.SETTING_CHECK_ON_STARTUP, self.check_updates_on_startup.isChecked()
         )
         self.settings.set_value("audio/hitsounds_enabled", self.hitsounds_enabled.isChecked())
+        self.settings.set_value("audio/page_click", self.page_click_enabled.isChecked())
         self.settings.set_value("audio/hitsound_volume", self.hitsound_volume.value())
         self.settings.set_value("audio/hitsound_offset_ms", self.hitsound_offset_ms.value())
         self.settings.set_value("audio/music_volume", self.music_volume.value())

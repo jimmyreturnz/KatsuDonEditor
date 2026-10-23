@@ -2686,6 +2686,34 @@ class GimmickClipboardTests(_GimmickFixture, unittest.TestCase):
         self.assertEqual(len(pasted), 2, pasted)
         self.assertEqual(pasted[1] - pasted[0], 1, "the structure kept its shape")
 
+    def test_one_copy_takes_every_layers_selection(self):
+        """Notes picked in layer 1 and a barline structure in the barline
+        layer are one clipboard, pasted as one undo step (owner, 2026-10-23)."""
+        self.window._place_gimmick("barline", "don", 10000)
+        self.barline.refresh_notes(self.document)
+        self.barline.selected_timing_uids = {
+            p.uid for p in self.document.timing_points
+            if p.uninherited and 9990 <= p.time <= 10010
+        }
+        notes = self.window._gimmick_views[0].chart_view
+        notes.refresh_notes(self.document)
+        note = next(n for n in self.document.hit_objects if n.time == 5000)
+        notes.selected = {note.original_index}
+
+        self.window._active_chart_view = self.barline
+        self.window._copy_notes()
+        self.barline.current_time = 30000.0
+        self.window._paste_notes()
+
+        # The note is the clipboard's earliest, so it lands on the playhead
+        # and the structure 5 seconds after it, as copied.
+        self.assertTrue(any(abs(n.time - 30000) <= 2 for n in self.document.hit_objects), "layer 1's note")
+        lines = [p for p in self.document.timing_points if p.uninherited and 34000 <= p.time <= 36000]
+        self.assertEqual(len(lines), 2, "the barline layer's red lines")
+        self.state.history.undo(self.state)
+        self.assertFalse(any(p.uninherited and 34000 <= p.time <= 36000 for p in self.document.timing_points))
+        self.assertFalse(any(abs(n.time - 30000) <= 2 for n in self.document.hit_objects), "one undo step")
+
     def test_a_copied_structure_keeps_its_green_line_and_its_file_order(self):
         """A Don fake slider's `fake_slider_sv` is what takes the squashed note
         the rest of the way off screen, and copy dropped every inherited point

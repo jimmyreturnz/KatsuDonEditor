@@ -579,9 +579,12 @@ class SongBanner(QWidget):
     seek_fraction = Signal(float)
     seek_step = Signal(int)
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, show_band: bool = True) -> None:
         super().__init__(parent)
         self._seeking = False
+        # False is the art and the words only, for a page that plays nothing
+        # (the Rate Changer's header, owner 2026-10-23).
+        self.show_band = show_band
         # The height the difficulty slots leave; see DIFFICULTY_SLOTS.
         self.setMinimumHeight(self.MIN_HEIGHT)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
@@ -788,7 +791,7 @@ class SongBanner(QWidget):
         return QRectF(12 + label, centre - height / 2, max(1.0, self.width() - 24 - 2 * label), height)
 
     def _in_seek_band(self, position) -> bool:
-        return position.y() >= self.height() - self.BAND_HEIGHT
+        return self.show_band and position.y() >= self.height() - self.BAND_HEIGHT
 
     def _seek_to(self, position) -> None:
         # The track is read here, per event, so a pane the splitter has
@@ -891,7 +894,7 @@ class SongBanner(QWidget):
         wash.setColorAt(1.0, QColor(13, 17, 23, 242))
         painter.fillRect(rect, wash)
 
-        text = rect.adjusted(14, 10, -14, -(self.BAND_HEIGHT + 2))
+        text = rect.adjusted(14, 10, -14, -(self.BAND_HEIGHT + 2 if self.show_band else 10))
         title_font = QFont(self.font())
         title_font.setPointSizeF(title_font.pointSizeF() * 1.55)
         title_font.setWeight(QFont.ExtraBold)
@@ -913,7 +916,8 @@ class SongBanner(QWidget):
         painter.drawText(text.adjusted(0, 0, 0, -sub_height), Qt.AlignLeft | Qt.AlignBottom | Qt.TextWordWrap,
                          self.title)
         painter.restore()
-        self._paint_band(painter, pulsing, phase, beat)
+        if self.show_band:
+            self._paint_band(painter, pulsing, phase, beat)
 
     def _paint_band(self, painter: QPainter, pulsing: bool, phase: float, beat: float) -> None:
         focus = theme.color(ROW_PINK_ON)

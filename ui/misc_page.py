@@ -38,7 +38,7 @@ from osu_io import metadata
 from osu_io.parser import parse_osu
 from ui.common import equalize_button_widths
 from ui.config_sheet import SEGMENT_STYLE, ConfigSheet, bind_segments, segmented, set_warning
-from ui.song_select import BackgroundJobs, decode_background_image
+from ui.song_select import BackgroundJobs, SongBanner, decode_background_image
 
 
 def shifted_lines(lines: list[str], delta_ms: int, ending: str) -> list[str]:
@@ -128,6 +128,16 @@ class BackgroundWell(QLabel):
 # is typed instead.
 PRESET_RATES = (0.8, 0.9, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5)
 
+# The Rate Changer's table. Length is derived; every other cell is the row's
+# own (owner, 2026-10-23), and the column widths are the user's to drag.
+COL_RATE, COL_BPM, COL_LENGTH, COL_PITCH, COL_OD, COL_HP, COL_NAME, COL_REMOVE = range(8)
+RATE_COLUMN_WIDTHS = {COL_RATE: 80, COL_BPM: 80, COL_LENGTH: 64, COL_PITCH: 100, COL_OD: 64, COL_HP: 64}
+# The ceiling before a chart says what its BPM is: 1000 BPM is the real one.
+DEFAULT_MAX_RATE = 100.0
+# The banner is as wide as the page, so its art is decoded wider than the
+# mappack's thumbnail.
+RATE_ART_WIDTH = 960
+
 # The typed rate and its + Add sit in a pill group of their own, reading as
 # pills: the box as a filled one, + Add in the bright ink rather than the
 # group's grey, since it is an action and not a choice.
@@ -147,6 +157,7 @@ class RateRow:
     pitch: bool
     od: float
     hp: float
+    name: str | None = None  # typed in the table; None is the name template's
 
 
 # How often the Rate Changer asks osu! what it has selected, while it is on
@@ -161,7 +172,7 @@ def rate_background(document) -> QImage | None:
     tools/measure_song_switch.py)."""
     name = mappack.background_name(document.lines)
     path = mappack.resolve_ci(document.source_path.parent, name) if name else None
-    return decode_background_image(path, 2 * BackgroundWell.WIDTH) if path is not None else None
+    return decode_background_image(path, RATE_ART_WIDTH) if path is not None else None
 
 
 def read_osu_selection(songs: Path, known):
@@ -574,40 +585,59 @@ class MiscPage(QWidget):
             self._osu_timer.start()
         rates = self.sheet.add_section("rate", tr("MainWindow", "Rate Changer"),
                                        tr("MainWindow", "osu!'s selected difficulty, or else the one being edited"))
+        # Song select's banner without its seek band (owner, 2026-10-23): the
+        # same art, title and font, and nothing here plays the song.
+        self.rate_banner = SongBanner(show_band=False)
+        self.rate_banner.setFixedHeight(SongBanner.MIN_HEIGHT)
         self.rate_original = QLabel()
         self.rate_original.setTextFormat(Qt.RichText)
-        self.rate_background = BackgroundWell(drops=False)
         original = QWidget()
-        original_row = QHBoxLayout(original)
-        original_row.setContentsMargins(0, 0, 0, 0)
-        original_row.setSpacing(12)
-        original_row.addWidget(self.rate_background)
-        original_row.addWidget(self.rate_original, 1)
+        original_column = QVBoxLayout(original)
+        original_column.setContentsMargins(0, 0, 0, 0)
+        original_column.setSpacing(6)
+        original_column.addWidget(self.rate_banner)
+        original_column.addWidget(self.rate_original)
         rates.field(tr("MainWindow", "Original"), original, span=2)
 
-        # One pill per rate; a rate typed below joins as a pill of its own, so
-        # every row in the table is a pill that is on, and off removes it.
+        # One pill per rate; a rate typed below joins as a pill of its own.
+        # A pill is on while some row is at its rate, so the table's own
+        # edits and its remove button move the pills too (`_sync_rate_pills`).
         self.rate_buttons: dict[float, QPushButton] = {}
         self.rate_presets = segmented([self._rate_pill(rate) for rate in PRESET_RATES])
         self.rate_customs = segmented([])
         self.rate_customs.setVisible(False)
         self.rate_custom = QDoubleSpinBox()
         self.rate_custom.setObjectName("rateInput")
-        self.rate_custom.setRange(rate_change.MIN_RATE, rate_change.MAX_RATE)
+        self.rate_custom.setRange(rate_change.MIN_RATE, DEFAULT_MAX_RATE)
         self.rate_custom.setDecimals(2)
         self.rate_custom.setSingleStep(0.05)
         self.rate_custom.setValue(1.05)
         self.rate_custom.setSuffix("x")
-        self.rate_custom.setButtonSymbols(QDoubleSpinBox.NoButtons)
-        self.rate_custom.setAlignment(Qt.AlignCenter)
-        self.rate_custom.setKeyboardTracking(False)
         self.rate_add = QPushButton(tr("MainWindow", "+ Add"))
         self.rate_add.setObjectName("rateAdd")
-        self.rate_add.clicked.connect(self._add_custom_rate)
-        self.rate_custom.lineEdit().returnPressed.connect(self._add_custom_rate)
+        self.rate_add.clicked.connect(lambda: self._add_custom_rate(self.rate_custom.value()))
+        self.rate_custom.lineEdit().returnPressed.connect(self.rate_add.click)
         manual = segmented([self.rate_add])
         manual.layout().insertWidget(0, self.rate_custom)
-        for frame in (self.rate_presets, self.rate_customs, manual):
+        # A BPM to reach, for "320 from a 269 BPM map": the rate is worked
+        # out here rather than by the mapper with a calculator.
+        self.rate_bpm = QDoubleSpinBox()
+        self.rate_bpm.setObjectName("rateInput")
+        self.rate_bpm.setRange(0.1, rate_change.MAX_BPM)
+        self.rate_bpm.setDecimals(1)
+        self.rate_bpm.setValue(200.0)
+        self.rate_bpm.setSuffix(" BPM")
+        self.rate_add_bpm = QPushButton(tr("MainWindow", "+ Add"))
+        self.rate_add_bpm.setObjectName("rateAdd")
+        self.rate_add_bpm.clicked.connect(self._add_bpm_rate)
+        self.rate_bpm.lineEdit().returnPressed.connect(self.rate_add_bpm.click)
+        by_bpm = segmented([self.rate_add_bpm])
+        by_bpm.layout().insertWidget(0, self.rate_bpm)
+        for spin in (self.rate_custom, self.rate_bpm):
+            spin.setButtonSymbols(QDoubleSpinBox.NoButtons)
+            spin.setAlignment(Qt.AlignCenter)
+            spin.setKeyboardTracking(False)
+        for frame in (self.rate_presets, self.rate_customs, manual, by_bpm):
             # The source, never styleSheet(): that is the active theme's
             # translation, and appending to it pins these to that theme.
             frame.setStyleSheet(SEGMENT_STYLE + RATE_INPUT_STYLE)
@@ -615,12 +645,13 @@ class MiscPage(QWidget):
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
-        for frame in (self.rate_presets, self.rate_customs, manual):
+        for frame in (self.rate_presets, self.rate_customs, manual, by_bpm):
             layout.addWidget(frame)
         layout.addStretch(1)
         rates.field(tr("MainWindow", "Rates"), row, tr(
-            "MainWindow", "Pick as many as you like, or type one from 0.5 to 2 and add it. Each becomes a "
-            "difficulty of its own, with its own audio file, timed as the rate mod would play it."), span=2)
+            "MainWindow", "Pick as many as you like, or type a rate or the BPM you want and add it, up to "
+            "1000 BPM. Each becomes a difficulty of its own, with its own audio file, timed as the rate "
+            "mod would play it."), span=2)
 
         self.rate_pitch = QComboBox()
         self.rate_pitch.addItem(tr("MainWindow", "Keep"), False)
@@ -646,22 +677,49 @@ class MiscPage(QWidget):
             "MainWindow", "The format each rate's song is written in. Both land on the same millisecond in "
             "osu!; MP3 is what osu-trainer writes. Needs ffmpeg, without which it is WAV."))
 
+        # The name as a template (owner, 2026-10-23): "Distracting at 300BPM",
+        # "... (1.2x)" and "Distracting at 1.2x" are all this box and its chips.
+        self.rate_name_template = QLineEdit(self.window.settings.string_value(
+            "rates/name_template", rate_change.DEFAULT_NAME_TEMPLATE))
+        self.rate_name_template.setPlaceholderText(rate_change.DEFAULT_NAME_TEMPLATE)
+        self.rate_name_template.textChanged.connect(self._name_template_changed)
+        chips = []
+        for label, token in ((tr("MainWindow", "Name"), "{name}"), (tr("MainWindow", "Rate"), "{rate}"),
+                             (tr("MainWindow", "BPM"), "{bpm}")):
+            chip = QPushButton(label)
+            chip.clicked.connect(partial(self._insert_name_token, token))
+            chips.append(chip)
+        naming = QWidget()
+        naming_row = QHBoxLayout(naming)
+        naming_row.setContentsMargins(0, 0, 0, 0)
+        naming_row.setSpacing(8)
+        naming_row.addWidget(self.rate_name_template, 1)
+        naming_row.addWidget(segmented(chips))
+        rates.field(tr("MainWindow", "Name"), naming, tr(
+            "MainWindow", "Each row's difficulty name: {name} is the original's, {rate} and {bpm} the row's. "
+            "A name typed into the table wins over this."), span=2)
+
         columns = [tr("MainWindow", "Rate"), tr("MainWindow", "BPM"), tr("MainWindow", "Length"),
                    tr("MainWindow", "Change pitch"), tr("MainWindow", "OD"), tr("MainWindow", "HP"),
-                   tr("MainWindow", "Difficulty name")]
+                   tr("MainWindow", "Difficulty name"), ""]
         self.rate_table = QTableWidget(0, len(columns))
         self.rate_table.setHorizontalHeaderLabels(columns)
         header = self.rate_table.horizontalHeader()
-        for column in range(len(columns) - 1):
-            header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(len(columns) - 1, QHeaderView.Stretch)
+        # Dragged wider or narrower by the user (owner, 2026-10-23); the name
+        # takes what is left, and the remove button keeps its own size.
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setSectionResizeMode(COL_NAME, QHeaderView.Stretch)
+        header.setSectionResizeMode(COL_REMOVE, QHeaderView.Fixed)
+        for column, width in RATE_COLUMN_WIDTHS.items():
+            header.resizeSection(column, max(width, header.sectionSizeHint(column)))
+        header.resizeSection(COL_REMOVE, 34)
         self.rate_table.verticalHeader().setVisible(False)
         self.rate_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.rate_table.setSelectionMode(QAbstractItemView.NoSelection)
         self.rate_table.setFocusPolicy(Qt.NoFocus)
         rates.field(tr("MainWindow", "Difficulties"), self.rate_table, tr(
-            "MainWindow", "One row per rate, each its own difficulty. Its pitch, OD and HP are its own."),
-            span=2)
+            "MainWindow", "One row per difficulty. Its rate, BPM, pitch, OD, HP and name are its own: change "
+            "the rate or the BPM and the other follows."), span=2)
 
         actions = QWidget()
         actions_row = QHBoxLayout(actions)
@@ -682,7 +740,7 @@ class MiscPage(QWidget):
         self._fill_rate_table()
 
     def _rate_pill(self, rate: float) -> QPushButton:
-        button = QPushButton(f"{rate:g}x")
+        button = QPushButton(f"{rate_change.rate_text(rate)}x")
         button.setCheckable(True)
         button.toggled.connect(lambda on, rate=rate: self._rate_toggled(rate, on))
         self.rate_buttons[rate] = button
@@ -691,12 +749,13 @@ class MiscPage(QWidget):
     def _fit_rate_pills(self) -> None:
         """Every pill, the typed rate and + Add the same size: measured once
         the sheet has given them their padding (see `fit_buttons`)."""
-        widgets = [*self.rate_buttons.values(), self.rate_add]
+        widgets = [*self.rate_buttons.values(), self.rate_add, self.rate_add_bpm]
         width = max(button.sizeHint().width() for button in widgets)
         width = max(width, self.rate_custom.fontMetrics().horizontalAdvance("0.55x") + 20)
         height = max(button.sizeHint().height() for button in widgets)
         for widget in (*widgets, self.rate_custom):
             widget.setFixedSize(width, height)
+        self.rate_bpm.setFixedSize(self.rate_bpm.fontMetrics().horizontalAdvance("1000.0 BPM") + 20, height)
 
     def _poll_osu(self) -> None:
         # Only while the section is on screen, and one read at a time.
@@ -730,7 +789,7 @@ class MiscPage(QWidget):
         # The edited chart's is decoded here: it changes once per opened map.
         image = (self._osu_background if self._osu_document is not None
                  else rate_background(self._rate_document) if self._rate_document is not None else None)
-        self.rate_background.show_image(image, tr("MainWindow", "No background"))
+        self.rate_banner.set_art(QPixmap.fromImage(image) if image is not None else None)
         self._load_rate_chart(self._rate_document)
 
     def _load_rate_chart(self, document) -> None:
@@ -740,10 +799,16 @@ class MiscPage(QWidget):
             self._rate_chart = (60000.0 / taiko_to_mania.chart_beat_length(document), mappack.length_ms(document),
                                 rate_change.difficulty_setting(document.lines, "OverallDifficulty"),
                                 rate_change.difficulty_setting(document.lines, "HPDrainRate"))
+        self.rate_custom.setMaximum(self._max_rate())
         # A new chart: every row starts again from its numbers.
         for row in self.rate_rows:
+            row.rate = min(row.rate, self._max_rate())
             row.od, row.hp = self._row_od(row.rate), self._rate_chart[3]
         self._fill_rate_table()
+
+    def _max_rate(self) -> float:
+        bpm = self._rate_chart[0]
+        return round(rate_change.MAX_BPM / bpm, rate_change.RATE_DECIMALS) if bpm > 0 else DEFAULT_MAX_RATE
 
     def _row_od(self, rate: float) -> float:
         od = self._rate_chart[2]
@@ -751,16 +816,27 @@ class MiscPage(QWidget):
 
     def _rate_toggled(self, rate: float, on: bool) -> None:
         if on:
-            self.rate_rows.append(RateRow(rate, bool(self.rate_pitch.currentData()), self._row_od(rate),
-                                          self._rate_chart[3]))
-            self.rate_rows.sort(key=lambda row: row.rate)
+            if all(row.rate != rate for row in self.rate_rows):
+                self.rate_rows.append(RateRow(rate, bool(self.rate_pitch.currentData()), self._row_od(rate),
+                                              self._rate_chart[3]))
+                self.rate_rows.sort(key=lambda row: row.rate)
         else:
             self.rate_rows = [row for row in self.rate_rows if row.rate != rate]
         self._fill_rate_table()
 
-    def _add_custom_rate(self) -> None:
-        rate = round(self.rate_custom.value(), 2)
-        if rate == 1.0:
+    def _sync_rate_pills(self) -> None:
+        rates = {row.rate for row in self.rate_rows}
+        for rate, button in self.rate_buttons.items():
+            # The pill's own signal only: it would add or remove a row again.
+            button.blockSignals(True)
+            button.setChecked(rate in rates)
+            button.blockSignals(False)
+
+    def _add_custom_rate(self, rate: float) -> None:
+        # Rounded once, here: a rate is the key of its pill, its row and its
+        # audio file, and 320/269 has no end. 4 places is 0.03 BPM at 269.
+        rate = round(min(rate, self._max_rate()), rate_change.RATE_DECIMALS)
+        if rate == 1.0 or rate < rate_change.MIN_RATE:
             return
         if rate not in self.rate_buttons:
             pill = self._rate_pill(rate)
@@ -768,6 +844,11 @@ class MiscPage(QWidget):
             self.rate_customs.layout().addWidget(pill)
             self.rate_customs.setVisible(True)
         self.rate_buttons[rate].setChecked(True)
+
+    def _add_bpm_rate(self) -> None:
+        bpm = self._rate_chart[0]
+        if bpm > 0:
+            self._add_custom_rate(self.rate_bpm.value() / bpm)
 
     def _pitch_for_every_row(self) -> None:
         for row in self.rate_rows:
@@ -804,32 +885,92 @@ class MiscPage(QWidget):
         row.pitch = on
         self._fill_rate_table()
 
+    def _row_rate_typed(self, row: "RateRow", rate: float) -> None:
+        row.rate = round(rate, rate_change.RATE_DECIMALS)
+        if self.rate_od_mode.currentData():
+            row.od = self._row_od(row.rate)
+        # The box is committed by now (keyboard tracking is off), so the table
+        # is rebuilt from the rows: BPM, length, OD and name all follow.
+        self._fill_rate_table()
+
+    def _row_bpm_typed(self, row: "RateRow", bpm: float) -> None:
+        if self._rate_chart[0] > 0:
+            self._row_rate_typed(row, bpm / self._rate_chart[0])
+
+    def _row_name_typed(self, row: "RateRow", text: str) -> None:
+        # Empty is "the template's again", not a difficulty with no name.
+        row.name = text.strip() or None
+
+    def _remove_rate_row(self, row: "RateRow") -> None:
+        self.rate_rows = [other for other in self.rate_rows if other is not row]
+        self._fill_rate_table()
+
+    def _name_template(self) -> str:
+        return self.rate_name_template.text().strip() or rate_change.DEFAULT_NAME_TEMPLATE
+
+    def _name_template_changed(self) -> None:
+        self.window.settings.set_value("rates/name_template", self.rate_name_template.text())
+        document = self._rate_document
+        if document is None:
+            return
+        # The placeholders only: rebuilt, the table would take the focus out
+        # of the box being typed in.
+        for index, row in enumerate(self.rate_rows):
+            edit = self.rate_table.cellWidget(index, COL_NAME)
+            if edit is not None:
+                edit.setPlaceholderText(self._row_version(document, replace(row, name=None)))
+
+    def _insert_name_token(self, token: str) -> None:
+        self.rate_name_template.insert(token)
+        self.rate_name_template.setFocus()
+
+    def _row_version(self, document, row: "RateRow") -> str:
+        return row.name or rate_change.version_name(document, row.rate, self._name_template())
+
     def _fill_rate_table(self) -> None:
         bpm, length, od, hp = self._rate_chart
         document = self._rate_document
+        self._sync_rate_pills()
+        self.rate_banner.setVisible(document is not None)
         if document is None:
             self.rate_original.setText(tr("MainWindow", "Select a map in osu!, or open one here."))
         else:
             values = metadata.read_keys(document.lines, "Metadata")
             where = (tr("MainWindow", "selected in osu!") if document is self._osu_document
                      else tr("MainWindow", "being edited"))
-            # As osu-trainer lays it out: the song big, then who and which
-            # difficulty, then the numbers every row starts from.
-            self.rate_original.setText("<br>".join((
-                f"<span style='font-size:15px; font-weight:700'>{escape(values.get('Title', ''))}</span>",
-                escape(values.get("Artist", "")),
-                tr("MainWindow", "[{0}] mapped by {1}").format(
-                    escape(values.get("Version", document.version)), escape(values.get("Creator", ""))),
+            creator = values.get("Creator", "")
+            self.rate_banner.set_text(values.get("Title", ""), " · ".join(part for part in (
+                values.get("Artist", ""),
+                tr("MainWindow", "mapped by {name}").format(name=creator) if creator else "") if part))
+            # Under the banner: which difficulty, then the numbers every row
+            # starts from.
+            self.rate_original.setText("  ·  ".join((
+                f"<b>[{escape(values.get('Version', document.version))}]</b>",
                 tr("MainWindow", "{0:.0f} BPM  ·  {1}  ·  OD {2:g}  ·  HP {3:g}").format(bpm, _clock(length), od, hp),
                 f"<i>{where}</i>")))
         table = self.rate_table
         table.setRowCount(len(self.rate_rows))
         for index, row in enumerate(self.rate_rows):
-            texts = (f"{row.rate:g}x", f"{bpm * row.rate:.0f}", _clock(length / row.rate))
-            for column, text in enumerate(texts):
-                item = QTableWidgetItem(text)
-                item.setTextAlignment(Qt.AlignCenter)
-                table.setItem(index, column, item)
+            for column, value, low, high, decimals, typed in (
+                    (COL_RATE, row.rate, rate_change.MIN_RATE, self._max_rate(), rate_change.RATE_DECIMALS,
+                     self._row_rate_typed),
+                    (COL_BPM, bpm * row.rate, 0.1, rate_change.MAX_BPM, 1, self._row_bpm_typed)):
+                spin = QDoubleSpinBox()
+                spin.setRange(low, high)
+                spin.setDecimals(decimals)
+                spin.setValue(value)
+                spin.setFrame(False)
+                spin.setAlignment(Qt.AlignCenter)
+                spin.setButtonSymbols(QDoubleSpinBox.NoButtons)
+                # Committed on Enter or on leaving the box, not per keystroke:
+                # "3" on the way to "320" is a 3 BPM row.
+                spin.setKeyboardTracking(False)
+                spin.setEnabled(bpm > 0 or column == COL_RATE)
+                spin.valueChanged.connect(partial(typed, row))
+                table.setCellWidget(index, column, spin)
+            item = QTableWidgetItem(_clock(length / row.rate))
+            item.setTextAlignment(Qt.AlignCenter)
+            table.setItem(index, COL_LENGTH, item)
             pitch = QCheckBox()
             pitch.setChecked(row.pitch)
             pitch.toggled.connect(partial(self._row_pitch_toggled, row))
@@ -837,8 +978,8 @@ class MiscPage(QWidget):
             centre = QHBoxLayout(holder)
             centre.setContentsMargins(0, 0, 0, 0)
             centre.addWidget(pitch, 0, Qt.AlignCenter)
-            table.setCellWidget(index, 3, holder)
-            for column, value, typed in ((4, row.od, self._row_od_typed), (5, row.hp, None)):
+            table.setCellWidget(index, COL_PITCH, holder)
+            for column, value, typed in ((COL_OD, row.od, self._row_od_typed), (COL_HP, row.hp, None)):
                 spin = QDoubleSpinBox()
                 spin.setRange(0.0, 10.0)
                 spin.setDecimals(1)
@@ -847,8 +988,18 @@ class MiscPage(QWidget):
                 spin.setFrame(False)
                 spin.valueChanged.connect(partial(typed, row) if typed else partial(setattr, row, "hp"))
                 table.setCellWidget(index, column, spin)
-            name = rate_change.version_name(document, row.rate) if document is not None else ""
-            table.setItem(index, 6, QTableWidgetItem(name))
+            name = QLineEdit(row.name or "")
+            name.setFrame(False)
+            # The template's name shows through until one is typed over it.
+            name.setPlaceholderText(self._row_version(document, replace(row, name=None))
+                                    if document is not None else "")
+            name.textEdited.connect(partial(self._row_name_typed, row))
+            table.setCellWidget(index, COL_NAME, name)
+            remove = QPushButton("✕")
+            remove.setFlat(True)
+            remove.setToolTip(tr("MainWindow", "Remove this difficulty"))
+            remove.clicked.connect(partial(self._remove_rate_row, row))
+            table.setCellWidget(index, COL_REMOVE, remove)
             table.setRowHeight(index, 34)
         # The table is as tall as its rows: no scrolling inside a scrolling page.
         table.setFixedHeight(table.horizontalHeader().height() + 34 * max(1, len(self.rate_rows)) + 4)
@@ -861,7 +1012,7 @@ class MiscPage(QWidget):
             reused = [row for row in self.rate_rows if self._existing_audio(document, row) is not None]
             if reused:
                 notes.append(tr("MainWindow", "Already rendered, reused: {0}").format(
-                    ", ".join(f"{row.rate:g}x" for row in reused)))
+                    ", ".join(f"{rate_change.rate_text(row.rate)}x" for row in reused)))
         self.rate_note.setText("  ·  ".join(notes))
 
     def _existing_audio(self, document, row: "RateRow") -> str | None:
@@ -879,9 +1030,21 @@ class MiscPage(QWidget):
         document = self._rate_document
         if self._rate_run is not None or document is None or not self.rate_rows:
             return
-        rows = [replace(row) for row in self.rate_rows]
-        # Refused before the render rather than after it, as mania refuses.
-        taken = [rate_change.destination(document, row.rate) for row in rows]
+        # Each row's name fixed now, from the template as it stands.
+        rows = [replace(row, name=self._row_version(document, row)) for row in self.rate_rows]
+        # Refused before the render rather than after it, as mania refuses:
+        # one name twice in a batch, or the original's own, would otherwise
+        # be found out a minute in, by the write.
+        # Folded, because the file names are, on Windows.
+        own = metadata.read_keys(document.lines, "Metadata").get("Version", document.version).casefold()
+        names = [row.name.casefold() for row in rows]
+        clash = next((rows[index].name for index, name in enumerate(names)
+                      if name in names[:index] or name == own), None)
+        if clash is not None:
+            self.window.show_toast(tr("MainWindow", "Not converted: more than one difficulty would be "
+                                      "called {0}.").format(clash))
+            return
+        taken = [rate_change.destination(document, row.rate, row.name) for row in rows]
         taken = [path for path in taken if path.exists()]
         if taken:
             self.window.show_toast(tr("MainWindow", "Not converted: {0} already exists.").format(taken[0].name))
@@ -970,7 +1133,7 @@ class MiscPage(QWidget):
                 continue  # its render failed, and a chart without its song is no use
             try:
                 written.append(rate_change.write(run["document"], row.rate, row.pitch, audio_file,
-                                                 od=row.od, hp=row.hp))
+                                                 od=row.od, hp=row.hp, version=row.name))
             except (OSError, ValueError) as error:
                 run["failed"] = str(error)
         self._fill_rate_table()

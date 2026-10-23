@@ -3944,8 +3944,10 @@ class MainWindow(QMainWindow):
         """The skin's difficulty click, for a page the user changed -- a tab,
         or Esc back to the songs -- at full level rather than the effects
         volume the difficulty list plays it at (owner, 2026-10-09). Not in
-        _show_page: loading a map changes page too, and that is not a click."""
-        self._library.play_ui_sound("select_difficulty", volume=1.0)
+        _show_page: loading a map changes page too, and that is not a click.
+        Off in Settings for the players who hate it (owner, 2026-10-23)."""
+        if self.settings.bool_value("audio/page_click", True):
+            self._library.play_ui_sound("select_difficulty", volume=1.0)
 
     def _reload_timing_bars(self, state, force: bool = False) -> None:
         """Rebuild every kiai/bookmark/marker bar from `state`.
@@ -8224,11 +8226,25 @@ class MainWindow(QMainWindow):
         view = self._active_chart_view
         if view is None:
             return
-        notes = view.selected_notes()
-        lines = [
-            point for point in view.timing_points
-            if point.uid in view.selected_timing_uids
-        ]
+        # Every gimmick layer of this difficulty, not only the focused one
+        # (owner, 2026-10-23): notes picked in layer 1 and a barline structure
+        # in the barline layer are one clipboard and one paste. Each layer
+        # keeps its own selection already, so this is a union, not a new mode.
+        sources = [view]
+        if getattr(view, "gimmick_layer", None) is not None:
+            difficulty = self._difficulty_for_view(view)
+            sources += [
+                frame.chart_view for frame in self._gimmick_views
+                if getattr(frame, "difficulty_path", None) == difficulty
+                and getattr(frame, "chart_view", None) not in (None, view)
+            ]
+        notes = list({
+            note.uid: note for source in sources for note in source.selected_notes()
+        }.values())
+        lines = list({
+            point.uid: point for source in sources for point in source.timing_points
+            if point.uid in source.selected_timing_uids
+        }.values())
         if not notes and not lines:
             return
         # Grown into the whole structure first, the same way a drag and a delete

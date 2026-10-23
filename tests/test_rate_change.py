@@ -140,6 +140,33 @@ class ScaledDocumentTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             rate_change.write(source, 1.2, False, "audio 1.2x.ogg")
 
+    def test_the_default_template_is_the_old_name_and_any_order_works(self):
+        source = load()
+        self.assertEqual(rate_change.version_name(source, 1.2), "Oni 1.2x (144bpm)")
+        self.assertEqual(rate_change.version_name(source, 1.2, "{name} at {bpm}BPM"), "Oni at 144BPM")
+        self.assertEqual(rate_change.version_name(source, 320 / 120, "{rate}x {name} {"), "2.667x Oni {")
+
+    def test_the_audio_name_keeps_every_place_a_rate_has(self):
+        self.assertEqual(rate_change.audio_name("a.mp3", 1.2, False, ".ogg"), "a 1.2x.ogg")
+        self.assertEqual(rate_change.audio_name("a.mp3", 1.18959, True, ""), "a 1.1896x pitched")
+
+
+class WavFallbackTests(unittest.TestCase):
+    def test_without_ffmpeg_the_song_is_a_wav(self):
+        """`wave.open` takes no "xb", so every machine without ffmpeg failed
+        here with "mode must be r, rb, w, or wb" (a user, 2026-10-23)."""
+        import wave
+        from unittest import mock
+        from audio import rate_render
+        stem = Path(tempfile.mkdtemp()) / "audio 1.2x"
+        pcm = bytes(4 * 441)
+        with mock.patch.object(rate_render.shutil, "which", return_value=None):
+            path = rate_render.write_audio(pcm, stem)
+            with self.assertRaises(FileExistsError):
+                rate_render.write_audio(pcm, stem)  # never over a file already there
+        with wave.open(str(path), "rb") as handle:
+            self.assertEqual((path.suffix, handle.getnframes()), (".wav", 441))
+
 
 if __name__ == "__main__":
     unittest.main()

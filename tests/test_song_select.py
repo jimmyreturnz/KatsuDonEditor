@@ -522,6 +522,10 @@ class PageTests(unittest.TestCase):
         self.window._switch_page(gui.PAGE_EDITOR)  # already there: no page changed
         self.window._show_page(gui.PAGE_LIBRARY)   # a map loading, not a click
         self.assertEqual(played, [("select_difficulty", 1.0)])
+        # Off in Settings, a page change is silent.
+        self.window.settings.bool_value = lambda key, default=False: key != "audio/page_click" and default
+        self.window._switch_page(gui.PAGE_EDITOR)
+        self.assertEqual(len(played), 1)
 
     def test_a_new_song_expands_and_a_new_difficulty_clicks(self):
         played = self._record_ui_sounds()

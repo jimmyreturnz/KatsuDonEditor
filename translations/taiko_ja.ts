@@ -3165,8 +3165,8 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>+ 追加</translation>
         </message>
         <message>
-            <source>Pick as many as you like, or type one from 0.5 to 2 and add it. Each becomes a difficulty of its own, with its own audio file, timed as the rate mod would play it.</source>
-            <translation>好きなだけ選ぶか、0.5〜2の値を入力して追加します。それぞれが専用の音声ファイルを持つ別の難易度になり、レートModで遊んだときと同じタイミングになります。</translation>
+            <source>Pick as many as you like, or type a rate or the BPM you want and add it, up to 1000 BPM. Each becomes a difficulty of its own, with its own audio file, timed as the rate mod would play it.</source>
+            <translation>好きなだけ選ぶか、レートか目標のBPMを入力して追加します(1000 BPMまで)。それぞれが専用の音声ファイルを持つ別の難易度になり、レートModで遊んだときと同じタイミングになります。</translation>
         </message>
         <message>
             <source>Keep</source>
@@ -3197,8 +3197,24 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>難易度名</translation>
         </message>
         <message>
-            <source>One row per rate, each its own difficulty. Its pitch, OD and HP are its own.</source>
-            <translation>1行が1つのレートで、それぞれ別の難易度になります。ピッチ、OD、HPは行ごとに設定できます。</translation>
+            <source>One row per difficulty. Its rate, BPM, pitch, OD, HP and name are its own: change the rate or the BPM and the other follows.</source>
+            <translation>1行が1つの難易度です。レート、BPM、ピッチ、OD、HP、名前は行ごとに設定できます。レートかBPMを変えるともう一方も追従します。</translation>
+        </message>
+        <message>
+            <source>Each row's difficulty name: {name} is the original's, {rate} and {bpm} the row's. A name typed into the table wins over this.</source>
+            <translation>各行の難易度名です。{name}は元の難易度名、{rate}と{bpm}はその行の値になります。表に直接入力した名前が優先されます。</translation>
+        </message>
+        <message>
+            <source>Name</source>
+            <translation>名前</translation>
+        </message>
+        <message>
+            <source>Not converted: more than one difficulty would be called {0}.</source>
+            <translation>変換されませんでした: 複数の難易度が「{0}」という名前になります。</translation>
+        </message>
+        <message>
+            <source>Remove this difficulty</source>
+            <translation>この難易度を削除</translation>
         </message>
         <message>
             <source>Create Map(s)</source>
@@ -3858,6 +3874,18 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
     </context>
     <context>
         <name>SettingsDialog</name>
+        <message>
+            <source>Interface</source>
+            <translation>インターフェース</translation>
+        </message>
+        <message>
+            <source>Tab switch sound</source>
+            <translation>タブ切り替え音</translation>
+        </message>
+        <message>
+            <source>The click when you change page.</source>
+            <translation>ページを切り替えたときのクリック音です。</translation>
+        </message>
         <message>
             <source>Appearance</source>
             <translation>外観</translation>

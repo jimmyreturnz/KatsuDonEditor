@@ -31,7 +31,23 @@ from chart.time_axis import osu_round
 from osu_io import metadata
 from osu_io.writer import write_osu
 
-MIN_RATE, MAX_RATE = 0.5, 2.0
+# Any rate with a BPM above zero, up to 1000 BPM on the chart's main line
+# (owner, 2026-10-23): a 727 BPM song mapped in 1/2 plays at ~360, so the
+# ceiling is a BPM, not a rate.
+MIN_RATE = 0.01
+MAX_BPM = 1000.0
+# Every rate is rounded to this when it is chosen, so it can key its audio
+# file exactly: 320/269 has no end, and 4 places is 0.03 BPM at 269.
+RATE_DECIMALS = 4
+# Today's name, the default of the user's own template (owner, 2026-10-23).
+DEFAULT_NAME_TEMPLATE = "{name} {rate}x ({bpm}bpm)"
+
+
+def rate_text(rate: float) -> str:
+    """A rate as a name shows it: 320/269 reads 1.19, not 1.1896. The
+    audio file's name keeps every place (`audio_name`), because two rates a
+    name cannot tell apart must not share a song."""
+    return f"{round(rate, 3):g}"
 
 
 def time_map(times, rate: float) -> dict[float, int]:
@@ -153,28 +169,31 @@ def dt_od(od: float, rate: float) -> float:
 
 def audio_name(audio_filename: str, rate: float, pitch: bool, suffix: str) -> str:
     stem = Path(audio_filename).stem
-    return f"{stem} {rate:g}x{' pitched' if pitch else ''}{suffix}"
+    return f"{stem} {round(rate, RATE_DECIMALS):g}x{' pitched' if pitch else ''}{suffix}"
 
 
-def version_name(document, rate: float) -> str:
+def version_name(document, rate: float, template: str = DEFAULT_NAME_TEMPLATE) -> str:
+    """`template` with {name}, {rate} and {bpm} filled in. Replaced rather
+    than str.format, so a stray brace typed into the box is just a brace."""
     version = metadata.read_keys(document.lines, "Metadata").get("Version", document.version)
     bpm = 60000.0 / chart_beat_length(document) * rate
     # Pitch is not in the name (owner, 2026-10-23); the audio file keeps it,
     # so both versions of one rate can sit in the folder and be reused.
-    return f"{version} {rate:g}x ({bpm:.0f}bpm)"
+    return (template.replace("{name}", version).replace("{rate}", rate_text(rate))
+            .replace("{bpm}", f"{bpm:.0f}").strip())
 
 
-def destination(document, rate: float) -> Path:
+def destination(document, rate: float, version: str | None = None) -> Path:
     """Where `write` puts this rate: checked before the audio is rendered, so
     a conversion that would be refused is refused before a minute of work."""
     values = metadata.read_keys(document.lines, "Metadata")
     return document.source_path.parent / metadata.osu_filename(
         values.get("Artist", ""), values.get("Title", ""), values.get("Creator", ""),
-        version_name(document, rate))
+        version or version_name(document, rate))
 
 
 def write(document, rate: float, pitch: bool, audio_file: str,
-          od: float | None = None, hp: float | None = None) -> Path:
+          od: float | None = None, hp: float | None = None, version: str | None = None) -> Path:
     """Write `document` at `rate` beside it, playing `audio_file` (a name in
     the same folder), and return the new .osu's path."""
     scaled = scaled_document(document, rate, od, hp)
@@ -184,8 +203,8 @@ def write(document, rate: float, pitch: bool, audio_file: str,
     # From the source, not the scaled lines: a file with no ApproachRate
     # takes its OD as AR, and that is the OD it had, not the one typed here.
     original = document.lines
-    return write_osu(replace(scaled, lines=lines), destination(document, rate),
-                     version_name(document, rate),
+    version = version or version_name(document, rate)
+    return write_osu(replace(scaled, lines=lines), destination(document, rate, version), version,
                      force_ar=difficulty_setting(original, "ApproachRate",
                                                  difficulty_setting(original, "OverallDifficulty")),
                      force_cs=difficulty_setting(original, "CircleSize"))

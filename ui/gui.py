@@ -71,7 +71,8 @@ from chart.autoplay import HITSOUND_SAMPLES, hitsound_keys
 from library.mappack import place_file, resolve_ci
 from chart.sv_curves import sv_ease
 from chart.time_axis import (
-    KIAI_OPEN_END_MS, SNAP_DIVISORS, TimeAxisMixin, osu_snap_ms, resnap_time, snap_time,
+    KIAI_OPEN_END_MS, RESNAP_TOLERANCE_MS, SNAP_DIVISORS, TimeAxisMixin, osu_snap_ms, own_divisor, resnap_time,
+    snap_time,
 )
 from chart.gimmick_session import (
     FAKE_SLIDER_MAX_LENGTH, FAKE_SLIDER_RESTORE_OFFSET_MS, GimmickConfig, GimmickConfigError,
@@ -8297,9 +8298,9 @@ class MainWindow(QMainWindow):
         divisor = int(view.snap_divisor)
         self._clipboard_divisor = divisor
 
-        def _off_grid(time_ms: float) -> int:
+        def _off_grid(time_ms: float, grid: int = divisor) -> int:
             return int(time_ms) - osu_snap_ms(
-                snap_time(view.snap_points, float(time_ms), divisor))
+                snap_time(view.snap_points, float(time_ms), grid))
 
         # Relative to the anchor's own, because the anchor is pasted *onto* the
         # destination snap: its offset from the source grid is spent by the
@@ -8309,10 +8310,38 @@ class MainWindow(QMainWindow):
         def residual(time_ms: float) -> int:
             return _off_grid(time_ms) - base_off_grid
 
+        # And each object's *own* grid, as a drag keeps it (`own_divisor`). On
+        # the view's 1/4 a 1/8 note is 46.875ms off, stored as a whole 47 and
+        # added back to a truncated 1/4 gridline: the fraction was lost, and 16
+        # of 480 pasted notes on Libertas landed a millisecond off their snap,
+        # which Resnap then moved (tools/measure_paste_snap.py). Both are kept:
+        # the own grid is only trusted where it lands within Resnap's reach,
+        # see `_paste_landing`.
+        #
+        # The grid *combined with* the view's and the anchor's: the anchor
+        # lands on one of the view's gridlines and everything else keeps its
+        # distance from the anchor, so a beat note pasted onto a 1/4 line is a
+        # 1/4 note there (on its own 1/1 it was snapped a whole 1/4 away), and
+        # with a triplet as the anchor every other note is a 1/12 one.
+        base_grid = own_divisor(view.snap_points, float(base)) or 1
+
+        def _combined(time_ms: float) -> int | None:
+            grid = own_divisor(view.snap_points, float(time_ms))
+            return None if grid is None else math.lcm(grid, base_grid, divisor)
+
+        base_own_off_grid = _off_grid(base, _combined(base) or divisor)
+
+        def own(time_ms: float) -> dict:
+            grid = _combined(time_ms)
+            if grid is None:
+                return {}
+            return {"own_divisor": grid, "own_residual": _off_grid(time_ms, grid) - base_own_off_grid}
+
         self._note_clipboard = [
             {
                 "offset": note.time - base,
                 "residual": residual(note.time),
+                **own(note.time),
                 "x": note.x, "y": note.y, "type": note.type, "hit_sound": note.hit_sound,
                 "extras": tuple(note.extras), "hit_sample": note.hit_sample,
                 # A spinner's length, taken now: its extras hold an absolute
@@ -8325,6 +8354,7 @@ class MainWindow(QMainWindow):
             {
                 "offset": point.time - base,
                 "residual": residual(point.time),
+                **own(point.time),
                 "beat_length": point.beat_length, "meter": point.meter,
                 "sample_set": point.sample_set, "sample_index": point.sample_index,
                 "volume": point.volume, "effects": point.effects,
@@ -8444,6 +8474,17 @@ class MainWindow(QMainWindow):
         since such a section has no grid a mapper is aligning to.
         """
         raw = base + int(entry["offset"])
+        if "own_divisor" in entry:
+            # On the object's own grid first (see `_copy_notes`), which is
+            # what keeps a 1/8 note copied at 1/4 on its 1/8 snap -- but only
+            # within Resnap's reach of where the shift put it: across a BPM
+            # change a note on a 500ms beat is "1/1", and the new section's
+            # 1/1 grid is up to half a beat away (30500 became 30400).
+            own_grid, own_residual = int(entry["own_divisor"]), int(entry["own_residual"])
+            landed = osu_snap_ms(
+                snap_time(view.snap_points, float(raw - own_residual), own_grid)) + own_residual
+            if abs(landed - raw) <= RESNAP_TOLERANCE_MS:
+                return landed
         residual = int(entry.get("residual", 0))
         timing = active_uninherited_at(view.snap_points, float(raw))
         if timing is not None and abs(residual) * 2 >= timing.beat_length / divisor:

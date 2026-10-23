@@ -600,6 +600,31 @@ class ClipboardTests(WindowTestCase):
                     time_ms, grid,
                     f"division {index}: {time_ms} is not a snap of this grid")
 
+    def test_a_finer_note_lands_on_its_own_snap_not_the_copys(self):
+        """A 1/8 note copied at 1/4 is a fractional distance off the 1/4
+        grid. Stored as whole milliseconds and added back to a truncated 1/4
+        gridline, the fraction was lost and the note landed a millisecond off
+        its 1/8 snap -- which Resnap then moved, and the next note placed by
+        hand beside it came out a millisecond apart (owner, 2026-10-24)."""
+        view, beat = self._at_172_bpm()
+        eighth = beat / 8.0
+        for note, index in zip(self.state.document.hit_objects[:2], (0, 3)):
+            note.time = view.snap_ms(index * eighth, 8)
+        view.refresh_notes(self.state.document)
+        view.selected = {n.original_index for n in self.state.document.hit_objects[:2]}
+        self.window.copy_selection()
+
+        grid = {gui.osu_snap_ms(gui.snap_time(view.snap_points, index * eighth, 8)) for index in range(400)}
+        for quarter in range(5, 80):
+            view.current_time = view.snap_ms(quarter * 2 * eighth)
+            before = {n.uid for n in self.state.document.hit_objects}
+            self.window.paste_clipboard()
+            landed = [n.time for n in self.state.document.hit_objects if n.uid not in before]
+            for time_ms in landed:
+                self.assertIn(time_ms, grid, f"quarter {quarter}: {time_ms} is not a 1/8 snap")
+                self.assertEqual(gui.resnap_time(view.snap_points, time_ms), time_ms)
+            self.state.history.undo(self.state)
+
     def test_an_object_off_the_snap_stays_the_same_distance_off_it(self):
         """A gimmick object is deliberately 1-2ms off the grid and that offset
         is the structure -- snapping a paste must not flatten it onto the

@@ -470,6 +470,9 @@ class MiscPage(QWidget):
             for path in paths:
                 self.window._refresh_difficulty_views(path)
                 self.window._refresh_difficulty_sv_views(path)
+        state = getattr(self.window, "state", None)
+        if state is not None and state.source_path in paths:
+            self.window._show_chart_identity(state)
         self.window.status.setText(message)
 
     # -- actions --------------------------------------------------------------

@@ -325,6 +325,20 @@ class LibraryPageTests(unittest.TestCase):
         self.assertIn(str(other), self.window._library_cache)
         self.assertIn(str(self.song), load_cache(self.root / "index.json"))
 
+    def test_saving_new_metadata_relists_the_song(self):
+        """Owner, 2026-10-24: Artist and Title applied on the Misc page and
+        saved were still listed as the old ones, because the index is only
+        walked at startup."""
+        self.run_scan()
+        self.window._load_map_path(self.song, refresh_difficulties=True)
+        page = self.window.misc_page
+        page.refresh()
+        page.fields["Artist"].setText("Renamed")
+        page.fields["Title"].setText("Other Song")
+        page.apply_metadata()
+        self.window.save_all_states()
+        self.assertIn("Renamed - Other Song", self.window.song_list.item(0).text())
+
     def test_song_row_shows_the_mapper(self):
         self.run_scan()
         self.assertIn("jimmyreturnz", self.window.song_list.item(0).text())

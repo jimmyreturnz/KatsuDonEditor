@@ -90,6 +90,22 @@ class MiscPageTests(WindowTestCase):
         self.state.history.undo(self.state)
         self.assertNotEqual(metadata.read_keys(self.state.document.lines, "Metadata").get("Title"), "New Title")
 
+    def test_the_header_names_the_applied_artist_and_title(self):
+        """Owner, 2026-10-24: Artist and Title looked unchanged by Apply --
+        the header read them off disk, so it named the old ones until the
+        map was reopened, and undo left the new ones up."""
+        self.window._show_chart_identity(self.state)
+        old = self.window.chart_title_label.text()
+        for key, text in (("Artist", "New Artist"), ("Title", "New Title"),
+                          ("ArtistUnicode", "新アーティスト"), ("TitleUnicode", "新タイトル")):
+            self.page.fields[key].setText(text)
+        self.page.apply_metadata()
+        self.assertIn("New Artist - New Title", self.window.chart_title_label.text())
+        values = metadata.read_keys(self.state.document.lines, "Metadata")
+        self.assertEqual((values["ArtistUnicode"], values["TitleUnicode"]), ("新アーティスト", "新タイトル"))
+        self.window.undo()
+        self.assertEqual(self.window.chart_title_label.text(), old)
+
     def test_shift_moves_everything_and_undoes_exactly(self):
         notes = [n.time for n in self.state.document.hit_objects]
         points = [p.time for p in self.state.document.timing_points]

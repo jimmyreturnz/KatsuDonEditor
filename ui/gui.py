@@ -59,6 +59,7 @@ from app.settings import (
 from ui.settings_dialog import SettingsDialog
 from ui import theme, windose
 from app import launcher_entry, updater
+from osu_io import metadata
 from osu_io.parser import parse_osu, read_version
 from osu_io.timing import (
     EFFECT_KIAI, TimingPoint, active_point_at, active_uninherited_at, kiai_spans,
@@ -10146,11 +10147,15 @@ class MainWindow(QMainWindow):
         self._show_chart_identity(state)
 
     def _show_chart_identity(self, state: DifficultyState) -> None:
-        """The header's "which chart": difficulty, then artist - title and mapper."""
-        header = read_header(state.source_path) or {}
+        """The header's "which chart": difficulty, then artist - title and mapper.
+
+        From the document, not the file: the Misc page's Metadata Apply is an
+        edit until Save, and read off disk the header went on naming the old
+        Artist and Title until the map was reopened."""
+        header = metadata.read_keys(state.document.lines, "Metadata")
         self.chart_version_label.setText(state.document.version or state.source_path.stem)
-        title = " - ".join(part for part in (header.get("artist"), header.get("title")) if part)
-        creator = header.get("creator")
+        title = " - ".join(part for part in (header.get("Artist"), header.get("Title")) if part)
+        creator = header.get("Creator")
         mapper = tr("MainWindow", "mapped by {name}").format(name=creator) if creator else ""
         self.chart_title_label.setText("  ·  ".join(part for part in (title, mapper) if part))
 
@@ -10631,6 +10636,8 @@ class MainWindow(QMainWindow):
             self._refresh_difficulty_views(state.source_path)
             self._refresh_difficulty_sv_views(state.source_path)
         self.refresh_canvas()
+        if self.state is state:
+            self._show_chart_identity(state)
 
     def _reload_from_disk(self, paths, confirm: bool = False) -> None:
         """Re-read each open difficulty in `paths` from its .osu (F5).
@@ -11333,6 +11340,10 @@ class MainWindow(QMainWindow):
                 )
             except Exception as error:
                 errors.append(f"{state.source_path.name}: {type(error).__name__}: {error}")
+        # Song select's index is mtime-keyed and walked at startup, so a saved
+        # Artist or Title stayed listed as the old one all session.
+        for folder in {state.source_path.parent for state in dirty_states}:
+            self._library.reload_folder(folder, from_osu=False)
         if errors:
             QMessageBox.critical(self, tr("MainWindow", "Save failed"), "\n".join(errors))
         else:

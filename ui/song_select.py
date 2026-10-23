@@ -1878,7 +1878,21 @@ class LibraryPageController:
         item = self.song_list.currentItem()
         if item is None or item.data(Qt.UserRole) is None:
             return
-        folder = Path(item.data(Qt.UserRole))
+        self.reload_folder(Path(item.data(Qt.UserRole)))
+
+    def reload_folder(self, folder: Path, from_osu: bool = True) -> None:
+        """`reload_current_song` for any folder. `from_osu` False is this
+        app's own Save: osu!.db has nothing new and the open difficulties *are*
+        what was written, so neither is re-read -- only the index, or song
+        select went on listing the Artist and Title the file no longer has."""
+        if not from_osu:
+            # The library's own key, which a saved state's path (resolved, or
+            # cased differently) need not equal; a folder it never listed has
+            # nothing to update.
+            names = {os.path.normcase(str(folder)), os.path.normcase(str(folder.resolve()))}
+            folder = next((key for key in self.library_songs if os.path.normcase(str(key)) in names), None)
+            if folder is None:
+                return
         # A fresh dict, not the library's: `scan` drops every cache entry it
         # did not walk past, which over one folder is everything else.
         fresh: dict[str, list] = {}
@@ -1893,7 +1907,7 @@ class LibraryPageController:
         for difficulty in found:
             self._tempo_cache.pop(difficulty.path, None)
         songs_folder = self.window.settings.string_value("library/songs_folder", "")
-        if songs_folder:
+        if songs_folder and from_osu:
             self.load_star_ratings(Path(songs_folder))
         try:
             save_cache(self.window._library_cache_path(), self.library_cache)
@@ -1902,6 +1916,8 @@ class LibraryPageController:
         # Selection is kept by folder, but the row is re-set from -1 so the
         # difficulty list refills from the new entries.
         self.rebuild_song_list()
+        if not from_osu:
+            return
         # And the editor's copies of them, or opening one shows this session's
         # version rather than the file just re-read.
         resolved = folder.resolve()

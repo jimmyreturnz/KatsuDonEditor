@@ -204,8 +204,10 @@ beatmaps/
 test-beatmaps/
 test_beatmaps/
 
-# Claude Code agent worktrees and local session state
+# Claude Code agent worktrees, local session state and project notes
 .claude/
+CLAUDE.md
+CLAUDE.local.md
 
 # Compiled translation catalog. Generated from the .ts by
 # tools/compile_translations.bat, which run_from_source.bat and

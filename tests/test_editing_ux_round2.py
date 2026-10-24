@@ -96,13 +96,13 @@ class ToolShortcutTests(WindowTestCase):
         self.assertEqual(view.tool, "don")
         self.assertTrue(self.window.tool_buttons["don"].isChecked())
 
-    def test_digit_6_toggles_new_combo(self):
+    def test_digit_7_toggles_new_combo(self):
         view = self._chart_view()
         self.window._editor_view_focus_changed(None, view)
         self.assertFalse(view.new_combo)
-        self.window._tool_state.activate_tool_digit("6")
+        self.window._tool_state.activate_tool_digit("7")
         self.assertTrue(view.new_combo)
-        self.window._tool_state.activate_tool_digit("6")
+        self.window._tool_state.activate_tool_digit("7")
         self.assertFalse(view.new_combo)
 
     def test_digit_routes_to_sv_row_when_sv_view_is_active(self):
@@ -117,7 +117,7 @@ class ToolShortcutTests(WindowTestCase):
     def test_note_tool_buttons_show_numbered_labels(self):
         self.assertEqual(self.window.tool_buttons["select"].text(), "1. Select")
         self.assertEqual(self.window.tool_buttons["don"].text(), "2. Don")
-        self.assertEqual(self.window.new_combo_button.text(), "6. New Combo")
+        self.assertEqual(self.window.new_combo_button.text(), "7. New Combo")
 
     def test_sv_tool_buttons_show_numbered_labels(self):
         self.assertEqual(self.window.sv_tool_buttons["select"].text(), "1. Select")

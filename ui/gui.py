@@ -49,7 +49,7 @@ from model.commands import (
     MoveNotes, RemoveHitObjects, RemoveTimingPoints, SetNoteFields, SetNotePositions,
 )
 from model.editor_state import DifficultyState
-from model.hit_object import HITSOUND_CLAP, HITSOUND_FINISH, HitObject, TYPE_CIRCLE, TYPE_NEW_COMBO, TYPE_SLIDER, TYPE_SPINNER
+from model.hit_object import HITSOUND_FINISH, HITSOUND_WHISTLE, HitObject, TYPE_CIRCLE, TYPE_NEW_COMBO, TYPE_SLIDER, TYPE_SPINNER
 from app.settings import (
     NOTE_OPACITY_DEFAULT_PERCENT,
     NOTE_OPACITY_MIN_PERCENT,
@@ -2110,8 +2110,8 @@ class ToolStateController:
         self._tool_shortcuts_allowed = True
 
     def build_global_tool_row(self) -> QWidget:
-        """M3 note-editing tools: 1 select, 2 don, 3 kat, 4 slider, 5 spinner,
-        6 new combo. Also driven by the number keys themselves (see
+        """M3 note-editing tools: 1 select, 2 don, 3 kat, 4 finisher, 5 slider,
+        6 spinner, 7 new combo. Also driven by the number keys themselves (see
         build_tool_shortcuts) since these are meant to be pressed, not just
         clicked.
         """
@@ -2130,8 +2130,8 @@ class ToolStateController:
             ("3", "kat", tr("MainWindow", "3. Kat")),
             # Labels only -- "slider"/"spinner" have been the stable internal
             # tool ids since M3 and are what the .osu type bits mean.
-            ("4", "slider", tr("MainWindow", "4. Slider")),
-            ("5", "spinner", tr("MainWindow", "5. Spinner")),
+            ("5", "slider", tr("MainWindow", "5. Slider")),
+            ("6", "spinner", tr("MainWindow", "6. Spinner")),
         )
         for number, tool_id, label in tools:
             button = QPushButton(label)
@@ -2144,8 +2144,19 @@ class ToolStateController:
             tool_group.addButton(button)
             self.tool_buttons[tool_id] = button
             layout.addWidget(button)
+            if tool_id == "kat":
+                # A toggle beside the tools rather than one of them (owner,
+                # 2026-10-24): Shift held for good, so Kat with it on places a
+                # big kat. Off the exclusive group for that reason.
+                self.finisher_button = QPushButton(tr("MainWindow", "4. Finisher"))
+                self.finisher_button.setStyleSheet(TOOL_BUTTON_STYLE)
+                self.finisher_button.setCheckable(True)
+                self.finisher_button.setFixedHeight(self.window.TOOL_BUTTON_HEIGHT)
+                self.finisher_button.setFocusPolicy(Qt.NoFocus)
+                self.finisher_button.toggled.connect(self.set_active_finisher)
+                layout.addWidget(self.finisher_button)
 
-        self.new_combo_button = QPushButton(tr("MainWindow", "6. New Combo"))
+        self.new_combo_button = QPushButton(tr("MainWindow", "7. New Combo"))
         self.new_combo_button.setStyleSheet(TOOL_BUTTON_STYLE)
         self.new_combo_button.setCheckable(True)
         self.new_combo_button.setFixedHeight(self.window.TOOL_BUTTON_HEIGHT)
@@ -2224,7 +2235,7 @@ class ToolStateController:
         return row
 
     def build_tool_shortcuts(self) -> None:
-        """Number keys 1-6 as global tool shortcuts, not just clickable buttons.
+        """Number keys 1-7 as global tool shortcuts, not just clickable buttons.
 
         ApplicationShortcut context fires regardless of which widget has
         focus -- including window.timeline, the shared Fancy Arranger
@@ -2241,7 +2252,7 @@ class ToolStateController:
         regardless of which key ends up on it.
 
         One shortcut per *scoped* definition, not a fixed six: the Editor
-        page's toolbox is `tool_1`...`tool_6`, and each gimmick layer has its
+        page's toolbox is `tool_1`...`tool_7`, and each gimmick layer has its
         own set derived from its own toolbox (see the registration at the foot
         of this module), because the layers do not agree on what tool 2 is or
         even on how many tools there are.
@@ -2299,7 +2310,7 @@ class ToolStateController:
     def activate_tool_digit(self, digit: str) -> None:
         if should_ignore_shortcut_focus(QApplication.focusWidget()):
             return
-        note_tools = {"1": "select", "2": "don", "3": "kat", "4": "slider", "5": "spinner"}
+        note_tools = {"1": "select", "2": "don", "3": "kat", "5": "slider", "6": "spinner"}
         sv_tools = dict(zip("1234", self.sv_tools_for(self.active_sv_view)))
         # The gimmick page has its own row and its own meanings for 1-4, and it
         # is checked first: its row is always visible while that page is up,
@@ -2312,12 +2323,19 @@ class ToolStateController:
             tools = self.window.GIMMICK_TOOLSETS.get(layer or "", ())
             index = int(digit) - 1
             if 0 <= index < len(tools):
-                self.window.gimmick_tool_buttons[layer][tools[index][0]].setChecked(True)
+                button = self.window.gimmick_tool_buttons[layer][tools[index][0]]
+                # Finisher is a toggle, not a tool: its digit flips it.
+                if tools[index][0] == "finisher":
+                    button.toggle()
+                else:
+                    button.setChecked(True)
             return
         if self.global_tool_row.isVisible():
             if digit in note_tools:
                 self.tool_buttons[note_tools[digit]].setChecked(True)
-            elif digit == "6":
+            elif digit == "4":
+                self.finisher_button.toggle()
+            elif digit == "7":
                 self.new_combo_button.toggle()
         elif self.global_sv_tool_row.isVisible() and digit in sv_tools:
             self.sv_tool_buttons[sv_tools[digit]].setChecked(True)
@@ -2347,6 +2365,10 @@ class ToolStateController:
     def set_active_new_combo(self, value: bool) -> None:
         if self.active_chart_view is not None:
             self.active_chart_view.set_new_combo(value)
+
+    def set_active_finisher(self, value: bool) -> None:
+        if self.active_chart_view is not None:
+            self.active_chart_view.set_finisher(value)
 
     def editor_view_focus_changed(self, _old, new) -> None:
         # An ApplicationShortcut *consumes* its key, so the plain digits 1-6
@@ -2383,6 +2405,9 @@ class ToolStateController:
             if moved:
                 self.last_focused_editor_view = new
                 self.window.gimmick_tool_buttons[new.gimmick_layer]["select"].setChecked(True)
+            finisher = self.window.gimmick_tool_buttons[new.gimmick_layer].get("finisher")
+            if finisher is not None and hasattr(new, "set_finisher"):
+                new.set_finisher(finisher.isChecked())
             return
 
         if isinstance(new, TimelineGameplay) and new.editor_view:
@@ -2390,6 +2415,9 @@ class ToolStateController:
             if moved:
                 new.set_tool("select")
                 new.set_new_combo(False)
+            # Unlike a tool, the Finisher toggle is the row's and follows it
+            # into whichever view it now drives.
+            new.set_finisher(self.finisher_button.isChecked())
             self.last_focused_editor_view = new
             self.sync_global_tool_row()
             self.global_tool_row.setVisible(True)
@@ -4439,8 +4467,8 @@ class MainWindow(QMainWindow):
         # Editor page's own viewing-controls strip, left to right: beat-snap
         # (drives every open chart view together, not just one), merged
         # time+percentage, the timing bar (kiai/bookmarks/SV/BPM -- relocated
-        # here from the old shared player deck, not rebuilt), play + speed,
-        # then "open new view".
+        # here from the old shared player deck, not rebuilt), play and the
+        # mods. Speed is in the status bar.
         strip = QHBoxLayout()
         strip.setSpacing(6)
 
@@ -4457,10 +4485,9 @@ class MainWindow(QMainWindow):
         strip.addWidget(self.timing_bar, 1)
         self._timing_bars.append(self.timing_bar)
 
-        # Tool-row padding, not the window sheet's 8px/16px: this strip now
-        # carries a snap combo, the readout, the timing bar, play, four speeds,
-        # the Play difficulty and the view height, and the speed buttons were
-        # the widest things on it for the least information.
+        # Tool-row padding, not the window sheet's 8px/16px: this strip
+        # carries a snap combo, the readout, the timing bar, play and the mods.
+        # The speeds live in the status bar, beside View size.
         self.editor_play_button = QPushButton("▶")
         self.editor_play_button.setFocusPolicy(Qt.NoFocus)
         # Morphs like the Fancy Arranger's; the typed text stays for width.
@@ -4476,7 +4503,6 @@ class MainWindow(QMainWindow):
             button.setProperty("playbackRate", rate)
             button.clicked.connect(lambda checked=False, r=rate: self._choose_speed(r))
             self.editor_playback_speed_buttons.append(button)
-        strip.addWidget(segmented(self.editor_playback_speed_buttons))
         self._build_mod_strip(strip)
         # Widths for this row are equalized in showEvent (see there): derived
         # from the polished labels instead of hard-coded pixels, which stopped
@@ -4510,6 +4536,9 @@ class MainWindow(QMainWindow):
         height_row.setSpacing(4)
         height_row.addWidget(QLabel(tr("MainWindow", "View size")))
         height_row.addWidget(self.editor_view_height_spin)
+        # Speed beside View size, at the bottom (owner, 2026-10-24): the strip
+        # above gives the width it took to the timing bar.
+        status_row.addWidget(segmented(self.editor_playback_speed_buttons))
         status_row.addWidget(height_box)
         # A stepper nobody reaches for often: quiet, like the rest of the bar.
         for button in height_box.findChildren(QPushButton):
@@ -4602,7 +4631,6 @@ class MainWindow(QMainWindow):
             button.setProperty("playbackRate", rate)
             button.clicked.connect(lambda checked=False, r=rate: self._choose_speed(r))
             self.gimmick_playback_speed_buttons.append(button)
-        strip.addWidget(segmented(self.gimmick_playback_speed_buttons))
         self._build_mod_strip(strip)
 
         layout.addWidget(opaque_strip(strip))
@@ -4637,6 +4665,8 @@ class MainWindow(QMainWindow):
         self.gimmick_view_height_spin.setValue(self.settings.int_value(
             "gimmick/view_height", self.GIMMICK_LAYER_HEIGHT))
         self.gimmick_view_height_spin.valueChanged.connect(self._gimmick_view_height_changed)
+        # As on the Editor page: speed at the bottom, left of View size.
+        status_row.addWidget(segmented(self.gimmick_playback_speed_buttons))
         status_row.addWidget(QLabel(tr("MainWindow", "View size")))
         status_row.addWidget(self.gimmick_view_height_spin)
 
@@ -4681,12 +4711,12 @@ class MainWindow(QMainWindow):
     # line up with the shortcut keys whatever the layer.
     GIMMICK_TOOLSETS = {
         "chart": (
-            ("select", "Select"), ("don", "Don"), ("kat", "Kat"),
+            ("select", "Select"), ("don", "Don"), ("kat", "Kat"), ("finisher", "Finisher"),
             ("slider", "Slider"), ("spinner", "Spinner"), ("new_combo", "New Combo"),
         ),
         "fake_slider": (
             ("select", "Select"), ("regular", "Fake Slider"),
-            ("don", "Don"), ("kat", "Kat"), ("shiny", "Shiny"),
+            ("don", "Don"), ("kat", "Kat"), ("finisher", "Finisher"), ("shiny", "Shiny"),
             ("multi", "Multiple Fake Slider"),
             ("function", "Function"), ("convert", "Convert Notes"),
         ),
@@ -4766,14 +4796,20 @@ class MainWindow(QMainWindow):
             button.setFixedHeight(self.TOOL_BUTTON_HEIGHT)
             button.setStyleSheet(gimmick_button_style)
             button.setFocusPolicy(Qt.NoFocus)
+            buttons[tool_id] = button
+            layout.addWidget(button)
+            if tool_id == "finisher":
+                # A toggle, as on the Editor page: Shift held for good, so it
+                # stays out of the exclusive group.
+                button.toggled.connect(
+                    lambda checked, lid=layer_id: self._set_gimmick_finisher(lid, checked))
+                continue
             button.setChecked(tool_id == "select")
             button.toggled.connect(
                 lambda checked, t=tool_id, lid=layer_id:
                     self._set_gimmick_tool(lid, t) if checked else None
             )
             group.addButton(button)
-            buttons[tool_id] = button
-            layout.addWidget(button)
 
         config_button = QPushButton(tr("MainWindow", "Config"))
         config_button.setFixedHeight(self.TOOL_BUTTON_HEIGHT)
@@ -4842,6 +4878,12 @@ class MainWindow(QMainWindow):
             row.setVisible(layer_id == layer)
         self._active_gimmick_layer = layer
         self._tool_state.refresh_tool_shortcut_scope()
+
+    def _set_gimmick_finisher(self, layer_id: str, value: bool) -> None:
+        for frame in self._gimmick_views:
+            view = getattr(frame, "chart_view", None)
+            if getattr(frame, "gimmick_layer", None) == layer_id and view is not None:
+                view.set_finisher(value)
 
     def _set_gimmick_tool(self, layer_id: str, tool_id: str) -> None:
         """Set a tool on the one layer that owns it.
@@ -8111,6 +8153,8 @@ class MainWindow(QMainWindow):
     @property
     def new_combo_button(self): return self._tool_state.new_combo_button
     @property
+    def finisher_button(self): return self._tool_state.finisher_button
+    @property
     def resnap_button(self): return self._tool_state.resnap_button
     @property
     def sv_tool_buttons(self): return self._tool_state.sv_tool_buttons
@@ -8728,8 +8772,9 @@ class MainWindow(QMainWindow):
         no room for -- see _build_extendable_hit_object.
 
         Big (finisher) is the same HITSOUND_FINISH bit sliders already place
-        with Shift held; kat additionally keeps its clap bit, since a big kat
-        is a finisher clap, not a finisher replacing the clap.
+        with Shift held; kat additionally keeps its whistle bit, since a big
+        kat is a finisher whistle, not a finisher replacing the whistle. Kat
+        is whistle, osu!'s W (owner, 2026-10-24); it was a clap.
         """
         # Taiko gameplay ignores hit-object x/y entirely; center is the
         # convention used elsewhere in this codebase (e.g. the fake-slider
@@ -8740,7 +8785,7 @@ class MainWindow(QMainWindow):
         if note_kind == "don":
             return HitObject(x=x, y=y, time=time_ms, type=TYPE_CIRCLE | combo_bit, hit_sound=finisher_bit)
         if note_kind == "kat":
-            return HitObject(x=x, y=y, time=time_ms, type=TYPE_CIRCLE | combo_bit, hit_sound=HITSOUND_CLAP | finisher_bit)
+            return HitObject(x=x, y=y, time=time_ms, type=TYPE_CIRCLE | combo_bit, hit_sound=HITSOUND_WHISTLE | finisher_bit)
         raise ValueError(f"Unknown note kind: {note_kind}")
 
     def _place_note(self, difficulty_path: Path, note_kind: str, time_ms: float, new_combo: bool, big: bool = False) -> None:
@@ -9738,7 +9783,8 @@ class MainWindow(QMainWindow):
         # heights=True: TOOL_BUTTON_HEIGHT is a floor, and the polished hint is
         # what a label actually needs -- typed at 32 the descenders were clipped.
         equalize_button_widths(
-            [*self.tool_buttons.values(), self.new_combo_button, *self.sv_tool_buttons.values()],
+            [*self.tool_buttons.values(), self.finisher_button, self.new_combo_button,
+             *self.sv_tool_buttons.values()],
             heights=True,
         )
         # The gimmick rows are sized as their own set rather than folded into
@@ -9754,13 +9800,17 @@ class MainWindow(QMainWindow):
         # cannot happen at build time: the window's stylesheet (padding
         # included) is applied after the pages are built, so a button measured
         # there reports a width its padded self does not fit in.
-        equalize_button_widths([self.editor_play_button, *self.editor_playback_speed_buttons])
+        # Play and the speeds are apart now on the Editor and Gimmick pages
+        # (speed went to the status bar), so each is measured on its own.
+        equalize_button_widths([self.editor_play_button])
+        equalize_button_widths(self.editor_playback_speed_buttons)
         equalize_button_widths([self.timeline_play_button, *self.playback_speed_buttons])
         # Three playback rows, not two. The gimmick page's was left out of this
         # and so kept its build-time hint: unpadded, and measured before the
         # checked rule could make "100%" heavier -- five pixels short of its own
         # label, on the page this program is mostly used on.
-        equalize_button_widths([self.gimmick_play_button, *self.gimmick_playback_speed_buttons])
+        equalize_button_widths([self.gimmick_play_button])
+        equalize_button_widths(self.gimmick_playback_speed_buttons)
         # Page tabs: each pinned to what its label costs *checked* (bold), per
         # button so the four keep their ragged widths. Measured here, under
         # the segment's sheet -- at build time the frame's padding had not

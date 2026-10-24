@@ -9,6 +9,7 @@ from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication, QCheckBox, QPushButton
 
 from library import mappack
+from model.hit_object import HITSOUND_CLAP, HITSOUND_FINISH, HITSOUND_WHISTLE
 from osu_io import metadata
 from osu_io.parser import parse_osu
 from chart import rate_change
@@ -57,10 +58,24 @@ class MiscPageTests(WindowTestCase):
         """Owner, 2026-10-18: every section fit on screen, so a rail click
         scrolled nowhere and looked dead."""
         sheet = self.page.sheet
-        sheet._rail_buttons["offset"].click()
-        self.assertEqual([key for key, s in sheet.sections.items() if not s.isHidden()], ["offset"])
-        self.assertTrue(sheet._rail_buttons["offset"].isChecked())
+        sheet._rail_buttons["taiko"].click()
+        self.assertEqual([key for key, s in sheet.sections.items() if not s.isHidden()], ["taiko"])
+        self.assertTrue(sheet._rail_buttons["taiko"].isChecked())
         self.assertNotIn("hitsounds", sheet.sections)
+
+    def test_every_kat_takes_the_chosen_sound_and_keeps_its_size(self):
+        notes = self.window.state.document.hit_objects
+        circles = [note for note in notes if note.is_circle]
+        circles[0].hit_sound = HITSOUND_CLAP | HITSOUND_FINISH
+        circles[1].hit_sound = HITSOUND_CLAP
+        circles[2].hit_sound = 0
+        self.page.kat_sound_combo.setCurrentIndex(self.page.kat_sound_combo.findData(HITSOUND_WHISTLE))
+        self.page.set_kat_sound()
+        self.assertEqual(circles[0].hit_sound, HITSOUND_WHISTLE | HITSOUND_FINISH)
+        self.assertEqual(circles[1].hit_sound, HITSOUND_WHISTLE)
+        self.assertEqual(circles[2].hit_sound, 0, "a don stays a don")
+        self.window.undo()
+        self.assertEqual(circles[1].hit_sound, HITSOUND_CLAP)
 
     def test_tags_over_the_limit_cannot_be_applied(self):
         self.page.fields["Tags"].setText("x" * 1000)

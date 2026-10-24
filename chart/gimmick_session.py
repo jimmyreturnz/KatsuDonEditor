@@ -39,8 +39,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from model.hit_object import (
-    HITSOUND_CLAP,
     HITSOUND_FINISH,
+    HITSOUND_WHISTLE,
     TYPE_CIRCLE,
     TYPE_SLIDER,
     HitObject,
@@ -695,7 +695,7 @@ def gimmick_version_for(version: str) -> str:
 # actual don and an actual kat here; what the structure drawn beside that note
 # does to say which of the two it is differs per layer -- a fake slider changes
 # size (see `_SLIDER_HITSOUND`), a barline note changes how many bars it draws.
-_KIND_HITSOUND = {"regular": 0, "don": 0, "kat": HITSOUND_CLAP}
+_KIND_HITSOUND = {"regular": 0, "don": 0, "kat": HITSOUND_WHISTLE}
 
 # ...and the hitsound the *fake slider* carries. A drumroll has no don/kat of
 # its own -- it is yellow whatever is under it -- so the only thing it can say

@@ -9,8 +9,11 @@ table, where the two disagree:
   puts bookmarks on Ctrl and nudges a selection with it.
 - Up/Down move focus between the page's views (the owner's, not osu!'s: there
   they seek between timing points).
-- Q/W/E/R toggle new combo, whistle, finish, clap on the selection, as both
-  osu!s do; in taiko whistle or clap is what makes a kat, finish a big note.
+- Q toggles new combo on the selection. W and R make it kat (whistle or
+  clap) or, if it is all kat already, don -- toggling the bit alone left a
+  clap kat a kat under W. E toggles finish. With nothing selected, W switches
+  the Don/Kat tool and E the Finisher toggle (owner, 2026-10-24). W, E and R
+  work on the Gimmick page's chart and fake slider layers too.
 - Shift+1..9 set the snap divisor, Ctrl+G reverses the selection in time,
   Ctrl+X cuts, Ctrl+D clones one measure on -- stable's.
 - Z seeks to the first note, X to 00:00:000 and plays, C is a second
@@ -31,9 +34,13 @@ from PySide6.QtWidgets import QAbstractItemView, QAbstractSlider, QApplication, 
 from app.settings import should_ignore_shortcut_focus
 from chart.time_axis import wheel_seek_time
 from model.commands import CompositeCommand, SetNoteFields
-from model.hit_object import HITSOUND_CLAP, HITSOUND_FINISH, HITSOUND_WHISTLE, TYPE_NEW_COMBO
+from model.hit_object import HITSOUND_CLAP, HITSOUND_FINISH, HITSOUND_WHISTLE, KAT_HITSOUNDS, TYPE_NEW_COMBO
 from osu_io.timing import active_uninherited_at
 from ui.chart_views import editor_timeline_metadata
+
+# The Gimmick page's layers W, E and R reach: the plain chart and the fake
+# slider layer, the two whose Don and Kat are notes (owner, 2026-10-24).
+KEYED_GIMMICK_LAYERS = ("chart", "fake_slider")
 
 # What osu! steps by with Shift held (`Editor.seek`: amount 4 instead of 1).
 SHIFT_SEEK_STEPS = 4
@@ -57,6 +64,14 @@ def reversed_times(times: list[float]) -> list[float]:
         return []
     first, last = min(times), max(times)
     return [first + last - time for time in times]
+
+
+def toggled_kat(values: list[int], bit: int) -> list[int]:
+    """W/R over a selection: every value don again if all are kat already,
+    otherwise every don gains `bit` and a kat keeps the sound it has."""
+    if all(value & KAT_HITSOUNDS for value in values):
+        return [value & ~KAT_HITSOUNDS for value in values]
+    return [value if value & KAT_HITSOUNDS else value | bit for value in values]
 
 
 def toggled_bits(values: list[int], bit: int) -> list[int]:
@@ -94,9 +109,9 @@ class EditorKeys(QObject):
         ("focus_next_view", "_focus_view", (1,), "both"),
         *((f"snap_{d}", "_set_snap", (d,), "both") for d in range(1, 10)),
         ("toggle_new_combo", "_toggle_type", (TYPE_NEW_COMBO,), "editor"),
-        ("toggle_whistle", "_toggle_hitsound", (HITSOUND_WHISTLE,), "editor"),
-        ("toggle_finish", "_toggle_hitsound", (HITSOUND_FINISH,), "editor"),
-        ("toggle_clap", "_toggle_hitsound", (HITSOUND_CLAP,), "editor"),
+        ("toggle_whistle", "_toggle_kat", (HITSOUND_WHISTLE,), "both"),
+        ("toggle_finish", "_toggle_finish", (), "both"),
+        ("toggle_clap", "_toggle_kat", (HITSOUND_CLAP,), "both"),
         ("reverse_selection", "_reverse_selection", (), "editor"),
         ("cut", "_cut", (), "editor"),
         ("clone_selection", "_clone_selection", (), "editor"),
@@ -273,12 +288,27 @@ class EditorKeys(QObject):
         return self.window._states.get(path) if path is not None else None
 
     def _selection(self):
-        """(view, state, selected notes) on the Editor page's chart view."""
+        """(view, state, selected notes) on the focused chart view: the Editor
+        page's, or the Gimmick page's chart or fake slider layer."""
         view = self.window._active_chart_view
+        if self._page() == "gimmick":
+            layer = getattr(self.window, "_active_gimmick_layer", None)
+            if layer not in KEYED_GIMMICK_LAYERS or getattr(view, "gimmick_layer", None) != layer:
+                return None, None, []
         state = self._state_for(view)
         if state is None or not hasattr(view, "selected_notes"):
             return None, None, []
         return view, state, view.selected_notes()
+
+    def _tool_buttons(self) -> dict:
+        """The focused toolbox's buttons, by tool id; the Finisher toggle
+        is under "finisher" in both."""
+        if self._page() == "gimmick":
+            layer = getattr(self.window, "_active_gimmick_layer", None)
+            if layer not in KEYED_GIMMICK_LAYERS:
+                return {}
+            return self.window.gimmick_tool_buttons.get(layer, {})
+        return {**self.window.tool_buttons, "finisher": self.window._tool_state.finisher_button}
 
     def _push(self, view, state, commands, label: str) -> None:
         if not commands:
@@ -288,15 +318,35 @@ class EditorKeys(QObject):
         with self.window._refresh_cycle():
             self.window._refresh_difficulty_views(path)
 
-    def _toggle_hitsound(self, bit: int) -> None:
-        view, state, notes = self._selection()
-        if not notes:
-            return
-        values = toggled_bits([note.hit_sound for note in notes], bit)
+    def _set_hitsounds(self, view, state, notes, values) -> None:
         self._push(view, state, [
             SetNoteFields(note.uid, {"hit_sound": (note.hit_sound, value)})
             for note, value in zip(notes, values) if value != note.hit_sound
         ], "set_note_fields")
+
+    def _toggle_kat(self, bit: int) -> None:
+        view, state, notes = self._selection()
+        # Circles only: a drumroll or a fake slider has no don or kat of its own.
+        circles = [note for note in notes if note.is_circle]
+        if circles:
+            self._set_hitsounds(view, state, circles, toggled_kat([n.hit_sound for n in circles], bit))
+            return
+        if notes or bit != HITSOUND_WHISTLE:
+            return
+        # Nothing selected: W is the Don/Kat switch, osu!'s whistle toggle
+        # deciding what the next placement is.
+        buttons = self._tool_buttons()
+        if "don" in buttons and "kat" in buttons:
+            (buttons["don"] if buttons["kat"].isChecked() else buttons["kat"]).setChecked(True)
+
+    def _toggle_finish(self) -> None:
+        view, state, notes = self._selection()
+        if notes:
+            self._set_hitsounds(view, state, notes, toggled_bits([n.hit_sound for n in notes], HITSOUND_FINISH))
+            return
+        finisher = self._tool_buttons().get("finisher")
+        if finisher is not None:
+            finisher.toggle()
 
     def _toggle_type(self, bit: int) -> None:
         view, state, notes = self._selection()

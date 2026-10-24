@@ -1037,7 +1037,7 @@ class GimmickToolTests(_GimmickFixture, unittest.TestCase):
             # Kiai left for the Kiai and Sound Volume layer, which is where a
             # section that every layer is read against belongs.
             list(self.window.gimmick_tool_buttons["fake_slider"]),
-            ["select", "regular", "don", "kat", "shiny", "multi", "function", "convert"],
+            ["select", "regular", "don", "kat", "finisher", "shiny", "multi", "function", "convert"],
         )
         self.assertEqual(
             list(self.window.gimmick_tool_buttons["barline"]),

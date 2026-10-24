@@ -2160,11 +2160,12 @@ class KeepSvConversionTests(_Session, unittest.TestCase):
         # Owner, 2026-10-09 (Darling Game Over Love, 50841ms): a Kat's mirrored
         # bars sit before the note, and right after a speed change they still
         # carried the old speed, so the bars came apart.
+        from model.hit_object import HITSOUND_CLAP
         from osu_io.timing import TimingPoint
 
         jump = TimingPoint.inherited_at(4000, 0.5)  # on the note's own millisecond
         self.document.timing_points.append(jump)
-        self.document.hit_objects[12].hit_sound = gui.HITSOUND_CLAP  # 4000: a kat
+        self.document.hit_objects[12].hit_sound = HITSOUND_CLAP  # 4000: a kat
         after = self._convert(gui.ConvertNotesDialog.STRUCTURE, whole_map=True)
         # The Kat's own bars: 3990 is the fixture's own flat line.
         cluster = [p for p in after if not p.uninherited and 3992 <= p.time <= 4008]

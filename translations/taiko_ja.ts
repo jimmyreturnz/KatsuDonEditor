@@ -2705,16 +2705,64 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>5. 風船</translation>
         </message>
         <message>
-            <source>4. Slider</source>
-            <translation>4. 連打（スライダー）</translation>
+            <source>5. Slider</source>
+            <translation>5. 連打（スライダー）</translation>
         </message>
         <message>
-            <source>5. Spinner</source>
-            <translation>5. 風船（スピナー）</translation>
+            <source>6. Spinner</source>
+            <translation>6. 風船（スピナー）</translation>
         </message>
         <message>
-            <source>6. New Combo</source>
-            <translation>6. 新しいコンボ</translation>
+            <source>7. New Combo</source>
+            <translation>7. 新しいコンボ</translation>
+        </message>
+        <message>
+            <source>4. Finisher</source>
+            <translation>4. 大音符</translation>
+        </message>
+        <message>
+            <source>Finisher</source>
+            <translation>大音符</translation>
+        </message>
+        <message>
+            <source>Taiko Utilities</source>
+            <translation>太鼓ユーティリティ</translation>
+        </message>
+        <message>
+            <source>Offset: every difficulty in the set</source>
+            <translation>オフセット：セット内のすべての難易度</translation>
+        </message>
+        <message>
+            <source>SV: the difficulty being edited</source>
+            <translation>SV：編集中の難易度</translation>
+        </message>
+        <message>
+            <source>Kat hitsound: the difficulty being edited</source>
+            <translation>カッのヒットサウンド：編集中の難易度</translation>
+        </message>
+        <message>
+            <source>Whistle</source>
+            <translation>ホイッスル</translation>
+        </message>
+        <message>
+            <source>Clap</source>
+            <translation>クラップ</translation>
+        </message>
+        <message>
+            <source>Every kat plays</source>
+            <translation>すべてのカッの音</translation>
+        </message>
+        <message>
+            <source>Whistle and clap both make a kat, so this changes only what it sounds like. Finishers stay finishers.</source>
+            <translation>ホイッスルとクラップはどちらもカッになるため、変わるのは音だけです。大音符は大音符のままです。</translation>
+        </message>
+        <message>
+            <source>Apply to every kat</source>
+            <translation>すべてのカッに適用</translation>
+        </message>
+        <message>
+            <source>Changed the hitsound of {0} kats.</source>
+            <translation>{0}個のカッのヒットサウンドを変更しました。</translation>
         </message>
         <message>
             <source>2. Green Line</source>
@@ -4191,16 +4239,20 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>ツール3: カッ / 関数</translation>
         </message>
         <message>
-            <source>Tool 4: Slider</source>
-            <translation>ツール4: スライダー</translation>
+            <source>Tool 4: Finisher / Scale SV</source>
+            <translation>ツール4: 大音符 / SVスケール</translation>
         </message>
         <message>
-            <source>Tool 5: Spinner</source>
-            <translation>ツール5: スピナー</translation>
+            <source>Tool 5: Slider</source>
+            <translation>ツール5: スライダー</translation>
         </message>
         <message>
-            <source>Tool 6: New combo</source>
-            <translation>ツール6: 新コンボ</translation>
+            <source>Tool 6: Spinner</source>
+            <translation>ツール6: スピナー</translation>
+        </message>
+        <message>
+            <source>Tool 7: New combo</source>
+            <translation>ツール7: 新コンボ</translation>
         </message>
         <message>
             <source>Tools</source>
@@ -4259,16 +4311,16 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>選択の新規コンボを切り替え</translation>
         </message>
         <message>
-            <source>Toggle whistle on the selection (kat)</source>
-            <translation>選択のホイッスルを切り替え（カツ）</translation>
+            <source>Kat (whistle): the selection, else switch Don/Kat</source>
+            <translation>カッ（ホイッスル）：選択中の音符、なければドン/カッを切り替え</translation>
         </message>
         <message>
-            <source>Toggle finish on the selection (big note)</source>
-            <translation>選択のフィニッシュを切り替え（大音符）</translation>
+            <source>Finisher: the selection, else the Finisher toggle</source>
+            <translation>大音符：選択中の音符、なければ大音符トグル</translation>
         </message>
         <message>
-            <source>Toggle clap on the selection (kat)</source>
-            <translation>選択のクラップを切り替え（カツ）</translation>
+            <source>Kat (clap) on the selection</source>
+            <translation>選択中の音符をカッ（クラップ）に</translation>
         </message>
         <message>
             <source>Seek to the first note</source>

@@ -396,6 +396,43 @@ class BigVariantTests(_Layer2, unittest.TestCase):
         self.layer.note_place_requested.emit("regular", float(self.SNAP), False, True)
         self.assertTrue(self._sliders_at(self.slider_at)[0].is_finisher)
 
+    def test_the_finisher_toggle_is_shift_held_for_good(self) -> None:
+        """Owner, 2026-10-24: tool 5 here, E anywhere -- the same flag Shift
+        sets, without holding it."""
+        self._on_gimmick_page()
+        self.window._editor_view_focus_changed(None, self.layer)
+        buttons = self.window.gimmick_tool_buttons["fake_slider"]
+        buttons["regular"].setChecked(True)
+        self.window._tool_state.activate_tool_digit("5")
+        self.assertTrue(buttons["finisher"].isChecked())
+        self.assertEqual(self.layer.tool, "regular", "a toggle, not a tool")
+        self.assertTrue(self.layer.finisher)
+        self.window._editor_keys._toggle_finish()
+        self.assertFalse(self.layer.finisher)
+
+    def _on_gimmick_page(self) -> None:
+        # The fixture opens the session without showing the page, and the
+        # keys go by which page is up.
+        stack = patch.object(self.window.page_stack, "currentIndex", return_value=gui.PAGE_GIMMICK)
+        stack.start()
+        self.addCleanup(stack.stop)
+
+    def test_w_switches_the_layers_don_and_kat(self) -> None:
+        self._on_gimmick_page()
+        self.window._editor_view_focus_changed(None, self.layer)
+        buttons = self.window.gimmick_tool_buttons["fake_slider"]
+        buttons["don"].setChecked(True)
+        self.window._editor_keys._toggle_kat(gui.HITSOUND_WHISTLE)
+        self.assertTrue(buttons["kat"].isChecked(), "the layer's own Kat, not the Editor page's")
+        self.assertEqual(self.layer.tool, "kat")
+        self.window._editor_keys._toggle_kat(gui.HITSOUND_WHISTLE)
+        self.assertEqual(self.layer.tool, "don")
+
+    def test_a_kat_structures_note_is_a_whistle_kat(self) -> None:
+        self.window._place_gimmick("fake_slider", "kat", self.SNAP)
+        note = next(n for n in self.document.hit_objects if n.time == self.SNAP and n.is_circle)
+        self.assertEqual(note.hit_sound, gui.HITSOUND_WHISTLE)
+
     def test_the_ghost_previews_the_big_size(self) -> None:
         self.layer.set_tool("regular")
         self.layer.current_time = float(self.SNAP)

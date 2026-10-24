@@ -1,8 +1,9 @@
 """The Miscellaneous page (owner, 2026-10-18): set-wide chores that have no
-view of their own -- the beatmapset's metadata, shifting the whole map's
-offset, scaling every green line's SV, and converting a difficulty to
-osu!mania (`chart.taiko_to_mania`); a difficulty at other rates, song and
-all (`chart.rate_change`, `audio.rate_render`); and the Mappack Creator
+view of their own -- the beatmapset's metadata; Taiko Utilities, which shifts
+the whole map's offset, scales every green line's SV and sets every kat's
+hitsound; converting a difficulty to osu!mania (`chart.taiko_to_mania`); a
+difficulty at other rates, song and all (`chart.rate_change`,
+`audio.rate_render`); and the Mappack Creator
 (`library.mappack`), which gathers difficulties from other sets into a new one.
 
 Everything here is an ordinary undoable edit on each difficulty's own history,
@@ -33,7 +34,8 @@ from audio import rate_render
 from audio.audio_engine import CHANNELS, SAMPLE_RATE
 from chart import autoplay, rate_change, taiko_to_mania
 from library import mappack, osu_memory
-from model.commands import CompositeCommand, ReplaceDocumentLines, ShiftChartTimes
+from model.commands import CompositeCommand, ReplaceDocumentLines, SetNoteFields, ShiftChartTimes
+from model.hit_object import HITSOUND_CLAP, HITSOUND_WHISTLE, KAT_HITSOUNDS
 from osu_io import metadata
 from osu_io.parser import parse_osu
 from ui.common import equalize_button_widths
@@ -315,8 +317,16 @@ class MiscPage(QWidget):
         meta.add(self.apply_metadata_button, span=1)
         self.fields["Tags"].textChanged.connect(self._count_tags)
 
-        timing = self.sheet.add_section("offset", tr("MainWindow", "Offset"),
-                                        tr("MainWindow", "Every difficulty in the set"))
+        # Offset, SV and kat hitsounds on one page (owner, 2026-10-24): each is
+        # a single action over the chart, too small for a page of its own.
+        timing = self.sheet.add_section("taiko", tr("MainWindow", "Taiko Utilities"))
+
+        def caption(text: str) -> None:
+            label = QLabel(text)
+            label.setObjectName("sectionSub")
+            timing.add(label, span=2)
+
+        caption(tr("MainWindow", "Offset: every difficulty in the set"))
         self.offset_spin = QSpinBox()
         self.offset_spin.setRange(-100000, 100000)
         self.offset_spin.setSuffix(" ms")
@@ -327,10 +337,22 @@ class MiscPage(QWidget):
         self.shift_button.clicked.connect(self.shift_offset)
         timing.add(self.shift_button, span=1)
 
-        sv = self.sheet.add_section("sv", tr("MainWindow", "SV"), tr("MainWindow", "The difficulty being edited"))
+        caption(tr("MainWindow", "SV: the difficulty being edited"))
         self.scale_all_button = QPushButton(tr("MainWindow", "Scale every green line…"))
         self.scale_all_button.clicked.connect(self.scale_all_sv)
-        sv.add(self.scale_all_button, span=1)
+        timing.add(self.scale_all_button, span=1)
+        timing.break_row()
+
+        caption(tr("MainWindow", "Kat hitsound: the difficulty being edited"))
+        self.kat_sound_combo = QComboBox()
+        self.kat_sound_combo.addItem(tr("MainWindow", "Whistle"), HITSOUND_WHISTLE)
+        self.kat_sound_combo.addItem(tr("MainWindow", "Clap"), HITSOUND_CLAP)
+        timing.field(tr("MainWindow", "Every kat plays"), self.kat_sound_combo, tr(
+            "MainWindow", "Whistle and clap both make a kat, so this changes only what it sounds "
+                          "like. Finishers stay finishers."))
+        self.kat_sound_button = QPushButton(tr("MainWindow", "Apply to every kat"))
+        self.kat_sound_button.clicked.connect(self.set_kat_sound)
+        timing.add(self.kat_sound_button, span=1)
 
         mania = self.sheet.add_section("mania", tr("MainWindow", "Taiko to Mania"),
                                        tr("MainWindow", "The difficulty being edited"))
@@ -415,7 +437,7 @@ class MiscPage(QWidget):
         current = state.source_path if state is not None else None
         self.target_combo.blockSignals(False)
         for widget in (self.apply_metadata_button, self.shift_button, self.scale_all_button,
-                       self.mania_button):
+                       self.kat_sound_button, self.mania_button):
             widget.setEnabled(state is not None)
         self._load_mania_defaults(state)
         self._set_rate_source()
@@ -519,6 +541,21 @@ class MiscPage(QWidget):
             self.window.show_toast(tr("MainWindow", "This difficulty has no green lines."))
             return
         self.window.scale_sv_points(state.source_path, greens)
+
+    def set_kat_sound(self) -> None:
+        state = getattr(self.window, "state", None)
+        if state is None:
+            return
+        sound = int(self.kat_sound_combo.currentData())
+        commands = [
+            SetNoteFields(note.uid, {"hit_sound": (note.hit_sound, (note.hit_sound & ~KAT_HITSOUNDS) | sound)})
+            for note in state.document.hit_objects
+            if note.is_circle and note.is_kat and note.hit_sound & KAT_HITSOUNDS != sound
+        ]
+        if commands:
+            state.history.push(CompositeCommand(commands, "set_note_fields"), state)
+        self._done([state.source_path] if commands else [],
+                   tr("MainWindow", "Changed the hitsound of {0} kats.").format(len(commands)))
 
     def convert_osu_to_mania(self) -> None:
         path = self._osu_current_path()

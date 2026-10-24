@@ -129,9 +129,9 @@ SHORTCUT_DEFINITIONS: tuple[ShortcutDefinition, ...] = (
     # osu!'s editor keys (ui/editor_keys.py; chosen with the owner against
     # current osu!lazer and the stable wiki, 2026-10-11).
     ShortcutDefinition("toggle_new_combo", "Toggle new combo on the selection", "Editing", "Q"),
-    ShortcutDefinition("toggle_whistle", "Toggle whistle on the selection (kat)", "Editing", "W"),
-    ShortcutDefinition("toggle_finish", "Toggle finish on the selection (big note)", "Editing", "E"),
-    ShortcutDefinition("toggle_clap", "Toggle clap on the selection (kat)", "Editing", "R"),
+    ShortcutDefinition("toggle_whistle", "Kat (whistle): the selection, else switch Don/Kat", "Editing", "W"),
+    ShortcutDefinition("toggle_finish", "Finisher: the selection, else the Finisher toggle", "Editing", "E"),
+    ShortcutDefinition("toggle_clap", "Kat (clap) on the selection", "Editing", "R"),
     ShortcutDefinition("reverse_selection", "Reverse the selection in time", "Editing", "Ctrl+G"),
     ShortcutDefinition("cut", "Cut", "Editing", "Ctrl+X"),
     ShortcutDefinition("clone_selection", "Clone the selection one measure later", "Editing", "Ctrl+D"),
@@ -159,9 +159,10 @@ SHORTCUT_DEFINITIONS: tuple[ShortcutDefinition, ...] = (
     ShortcutDefinition("tool_1", "Tool 1: Select", TOOLS_EDITOR_CATEGORY, "1", "editor"),
     ShortcutDefinition("tool_2", "Tool 2: Don / Green line", TOOLS_EDITOR_CATEGORY, "2", "editor"),
     ShortcutDefinition("tool_3", "Tool 3: Kat / Function", TOOLS_EDITOR_CATEGORY, "3", "editor"),
-    ShortcutDefinition("tool_4", "Tool 4: Slider", TOOLS_EDITOR_CATEGORY, "4", "editor"),
-    ShortcutDefinition("tool_5", "Tool 5: Spinner", TOOLS_EDITOR_CATEGORY, "5", "editor"),
-    ShortcutDefinition("tool_6", "Tool 6: New combo", TOOLS_EDITOR_CATEGORY, "6", "editor"),
+    ShortcutDefinition("tool_4", "Tool 4: Finisher / Scale SV", TOOLS_EDITOR_CATEGORY, "4", "editor"),
+    ShortcutDefinition("tool_5", "Tool 5: Slider", TOOLS_EDITOR_CATEGORY, "5", "editor"),
+    ShortcutDefinition("tool_6", "Tool 6: Spinner", TOOLS_EDITOR_CATEGORY, "6", "editor"),
+    ShortcutDefinition("tool_7", "Tool 7: New combo", TOOLS_EDITOR_CATEGORY, "7", "editor"),
 )
 
 # Definitions owned by a module this one must not import. gui.py imports

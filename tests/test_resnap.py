@@ -96,11 +96,13 @@ class OwnGridDragTests(_Window):
         self.view.releaseMouse()
         return note.time + delta
 
-    def test_a_third_moves_along_thirds_with_quarters_selected(self):
+    def test_a_third_lands_on_the_current_snap(self):
+        """Owner, 2026-10-24: a note on another grid moved along it, so
+        changing the snap could never move a note onto the new one."""
         note = self._note_at(1500)
         note.time = 1333
         # The nearest 1/4 line to 1640 is 1625; the nearest 1/3 line is 1666.67.
-        self.assertEqual(self._drag(note, 1640), 1666)
+        self.assertEqual(self._drag(note, 1640), 1625)
 
     def test_a_note_on_the_current_grid_moves_as_before(self):
         """1000 is on 1/1, which 1/4 contains: the setting governs, or a note on

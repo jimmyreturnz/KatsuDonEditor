@@ -300,10 +300,12 @@ class FancyArrangerPageTests(unittest.TestCase):
     def test_all_three_playback_rows_are_sized(self):
         """The gimmick page's row was left out of showEvent and kept its
         build-time hint -- unpadded, and five pixels short of "100%"."""
+        # The Editor and Gimmick pages' speeds sit in the status bar, apart
+        # from Play, so they are a row of their own there.
         rows = (
-            [self.window.editor_play_button, *self.window.editor_playback_speed_buttons],
+            self.window.editor_playback_speed_buttons,
             [self.window.timeline_play_button, *self.window.playback_speed_buttons],
-            [self.window.gimmick_play_button, *self.window.gimmick_playback_speed_buttons],
+            self.window.gimmick_playback_speed_buttons,
         )
         for row in rows:
             with self.subTest(first=row[1].text()):

@@ -29,7 +29,7 @@ from osu_io.timing import (
     sv_at,
     uninherited_points,
 )
-from chart.time_axis import TimeAxisMixin, osu_snap_ms, own_divisor
+from chart.time_axis import TimeAxisMixin, osu_snap_ms
 from chart.gimmick_session import FAKE_SLIDER_MAX_LENGTH
 from ui.common import (
     ACCENT_PINK,
@@ -370,6 +370,9 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
         # changes it, so the shared timeline's behavior is untouched.
         self.tool = "select"
         self.new_combo = False
+        # The Finisher toggle (tool 4, E): Shift held down for good. Read
+        # wherever Shift is, so the two always mean the same note.
+        self.finisher = False
 
         self.drag_start_x: float | None = None
         self.drag_anchor_time: float | None = None
@@ -428,7 +431,6 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
         self._move_anchor_time = 0.0
         self._move_delta = 0.0
         self._move_snaps = True
-        self._move_divisor: int | None = None
         # What to place instead, if a grab under a placement tool turns out to
         # be a plain click rather than a drag.
         self._move_fallback: tuple | None = None
@@ -658,6 +660,10 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
         self.new_combo = bool(value)
         self.update()
 
+    def set_finisher(self, value: bool) -> None:
+        self.finisher = bool(value)
+        self.update()
+
     def set_snap_divisor(self, divisor: int) -> None:
         """Change the grid, not the playhead.
 
@@ -876,7 +882,7 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
             time_ms = self.snap_ms(self.time_for_x(event.position().x()))
             # The event's own modifiers, never the cached global -- see
             # `shift_is_held`. A tap of Shift used to stick.
-            big = bool(event.modifiers() & Qt.ShiftModifier)
+            big = bool(event.modifiers() & Qt.ShiftModifier) or self.finisher
             # Pressing on something that is already there starts a move, even
             # with a placement tool in hand. Dragging is how a gimmick object
             # gets nudged, and having to switch back to Select first is the
@@ -997,16 +1003,11 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
         self._move_snaps = note is not None or (
             point is not None and round(point.time) in self.gimmick_times
         )
-        # An object off the current grid moves along its own: a 1/3 note
-        # dragged with 1/4 selected stays a 1/3 note, instead of the first pixel
-        # of the drag throwing it onto a grid it was never on. One that *is* on
-        # the current grid (its own divisor divides the setting) moves exactly
-        # as before -- otherwise a note on a beat could only move by beats.
-        self._move_divisor = None
-        if self._move_snaps:
-            own = own_divisor(self.snap_points, self._move_origin)
-            if own is not None and self.snap_divisor % own:
-                self._move_divisor = own
+        # Always the current grid. An object on a grid the setting does not
+        # contain used to move along its own instead, so a 1/4 note dragged
+        # with 1/3 selected stepped in quarters and never reached a triplet --
+        # and changing the snap is how a mapper says where it should go
+        # (owner, 2026-10-24; 649 of one map's 1207 notes moved that way).
         self._move_anchor_time = self.time_for_x(x)
         self._move_delta = 0.0
         self.grabMouse()
@@ -1025,7 +1026,7 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
         if self._move_origin is None:
             return
         wanted = self._move_origin + (self.time_for_x(x) - self._move_anchor_time)
-        target = self.snap_ms(wanted, self._move_divisor) if self._move_snaps else round(wanted)
+        target = self.snap_ms(wanted) if self._move_snaps else round(wanted)
         # Nothing may be dragged to a negative time; clamping the delta rather
         # than each object keeps the structure's own shape intact.
         self._move_delta = max(-self._move_origin, target - self._move_origin)
@@ -1207,7 +1208,7 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
             # event's own modifiers may be the only place Shift shows up.
             # The event's own modifiers, never the cached global -- see
             # `shift_is_held`. A tap of Shift used to stick.
-            big = bool(event.modifiers() & Qt.ShiftModifier)
+            big = bool(event.modifiers() & Qt.ShiftModifier) or self.finisher
             self._placing_tool = None
             self._placing_start_time = None
             self._placing_end_time = None
@@ -1896,7 +1897,7 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
         # Paint time, so there is no event to read: the live hardware state
         # rather than Qt's cached one, or a stale Shift bit draws every
         # ghost at finisher size. See `shift_is_held`.
-        shift_held = shift_is_held()
+        shift_held = shift_is_held() or self.finisher
 
         if self._placing_tool in ("slider", "spinner") and self._placing_start_time is not None:
             self._draw_extend_ghost(

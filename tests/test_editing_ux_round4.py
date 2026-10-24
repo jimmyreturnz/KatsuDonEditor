@@ -676,8 +676,8 @@ class SpinnerExtentTests(WindowTestCase):
 
 class ToolNameTests(WindowTestCase):
     def test_slider_and_spinner_replace_drumroll_and_denden(self):
-        self.assertEqual(self.window.tool_buttons["slider"].text(), "4. Slider")
-        self.assertEqual(self.window.tool_buttons["spinner"].text(), "5. Spinner")
+        self.assertEqual(self.window.tool_buttons["slider"].text(), "5. Slider")
+        self.assertEqual(self.window.tool_buttons["spinner"].text(), "6. Spinner")
 
     def test_the_internal_tool_ids_are_unchanged(self):
         """Renaming is a label change; the ids are what the .osu type bits mean."""
@@ -695,8 +695,8 @@ class ToolNameTranslationTests(unittest.TestCase):
 
         self.assertEqual(i18n.install_translator(_APP, FakeSettings()), "ja")
         try:
-            slider = i18n.tr("MainWindow", "4. Slider")
-            spinner = i18n.tr("MainWindow", "5. Spinner")
+            slider = i18n.tr("MainWindow", "5. Slider")
+            spinner = i18n.tr("MainWindow", "6. Spinner")
             self.assertIn("連打", slider)
             self.assertIn("スライダー", slider)
             self.assertIn("風船", spinner)

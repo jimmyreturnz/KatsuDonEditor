@@ -20,7 +20,7 @@ from chart.time_axis import wheel_seek_time
 from model.hit_object import HITSOUND_CLAP, HITSOUND_FINISH, HITSOUND_WHISTLE, TYPE_NEW_COMBO
 from tests.osu_fixtures import write_fixture
 from ui import gui
-from ui.editor_keys import reversed_times, takes_editor_keys_from, toggled_bits
+from ui.editor_keys import reversed_times, takes_editor_keys_from, toggled_bits, toggled_kat
 
 _APP: QApplication | None = None
 
@@ -38,6 +38,12 @@ class PureRulesTests(unittest.TestCase):
     def test_toggle_sets_unless_every_one_has_it(self):
         self.assertEqual(toggled_bits([0, 2], 2), [2, 2])
         self.assertEqual(toggled_bits([2, 10], 2), [0, 8])
+
+    def test_kat_toggle_goes_by_kat_not_by_the_bit(self):
+        # A clap kat is a kat: W turns an all-kat selection back into dons.
+        self.assertEqual(toggled_kat([8, 2 | 4], 2), [0, 4])
+        # Mixed: the dons become kats, the kat keeps its own sound.
+        self.assertEqual(toggled_kat([0, 8, 4], 2), [2, 8, 6])
 
 
 class EditorKeysTests(unittest.TestCase):
@@ -135,12 +141,35 @@ class EditorKeysTests(unittest.TestCase):
         self.window.undo()
         self.assertEqual(self._note_at(1000).hit_sound, HITSOUND_WHISTLE)
 
-    def test_w_on_a_clap_kat_leaves_it_a_kat(self):
+    def test_w_on_a_clap_kat_makes_it_a_don(self):
+        """The reported bug: W only toggled the whistle bit, so a clap kat
+        stayed a kat whatever was pressed."""
+        self._note_at(2000).hit_sound = HITSOUND_CLAP
         self._select(2000)
         self._key(Qt.Key_W)
-        # The whistle is added on top of the clap, not swapped for it.
-        self.assertEqual(self._note_at(2000).hit_sound, HITSOUND_CLAP | HITSOUND_WHISTLE)
-        self.assertEqual(self._note_at(2000).note_kind, "kat")
+        self.assertEqual(self._note_at(2000).note_kind, "don")
+        self._key(Qt.Key_W)
+        self.assertEqual(self._note_at(2000).hit_sound, HITSOUND_WHISTLE)
+
+    def test_w_with_nothing_selected_switches_don_and_kat(self):
+        self.window.tool_buttons["don"].setChecked(True)
+        self._key(Qt.Key_W)
+        self.assertEqual(self.view.tool, "kat")
+        self._key(Qt.Key_W)
+        self.assertEqual(self.view.tool, "don")
+
+    def test_e_with_nothing_selected_is_the_finisher_toggle(self):
+        self._key(Qt.Key_E)
+        self.assertTrue(self.window._tool_state.finisher_button.isChecked())
+        self.assertTrue(self.view.finisher)
+        self._key(Qt.Key_4)
+        self.assertFalse(self.view.finisher)
+
+    def test_a_kat_placed_with_the_finisher_on_is_a_big_whistle_kat(self):
+        self.window.tool_buttons["kat"].setChecked(True)
+        self.window._tool_state.finisher_button.setChecked(True)
+        self.view.note_place_requested.emit("kat", 4250.0, False, self.view.finisher)
+        self.assertEqual(self._note_at(4250).hit_sound, HITSOUND_WHISTLE | HITSOUND_FINISH)
 
     def test_e_toggles_big_and_q_new_combo(self):
         self._select(1000)
@@ -151,7 +180,7 @@ class EditorKeysTests(unittest.TestCase):
 
     def test_nothing_selected_changes_nothing(self):
         before = [(n.time, n.hit_sound, n.type) for n in self.window.state.document.hit_objects]
-        self._key(Qt.Key_W)
+        self._key(Qt.Key_R)
         after = [(n.time, n.hit_sound, n.type) for n in self.window.state.document.hit_objects]
         self.assertEqual(after, before)
 

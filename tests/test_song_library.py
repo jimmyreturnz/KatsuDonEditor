@@ -634,7 +634,7 @@ class LibraryPageTests(unittest.TestCase):
         # Only the Editor page's own toolbox comes back: every gimmick layer
         # numbers its tools from 1 as well, and two enabled shortcuts on one
         # key would make Qt fire neither (see _refresh_tool_shortcut_scope).
-        editor_tools = [f"tool_{digit}" for digit in "123456"]
+        editor_tools = [f"tool_{digit}" for digit in "1234567"]
         self.assertTrue(all(self.window.tool_shortcuts[a].isEnabled() for a in editor_tools))
         self.assertFalse(
             any(

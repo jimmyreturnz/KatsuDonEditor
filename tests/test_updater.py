@@ -122,6 +122,23 @@ class ReleaseLookupTests(unittest.TestCase):
         opener = opener_for(json.dumps(RELEASE_PAYLOAD).encode())
         self.assertIsNone(updater.check_for_update("3.1.0", opener))
 
+    def test_the_patch_note_is_read_from_the_repo(self):
+        release = updater.parse_release(RELEASE_PAYLOAD)
+        asked = []
+
+        def opener(request, timeout=None):
+            asked.append(request.full_url)
+            return _Response(b"# Fixed since publishing\n")
+        latest = updater.with_latest_notes(release, opener)
+        self.assertEqual(latest.notes, "# Fixed since publishing")
+        self.assertTrue(asked[0].endswith("/main/docs/releases/v3.1.0.md"))
+
+    def test_an_unreachable_patch_note_keeps_the_release_body(self):
+        release = updater.parse_release(RELEASE_PAYLOAD)
+        error = urllib.error.HTTPError("https://example.invalid", 404, "missing", {}, None)
+        self.assertEqual(updater.with_latest_notes(release, failing_opener(error)).notes, "New things.")
+        self.assertEqual(updater.with_latest_notes(release, opener_for(b"  ")).notes, "New things.")
+
     def test_malformed_json_is_swallowed(self):
         self.assertIsNone(updater.fetch_latest_release(opener_for(b"<html>rate limited</html>")))
 

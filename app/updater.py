@@ -34,7 +34,7 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from app.security_utils import resource_roots
@@ -43,6 +43,10 @@ LOGGER = logging.getLogger(__name__)
 
 RELEASES_API = "https://api.github.com/repos/jimmyreturnz/KatsuDonEditor/releases/latest"
 RELEASE_PAGE = "https://github.com/jimmyreturnz/KatsuDonEditor/releases/latest"
+# The patch note as the repo has it now. A release's body is copied once, when
+# it is published, so a note fixed afterwards in docs/releases/ never reached
+# the dialog (owner, 2026-10-24).
+NOTES_URL = "https://raw.githubusercontent.com/jimmyreturnz/KatsuDonEditor/main/docs/releases/{tag}.md"
 PORTABLE_ASSET = "KatsuDonEditor-Windows-x64.zip"
 CHECKSUM_ASSET = "SHA256SUMS.txt"
 # GitHub answers an API request without a User-Agent with 403.
@@ -164,6 +168,19 @@ def fetch_latest_release(opener=urllib.request.urlopen, url: str = RELEASES_API)
         LOGGER.info("Update check failed: %s", error)
         return None
     return parse_release(payload)
+
+
+def with_latest_notes(release: ReleaseInfo, opener=urllib.request.urlopen) -> ReleaseInfo:
+    """`release` with its patch note read from the repo, or as it was when the
+    note cannot be fetched: the body the release was published with is still
+    a patch note, only possibly an older one."""
+    try:
+        with opener(_request(NOTES_URL.format(tag=release.tag)), timeout=TIMEOUT_SECONDS) as response:
+            notes = response.read().decode("utf-8", "replace").strip()
+    except (urllib.error.URLError, OSError, ValueError, UpdateError) as error:
+        LOGGER.info("Patch note fetch failed: %s", error)
+        return release
+    return replace(release, notes=notes) if notes else release
 
 
 def check_for_update(current: str | None = None, opener=urllib.request.urlopen) -> ReleaseInfo | None:
@@ -457,7 +474,11 @@ class CheckThread(QThread):
         if release is None:
             self.result.emit(None, False)
             return
-        self.result.emit(release if is_newer(release.tag, local_version()) else None, True)
+        if not is_newer(release.tag, local_version()):
+            self.result.emit(None, True)
+            return
+        # Here, off the GUI thread, so the dialog opens on the newest text.
+        self.result.emit(with_latest_notes(release), True)
 
 
 class DownloadThread(QThread):
@@ -514,7 +535,9 @@ class UpdateDialog(QDialog):
         notes = QTextEdit()
         notes.setReadOnly(True)
         smooth(notes)
-        notes.setPlainText(release.notes or tr("MainWindow", "No release notes were published."))
+        # Rendered: the notes are Markdown, and as plain text every bold lead
+        # read as a pair of asterisks.
+        notes.setMarkdown(release.notes or tr("MainWindow", "No release notes were published."))
         layout.addWidget(notes, 1)
 
         self.progress = QProgressBar()

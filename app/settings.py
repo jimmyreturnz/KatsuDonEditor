@@ -24,11 +24,13 @@ NOTE_OPACITY_DEFAULT_PERCENT = 70
 NOTE_OPACITY_MIN_PERCENT = 20
 
 ORGANIZATION_NAME = "jimmyreturnz"
+# The old name on purpose: QSettings keys its storage on it, so renaming it
+# would drop every setting and the song index.
 APPLICATION_NAME = "TaikoFancyArranger"
 
 
 class SettingsManager:
-    """Small typed wrapper around QSettings for Taiko Fancy Arranger."""
+    """Small typed wrapper around QSettings for KatsuDon Editor."""
 
     def __init__(self) -> None:
         self._settings = QSettings(ORGANIZATION_NAME, APPLICATION_NAME)

@@ -3,7 +3,7 @@ setlocal EnableExtensions
 cd /d "%~dp0\.."
 
 echo ==========================================
-echo  Taiko Fancy Arranger v3.0.0 Builder
+echo  KatsuDon Editor v3.0.0 Builder
 echo  Output: Portable Windows folder
 echo ==========================================
 echo.
@@ -133,11 +133,11 @@ echo [8/9] Building portable application...
 "%VENV_PYTHON%" -m PyInstaller ^
     --noconfirm ^
     --clean ^
-    TaikoFancyArranger.spec
+    KatsuDonEditor.spec
 
 if errorlevel 1 goto :failed
 
-if not exist "dist\TaikoFancyArranger\TaikoFancyArranger.exe" (
+if not exist "dist\KatsuDonEditor\KatsuDonEditor.exe" (
     goto :missingexe
 )
 
@@ -145,15 +145,15 @@ echo.
 echo [9/9] Adding release documentation...
 
 if exist "README.md" (
-    copy /Y "README.md" "dist\TaikoFancyArranger\README.md" >nul
+    copy /Y "README.md" "dist\KatsuDonEditor\README.md" >nul
 )
 
 if exist "LICENSE" (
-    copy /Y "LICENSE" "dist\TaikoFancyArranger\LICENSE" >nul
+    copy /Y "LICENSE" "dist\KatsuDonEditor\LICENSE" >nul
 )
 
 if exist "VERSION" (
-    copy /Y "VERSION" "dist\TaikoFancyArranger\VERSION" >nul
+    copy /Y "VERSION" "dist\KatsuDonEditor\VERSION" >nul
 )
 
 rem Read the version rather than hardcoding it: the old literal path silently
@@ -164,15 +164,15 @@ if exist "VERSION" set /p APP_VERSION=<VERSION
 if defined APP_VERSION if exist "docs\releases\v%APP_VERSION%.md" (
     copy /Y ^
         "docs\releases\v%APP_VERSION%.md" ^
-        "dist\TaikoFancyArranger\RELEASE_NOTES.md" >nul
+        "dist\KatsuDonEditor\RELEASE_NOTES.md" >nul
 )
 
 echo.
 echo Verifying packaged Japanese translation...
 
-if not exist "dist\TaikoFancyArranger\translations\taiko_ja.qm" (
+if not exist "dist\KatsuDonEditor\translations\taiko_ja.qm" (
     echo ERROR: Japanese translation was not packaged.
-    echo Check the datas section in TaikoFancyArranger.spec.
+    echo Check the datas section in KatsuDonEditor.spec.
     goto :failed
 )
 
@@ -182,15 +182,15 @@ echo BUILD SUCCEEDED
 echo ==========================================
 echo.
 echo Executable:
-echo   dist\TaikoFancyArranger\TaikoFancyArranger.exe
+echo   dist\KatsuDonEditor\KatsuDonEditor.exe
 echo.
 echo Japanese translation:
-echo   dist\TaikoFancyArranger\translations\taiko_ja.qm
+echo   dist\KatsuDonEditor\translations\taiko_ja.qm
 echo.
-echo Distribute the COMPLETE TaikoFancyArranger folder.
+echo Distribute the COMPLETE KatsuDonEditor folder.
 echo.
 
-start "" "dist\TaikoFancyArranger"
+start "" "dist\KatsuDonEditor"
 pause
 exit /b 0
 

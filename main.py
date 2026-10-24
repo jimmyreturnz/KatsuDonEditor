@@ -1,4 +1,4 @@
-"""Taiko Fancy Arranger. Run from the repository root: python main.py"""
+"""KatsuDon Editor. Run from the repository root: python main.py"""
 if __name__ == "__main__":
     # The Rate Changer renders in worker processes. A frozen build starts
     # each one as this exe, and freeze_support is what turns it into a worker

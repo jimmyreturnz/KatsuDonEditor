@@ -15,26 +15,30 @@ from pathlib import Path
 
 from app.updater import application_folder
 
-DISPLAY_NAME = "Taiko Fancy Arranger"
+DISPLAY_NAME = "KatsuDon Editor"
+# The entry the app wrote under its old name, removed so search does not
+# list it twice.
+LEGACY_DISPLAY_NAME = "Taiko Fancy Arranger"
 # Start search matches a shortcut's target exe name as well as the shortcut's
-# own, so "TaikoFancyArranger" finds it there; Linux needs it as a keyword.
-KEYWORDS = "TaikoFancyArranger;taiko;osu;"
+# own, so "KatsuDonEditor" finds it there; Linux needs it as a keyword. The old
+# name stays a keyword for whoever still searches for it.
+KEYWORDS = "KatsuDonEditor;katsudon;TaikoFancyArranger;taiko;osu;"
 
 
 def _ps_quote(text: str) -> str:
     return "'" + text.replace("'", "''") + "'"
 
 
-def windows_shortcut_path() -> Path | None:
+def windows_shortcut_path(name: str = DISPLAY_NAME) -> Path | None:
     appdata = os.environ.get("APPDATA")
     if not appdata:
         return None
-    return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / f"{DISPLAY_NAME}.lnk"
+    return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / f"{name}.lnk"
 
 
-def linux_entry_path() -> Path:
+def linux_entry_path(name: str = "katsudon-editor") -> Path:
     data = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
-    return Path(data) / "applications" / "taiko-fancy-arranger.desktop"
+    return Path(data) / "applications" / f"{name}.desktop"
 
 
 def desktop_entry(command: list[str], icon: Path | None, folder: Path) -> str:
@@ -66,12 +70,16 @@ def register(settings) -> None:
             if not getattr(sys, "frozen", False):
                 return
             path, target = windows_shortcut_path(), sys.executable
+            legacy = windows_shortcut_path(LEGACY_DISPLAY_NAME)
         elif sys.platform.startswith("linux"):
             path = linux_entry_path()
+            legacy = linux_entry_path("taiko-fancy-arranger")
             command = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, str(folder / "main.py")]
             target = " ".join(command)
         else:
             return
+        if legacy is not None and legacy.exists():
+            legacy.unlink()
         if path is None or (path.exists() and settings.value("launcher/target") == target):
             return
         path.parent.mkdir(parents=True, exist_ok=True)

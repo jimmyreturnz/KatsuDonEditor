@@ -21,12 +21,16 @@ class LauncherEntryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as data, \
                 mock.patch.object(sys, "platform", "linux"), \
                 mock.patch.dict(os.environ, {"XDG_DATA_HOME": data}):
+            old = Path(data) / "applications" / "taiko-fancy-arranger.desktop"
+            old.parent.mkdir(parents=True)
+            old.write_text("old name", encoding="utf-8")
             settings = FakeSettings()
             launcher_entry.register(settings)
-            entry = Path(data) / "applications" / "taiko-fancy-arranger.desktop"
+            entry = Path(data) / "applications" / "katsudon-editor.desktop"
+            self.assertFalse(old.exists(), "the old-name entry is removed")
             text = entry.read_text(encoding="utf-8")
-            self.assertIn("Name=Taiko Fancy Arranger", text)
-            self.assertIn("Keywords=TaikoFancyArranger;", text)
+            self.assertIn("Name=KatsuDon Editor", text)
+            self.assertIn("Keywords=KatsuDonEditor;", text)
             self.assertIn("main.py", text)
             # A moved folder is a stale target: written again.
             settings["launcher/target"] = "/old/place"

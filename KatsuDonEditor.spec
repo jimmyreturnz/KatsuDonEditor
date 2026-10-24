@@ -52,7 +52,7 @@ exe = EXE(
     analysis.scripts,
     [],
     exclude_binaries=True,
-    name="TaikoFancyArranger",
+    name="KatsuDonEditor",
     icon=str(
         root
         / "assets"
@@ -78,5 +78,5 @@ collection = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="TaikoFancyArranger",
+    name="KatsuDonEditor",
 )

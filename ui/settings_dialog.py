@@ -508,7 +508,7 @@ class SettingsDialog(QDialog):
         self.language_combo.addItem("English", "en")
         self.language_combo.addItem("日本語", "ja")
         section.row(self.tr("Language"), bind_segments(self.language_combo),
-                    self.tr("Restart Taiko Fancy Arranger to apply the interface language."))
+                    self.tr("Restart KatsuDon Editor to apply the interface language."))
         return page
 
     def _shortcuts_page(self, title: str) -> QWidget:
@@ -774,7 +774,7 @@ class SettingsDialog(QDialog):
         from app import i18n
 
         i18n.install_translator(QApplication.instance(), self.settings)
-        self._prompt_restart(self.tr("Please restart Taiko Fancy Arranger to apply the language change."))
+        self._prompt_restart(self.tr("Please restart KatsuDon Editor to apply the language change."))
 
     def _prompt_restart(self, text: str) -> None:
         box = QMessageBox(self)

@@ -65,7 +65,7 @@ releases/
 *.manifest
 
 # Keep the actual PyInstaller specification
-!TaikoFancyArranger.spec
+!KatsuDonEditor.spec
 
 # ============================================================
 # Temporary release and security-review files

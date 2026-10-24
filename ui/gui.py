@@ -2449,7 +2449,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         # Set only while song select opens a chart (_ensure_default_editor_views).
         self._gameplay_with_defaults = False
-        self.app_name="Taiko Fancy Arranger";self.setWindowTitle(self.app_name)
+        self.app_name="KatsuDon Editor";self.setWindowTitle(self.app_name)
         icon=application_icon()
         if not icon.isNull():self.setWindowIcon(icon)
         apply_ui_font()
@@ -4066,7 +4066,7 @@ class MainWindow(QMainWindow):
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Question)
         box.setWindowTitle(tr("MainWindow", "Exit"))
-        box.setText(tr("MainWindow", "Exit Taiko Fancy Arranger?"))
+        box.setText(tr("MainWindow", "Exit KatsuDon Editor?"))
         yes_button = box.addButton(tr("MainWindow", "Yes"), QMessageBox.AcceptRole)
         box.addButton(tr("MainWindow", "No"), QMessageBox.RejectRole)
         box.setDefaultButton(yes_button)

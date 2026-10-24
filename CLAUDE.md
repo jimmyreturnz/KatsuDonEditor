@@ -1,4 +1,4 @@
-# Taiko Fancy Arranger — working notes
+# KatsuDon Editor (カツ丼) — working notes
 
 A PySide6 editor for osu!taiko charts. Run it with `python main.py` from the
 repository root; every import is absolute from there (`from ui import gui`,

@@ -1,4 +1,4 @@
-"""Check GitHub Releases for a newer Taiko Fancy Arranger and fetch it.
+"""Check GitHub Releases for a newer KatsuDon Editor and fetch it.
 
 Everything above the "Qt layer" banner is plain stdlib so it can be tested
 without a display or a network: the HTTP call is a single injectable `opener`
@@ -43,16 +43,21 @@ LOGGER = logging.getLogger(__name__)
 
 RELEASES_API = "https://api.github.com/repos/jimmyreturnz/TaikoFancyEditor/releases/latest"
 RELEASE_PAGE = "https://github.com/jimmyreturnz/TaikoFancyEditor/releases/latest"
-PORTABLE_ASSET = "TaikoFancyArranger-Windows-x64.zip"
+PORTABLE_ASSET = "KatsuDonEditor-Windows-x64.zip"
 CHECKSUM_ASSET = "SHA256SUMS.txt"
 # GitHub answers an API request without a User-Agent with 403.
-USER_AGENT = "TaikoFancyArranger-Updater"
+USER_AGENT = "KatsuDonEditor-Updater"
 TIMEOUT_SECONDS = 10
 
 SETTING_CHECK_ON_STARTUP = "updates/check_on_startup"
 SETTING_SKIPPED_TAG = "updates/skipped_tag"
 
-EXE_NAME = "TaikoFancyArranger.exe"
+EXE_NAME = "KatsuDonEditor.exe"
+# The exe's name before the rename (v3.5.9 and earlier). Those installs
+# update from the TaikoFancyArranger-Windows-x64.zip the release still
+# ships, which carries the new exe under this name too, so their shortcuts
+# keep working; apply_update keeps that copy current from then on.
+LEGACY_EXE_NAME = "TaikoFancyArranger.exe"
 STAGING_FOLDER = "_update"
 OLD_FOLDER = "_old"
 FAILURE_MARKER = "_update_failed.txt"
@@ -258,7 +263,7 @@ def stage_update(release: ReleaseInfo, progress=None, opener=urllib.request.urlo
         except PermissionError as error:
             shutil.rmtree(staging, ignore_errors=True)
             raise UpdateError(
-                f"Taiko Fancy Arranger cannot write to {folder}. Move the folder somewhere "
+                f"KatsuDon Editor cannot write to {folder}. Move the folder somewhere "
                 f"you own (not Program Files) and try again."
             ) from error
     if not (staging / EXE_NAME).is_file():
@@ -335,7 +340,7 @@ def apply_update(staging: Path, folder: Path, pid: int, wait=wait_for_exit) -> N
     entries back, so the user always ends up with a working copy.
     """
     if not wait(pid):
-        raise UpdateError("Taiko Fancy Arranger did not close, so the update was not installed.")
+        raise UpdateError("KatsuDon Editor did not close, so the update was not installed.")
     old = folder / OLD_FOLDER
     shutil.rmtree(old, ignore_errors=True)
     old.mkdir()
@@ -350,6 +355,14 @@ def apply_update(staging: Path, folder: Path, pid: int, wait=wait_for_exit) -> N
                 shutil.copytree(source, target)
             else:
                 shutil.copy2(source, target)
+        legacy = folder / LEGACY_EXE_NAME
+        if legacy.exists() and not (staging / LEGACY_EXE_NAME).exists():
+            # Left behind by the bridge, and what the old Start Menu shortcut
+            # and any pinned taskbar icon still start: a stale one would run
+            # the previous version's code.
+            touched.append(LEGACY_EXE_NAME)
+            _retry(os.replace, legacy, old / LEGACY_EXE_NAME)
+            shutil.copy2(staging / EXE_NAME, legacy)
     except OSError:
         # Only what was reached: an entry not yet processed is still the old
         # one, and deleting it here would be the update destroying the app.
@@ -493,7 +506,7 @@ class UpdateDialog(QDialog):
         self.resize(520, 420)
 
         layout = QVBoxLayout(self)
-        headline = QLabel(tr("MainWindow", "Taiko Fancy Arranger {0} is available.").format(release.version))
+        headline = QLabel(tr("MainWindow", "KatsuDon Editor {0} is available.").format(release.version))
         headline.setStyleSheet("font-weight: 600;")
         layout.addWidget(headline)
         layout.addWidget(QLabel(tr("MainWindow", "You are running version {0}.").format(current or "?")))

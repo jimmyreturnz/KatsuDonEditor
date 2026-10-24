@@ -53,8 +53,8 @@ RELEASE_PAYLOAD = {
     "html_url": "https://github.com/jimmyreturnz/TaikoFancyEditor/releases/tag/v3.1.0",
     "assets": [
         {
-            "name": "TaikoFancyArranger-Windows-x64.zip",
-            "browser_download_url": "https://example.invalid/TaikoFancyArranger-Windows-x64.zip",
+            "name": "KatsuDonEditor-Windows-x64.zip",
+            "browser_download_url": "https://example.invalid/KatsuDonEditor-Windows-x64.zip",
         },
         {
             "name": "SHA256SUMS.txt",
@@ -100,7 +100,7 @@ class ReleaseLookupTests(unittest.TestCase):
         self.assertEqual(release.tag, "v3.1.0")
         self.assertEqual(release.version, "3.1.0")
         self.assertEqual(release.notes, "New things.")
-        self.assertTrue(release.zip_url.endswith("TaikoFancyArranger-Windows-x64.zip"))
+        self.assertTrue(release.zip_url.endswith("KatsuDonEditor-Windows-x64.zip"))
         self.assertTrue(release.checksums_url.endswith("SHA256SUMS.txt"))
 
     def test_missing_assets_leave_empty_urls_rather_than_failing(self):
@@ -159,7 +159,7 @@ class ChecksumTests(unittest.TestCase):
         self.digest = hashlib.sha256(b"portable build").hexdigest()
 
     def sums(self, digest: str) -> str:
-        return f"{'0' * 64}  TaikoFancyArranger.exe\n{digest}  {updater.PORTABLE_ASSET}\n"
+        return f"{'0' * 64}  {updater.EXE_NAME}\n{digest}  {updater.PORTABLE_ASSET}\n"
 
     def test_expected_digest_is_read_from_the_sums_file(self):
         self.assertEqual(
@@ -241,7 +241,7 @@ class ApplyTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.folder = Path(directory.name) / "TaikoFancyArranger"
+        self.folder = Path(directory.name) / "KatsuDonEditor"
         self.staging = self.folder / updater.STAGING_FOLDER
         for root, version in ((self.folder, "old"), (self.staging, "new")):
             (root / "_internal").mkdir(parents=True)
@@ -259,6 +259,15 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(self.read("_internal", "lib.dll"), "new")
         self.assertEqual(self.read("RELEASE_NOTES.md"), "new")
         self.assertFalse((self.folder / "_internal" / "removed.dll").exists())
+
+    def test_an_exe_under_the_old_name_is_kept_current(self):
+        (self.folder / updater.LEGACY_EXE_NAME).write_text("old")
+        updater.apply_update(self.staging, self.folder, 0, wait=lambda pid: True)
+        self.assertEqual(self.read(updater.LEGACY_EXE_NAME), "new")
+
+    def test_no_exe_under_the_old_name_is_invented(self):
+        updater.apply_update(self.staging, self.folder, 0, wait=lambda pid: True)
+        self.assertFalse((self.folder / updater.LEGACY_EXE_NAME).exists())
 
     def test_a_failed_copy_rolls_back_to_the_old_copy(self):
         real_copy = updater.shutil.copy2

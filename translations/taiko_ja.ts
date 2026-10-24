@@ -2069,8 +2069,8 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>終了</translation>
         </message>
         <message>
-            <source>Exit Taiko Fancy Arranger?</source>
-            <translation>Taiko Fancy Arrangerを終了しますか?</translation>
+            <source>Exit KatsuDon Editor?</source>
+            <translation>KatsuDon Editorを終了しますか?</translation>
         </message>
         <message>
             <source>Wheel: 1 snap</source>
@@ -2753,8 +2753,8 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>更新があります</translation>
         </message>
         <message>
-            <source>Taiko Fancy Arranger {0} is available.</source>
-            <translation>Taiko Fancy Arranger {0} が利用可能です。</translation>
+            <source>KatsuDon Editor {0} is available.</source>
+            <translation>KatsuDon Editor {0} が利用可能です。</translation>
         </message>
         <message>
             <source>You are running version {0}.</source>
@@ -4079,8 +4079,8 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>再生</translation>
         </message>
         <message>
-            <source>Please restart Taiko Fancy Arranger to apply the language change.</source>
-            <translation>言語の変更を適用するにはTaiko Fancy Arrangerを再起動してください。</translation>
+            <source>Please restart KatsuDon Editor to apply the language change.</source>
+            <translation>言語の変更を適用するにはKatsuDon Editorを再起動してください。</translation>
         </message>
         <message>
             <source>Redo</source>
@@ -4147,8 +4147,8 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>自動で再起動できませんでした。プログラムを一度終了してから開き直してください。</translation>
         </message>
         <message>
-            <source>Restart Taiko Fancy Arranger to apply the interface language.</source>
-            <translation>インターフェイスの言語を適用するにはTaiko Fancy Arrangerを再起動してください。</translation>
+            <source>Restart KatsuDon Editor to apply the interface language.</source>
+            <translation>インターフェイスの言語を適用するにはKatsuDon Editorを再起動してください。</translation>
         </message>
         <message>
             <source>Restore Defaults</source>

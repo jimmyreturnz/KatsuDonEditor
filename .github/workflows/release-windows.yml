@@ -42,13 +42,13 @@ jobs:
       # Do not tag a release from a tree where those have not passed.
 
       - name: Build portable Windows application
-        run: pyinstaller --noconfirm --clean TaikoFancyArranger.spec
+        run: pyinstaller --noconfirm --clean KatsuDonEditor.spec
 
       - name: Add release documentation
         shell: pwsh
         run: |
-          Copy-Item README.md dist/TaikoFancyArranger/README.md
-          Copy-Item LICENSE dist/TaikoFancyArranger/LICENSE
+          Copy-Item README.md dist/KatsuDonEditor/README.md
+          Copy-Item LICENSE dist/KatsuDonEditor/LICENSE
 
           if ("${{ github.event_name }}" -eq "release") {
             $tag = "${{ github.event.release.tag_name }}"
@@ -57,7 +57,7 @@ jobs:
             if (Test-Path $notes) {
               Copy-Item `
                 $notes `
-                dist/TaikoFancyArranger/RELEASE_NOTES.md
+                dist/KatsuDonEditor/RELEASE_NOTES.md
             }
           }
 
@@ -65,28 +65,44 @@ jobs:
         shell: pwsh
         run: |
           Compress-Archive `
-            -Path dist/TaikoFancyArranger/* `
+            -Path dist/KatsuDonEditor/* `
+            -DestinationPath KatsuDonEditor-Windows-x64.zip `
+            -Force
+
+          # The pre-rename asset, for v3.5.9 and earlier: their updater asks
+          # for this zip and requires TaikoFancyArranger.exe inside it, so it
+          # carries the same build with the exe under both names.
+          Copy-Item -Recurse dist/KatsuDonEditor legacy
+          Copy-Item legacy/KatsuDonEditor.exe legacy/TaikoFancyArranger.exe
+          Compress-Archive `
+            -Path legacy/* `
             -DestinationPath TaikoFancyArranger-Windows-x64.zip `
             -Force
 
           $exe = Get-FileHash `
-            dist/TaikoFancyArranger/TaikoFancyArranger.exe `
+            dist/KatsuDonEditor/KatsuDonEditor.exe `
             -Algorithm SHA256
 
           $zip = Get-FileHash `
+            KatsuDonEditor-Windows-x64.zip `
+            -Algorithm SHA256
+
+          $legacy = Get-FileHash `
             TaikoFancyArranger-Windows-x64.zip `
             -Algorithm SHA256
 
           @(
-            "$($exe.Hash)  TaikoFancyArranger.exe"
-            "$($zip.Hash)  TaikoFancyArranger-Windows-x64.zip"
+            "$($exe.Hash)  KatsuDonEditor.exe"
+            "$($zip.Hash)  KatsuDonEditor-Windows-x64.zip"
+            "$($legacy.Hash)  TaikoFancyArranger-Windows-x64.zip"
           ) | Set-Content SHA256SUMS.txt -Encoding ascii
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v7
         with:
-          name: TaikoFancyArranger-Windows-x64
+          name: KatsuDonEditor-Windows-x64
           path: |
+            KatsuDonEditor-Windows-x64.zip
             TaikoFancyArranger-Windows-x64.zip
             SHA256SUMS.txt
           if-no-files-found: error
@@ -97,6 +113,7 @@ jobs:
         with:
           tag_name: ${{ github.event.release.tag_name }}
           files: |
+            KatsuDonEditor-Windows-x64.zip
             TaikoFancyArranger-Windows-x64.zip
             SHA256SUMS.txt
           fail_on_unmatched_files: true

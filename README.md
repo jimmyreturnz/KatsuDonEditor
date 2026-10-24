@@ -1,4 +1,4 @@
-# TaikoFancyEditor
+# KatsuDon Editor (カツ丼)
 
 If you want to ask on how to use it, suggest ideas, or report bugs, my osu name is [jimmyreturnz](https://osu.ppy.sh/users/11306153)\
 my discord is also jimmyreturnz, thanks in advance!
@@ -11,7 +11,7 @@ Discordもjimmyreturnzです\
 
 *日本語版は [README_JP.md](README_JP.md) をご覧ください。*
 
-Taiko Fancy Arranger started as a tool for turning osu!taiko notes into visual patterns such as text, shapes, equations, drawings, spirals, or even an image, without placing every circle by hand. Version 2.0.0 grew it into an editor: browse your osu! Songs folder, open a difficulty, edit notes, edit scroll velocity, preview the chart the way osu! renders it, and still arrange notes into patterns when you want to. Version 3.0.0 adds a dedicated gimmick editor, for the fake sliders, barline gimmick and extreme SV effects that osu!taiko mappers build out of timing points rather than notes. 
+KatsuDon Editor (formerly Taiko Fancy Arranger) started as a tool for turning osu!taiko notes into visual patterns such as text, shapes, equations, drawings, spirals, or even an image, without placing every circle by hand. Version 2.0.0 grew it into an editor: browse your osu! Songs folder, open a difficulty, edit notes, edit scroll velocity, preview the chart the way osu! renders it, and still arrange notes into patterns when you want to. Version 3.0.0 adds a dedicated gimmick editor, for the fake sliders, barline gimmick and extreme SV effects that osu!taiko mappers build out of timing points rather than notes. 
 
 The editor does not support editing storyboards, breaks, colours, editor bookmarks yet.
 
@@ -73,7 +73,7 @@ The full development log is in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLA
 
 ## Windows SmartScreen notice
 
-Taiko Fancy Arranger v3.5.9 is an unsigned Windows application. The release validates its input files, ships with automated tests, and publishes SHA-256 checksums.
+KatsuDon Editor v3.5.9 is an unsigned Windows application. The release validates its input files, ships with automated tests, and publishes SHA-256 checksums.
 
 Windows Defender SmartScreen may still show an "unrecognized app" warning, because a new executable has no download reputation yet.
 
@@ -93,14 +93,14 @@ Language is chosen on first start and can be changed in **Settings**. Changing i
 2. Download:
 
 ```text
-TaikoFancyArranger-Windows-x64.zip
+KatsuDonEditor-Windows-x64.zip
 ```
 
 3. Extract the entire ZIP.
 4. Run:
 
 ```text
-TaikoFancyArranger.exe
+KatsuDonEditor.exe
 ```
 
 5. That is the last time you download it by hand. When a new version is out, the app shows its patch notes on startup. Click **Update and Restart** and it installs itself into the same folder and reopens, keeping your settings and shortcuts. Keep the folder somewhere you can write to (not `Program Files`).
@@ -470,7 +470,7 @@ Text, equations, drawings, and detailed shapes need enough selected notes to rem
 
 When reporting a bug, include:
 
-- Taiko Fancy Arranger version
+- KatsuDon Editor version
 - Windows version
 - Which page and view (Editor chart, SV editor, Gimmick editor, Fancy Arranger, …)
 - Transformation name, selected-note count and parameters, if relevant
@@ -499,7 +499,7 @@ Not yet implemented, and next in line:
 
 ## License
 
-Taiko Fancy Arranger is released under the MIT License. See [`LICENSE`](LICENSE) for details.
+KatsuDon Editor is released under the MIT License. See [`LICENSE`](LICENSE) for details.
 
 This project is a community-made tool and is not affiliated with or endorsed by osu! or peppy.
 

@@ -14,7 +14,7 @@ This revision explicitly documents the Japanese-localization regression, its roo
 
 - **Name:** Taiko Fancy Arranger
 - **Author:** jimmyreturnz
-- **Repository history:** The GitHub repository may still use the historical name TaikoFancyEditor. Preserve current URLs and Git conventions unless an intentional migration is approved.
+- **Repository history:** The GitHub repository may still use the historical name KatsuDonEditor. Preserve current URLs and Git conventions unless an intentional migration is approved.
 - **Application type:** Windows desktop application written primarily in Python and PySide6, packaged with PyInstaller.
 - **Audience:** osu!taiko players and mappers creating visual or storyboard-like note arrangements without manually positioning every note.
 

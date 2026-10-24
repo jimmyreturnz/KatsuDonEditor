@@ -50,7 +50,7 @@ def failing_opener(error: Exception):
 RELEASE_PAYLOAD = {
     "tag_name": "v3.1.0",
     "body": "New things.",
-    "html_url": "https://github.com/jimmyreturnz/TaikoFancyEditor/releases/tag/v3.1.0",
+    "html_url": "https://github.com/jimmyreturnz/KatsuDonEditor/releases/tag/v3.1.0",
     "assets": [
         {
             "name": "KatsuDonEditor-Windows-x64.zip",

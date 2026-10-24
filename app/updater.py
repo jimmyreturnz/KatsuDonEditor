@@ -41,8 +41,8 @@ from app.security_utils import resource_roots
 
 LOGGER = logging.getLogger(__name__)
 
-RELEASES_API = "https://api.github.com/repos/jimmyreturnz/TaikoFancyEditor/releases/latest"
-RELEASE_PAGE = "https://github.com/jimmyreturnz/TaikoFancyEditor/releases/latest"
+RELEASES_API = "https://api.github.com/repos/jimmyreturnz/KatsuDonEditor/releases/latest"
+RELEASE_PAGE = "https://github.com/jimmyreturnz/KatsuDonEditor/releases/latest"
 PORTABLE_ASSET = "KatsuDonEditor-Windows-x64.zip"
 CHECKSUM_ASSET = "SHA256SUMS.txt"
 # GitHub answers an API request without a User-Agent with 403.

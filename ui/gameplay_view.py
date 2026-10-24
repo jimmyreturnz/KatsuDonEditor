@@ -1561,20 +1561,25 @@ class GameplayViewerView(QWidget):
         200-unit playfield -- the same rule as the grey note under it."""
         return self.skin.natural("approachcircle", self.height() / PLAYFIELD_UNIT * HIT_TARGET_RING_SCALE)
 
-    def _cap_height(self, diameter: int) -> int:
-        """`taiko-roll-end`'s drawn height, so its *ink* matches the note's.
+    def _roll_height(self, element: str, diameter: int, big: bool = False) -> int:
+        """A roll piece's drawn height, so its *ink* matches the head's.
 
-        Skins pad the two elements differently -- one real skin fills 0.83 of
+        Skins pad the elements differently -- one real skin fills 0.83 of
         `taikohitcircle`'s box and 1.00 of `taiko-roll-end`'s -- so scaling both
         to the note diameter drew a cap visibly larger than the note it caps,
         with its yellow showing past the note's edge. Dividing by each one's own
-        ink ratio makes the two agree however a skin padded them.
+        ink ratio makes them agree however a skin padded them.
+
+        The track and the cap both, against the head they belong to. Only the
+        cap used to be, so in a skin whose track and cap are padded alike
+        (0.93 each, head 0.99) the cap stood 3px proud of the body above and
+        below, 4-5px on a big roll (owner, 2026-10-24).
         """
-        head_ink = self.skin.ink_height("taikohitcircle")
-        cap_ink = self.skin.ink_height("taiko-roll-end")
-        if cap_ink <= 0.0:
+        head_ink = self.skin.ink_height("taikobigcircle" if big else "taikohitcircle")
+        ink = self.skin.ink_height(element)
+        if ink <= 0.0:
             return diameter
-        return max(1, round(diameter * head_ink / cap_ink))
+        return max(1, round(diameter * head_ink / ink))
 
     def _draw_skinned_roll(
         self, painter, x, end_x, center_y, radius, big: bool = False,
@@ -1604,14 +1609,15 @@ class GameplayViewerView(QWidget):
         blend mode the wiki gives for both roll pieces.
         """
         diameter = round(radius * 2)
-        cap = self._cap_height(diameter)
-        middle = self.skin.scaled("taiko-roll-middle", diameter, self.slider_brush)
+        cap = self._roll_height("taiko-roll-end", diameter, big)
+        track = self._roll_height("taiko-roll-middle", diameter, big)
+        middle = self.skin.scaled("taiko-roll-middle", track, self.slider_brush)
         if middle is None:
             return False
         body_end = max(end_x, x)
         if body_end > x:
             painter.drawPixmap(
-                QRectF(x, center_y - radius, body_end - x, radius * 2),
+                QRectF(x, center_y - track / 2.0, body_end - x, track),
                 middle, QRectF(middle.rect()),
             )
         tail = self.skin.scaled("taiko-roll-end", cap, self.slider_brush)
@@ -1660,18 +1666,18 @@ class GameplayViewerView(QWidget):
         if end_time is None:
             return
         width = abs(end_time - note.time) * self.velocity_at(note.time) * self.px_per_beat
-        cap = self._cap_height(round(radius * 2))
+        cap = self._roll_height("taiko-roll-end", round(radius * 2), note.is_finisher)
         # The cap butts onto the far end of the track and reaches past it by its
         # own width (origin TopLeft), so that -- not the head -- is the right
         # edge of what gets drawn.
         if x + width + cap < 0 or x - radius > self.width():
             return
         if width >= 0.5:
-            track = self.skin.scaled(
-                "taiko-roll-middle", round(radius * 2), self.slider_brush)
+            height = self._roll_height("taiko-roll-middle", round(radius * 2), note.is_finisher)
+            track = self.skin.scaled("taiko-roll-middle", height, self.slider_brush)
             if track is not None:
                 painter.drawPixmap(
-                    QRectF(x, center_y - radius, width, radius * 2),
+                    QRectF(x, center_y - height / 2.0, width, height),
                     track, QRectF(track.rect()),
                 )
             else:

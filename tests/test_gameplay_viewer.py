@@ -23,7 +23,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPoint, QPointF, Qt
-from PySide6.QtGui import QColor, QImage, QWheelEvent
+from PySide6.QtGui import QColor, QImage, QPainter, QWheelEvent
 from PySide6.QtWidgets import QApplication
 
 from ui import gui
@@ -568,6 +568,37 @@ class DrumrollPartsTests(unittest.TestCase):
                         (colour.red(), colour.green(), colour.blue()),
                         gui.DRUMROLL_COLOR,
                     )
+
+    def test_the_cap_is_exactly_as_tall_as_the_track(self):
+        """Owner, 2026-10-24: in a skin whose track and cap are padded alike
+        and the head less, only the cap was scaled to the head's ink, so it
+        stood 3px proud of the body above and below."""
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            for name, size, pad in (("taikohitcircle", (256, 256), 2),
+                                    ("taiko-roll-middle", (2, 256), 9),
+                                    ("taiko-roll-end", (128, 256), 9)):
+                image = QImage(*size, QImage.Format_ARGB32)
+                image.fill(Qt.transparent)
+                painter = QPainter(image)
+                painter.fillRect(0, pad, size[0], size[1] - 2 * pad, QColor("white"))
+                painter.end()
+                image.save(str(folder / f"{name}.png"))
+            view = gui.GameplayViewerView()
+            view.resize(900, 230)
+            view.set_skin(skin.TaikoSkin(folder))
+            image = QImage(900, 230, QImage.Format_ARGB32)
+            image.fill(0)
+            painter = QPainter(image)
+            view._draw_skinned_roll(painter, 100.0, 600.0, 115.0, 54.6)
+            painter.end()
+
+        def rows(x):
+            opaque = [y for y in range(image.height()) if image.pixelColor(x, y).alpha() > 128]
+            return opaque[0], opaque[-1]
+        self.assertEqual(rows(599), rows(601), "track and cap meet on the same rows")
+        for track, head in zip(rows(400), rows(100)):
+            self.assertAlmostEqual(track, head, delta=1, msg="and the track is as tall as the head")
 
     def test_the_editor_timeline_draws_the_same_pieces(self):
         """The skin is meant to reach every view that draws a note."""

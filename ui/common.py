@@ -5,7 +5,9 @@ import operator
 from pathlib import Path
 from PySide6.QtCore import QPointF, QRect, Qt
 from PySide6.QtGui import QImage, QColor, QFont, QFontMetrics, QPainter, QPen, QPixmap, QIcon
-from PySide6.QtWidgets import QPushButton, QStyle, QStyleOptionButton
+from PySide6.QtWidgets import (
+    QFrame, QPushButton, QScrollArea, QSizePolicy, QStyle, QStyleOptionButton, QWidget,
+)
 from app.security_utils import resource_roots
 from ui import theme
 from osu_io.timing import (
@@ -152,6 +154,33 @@ def equalize_button_widths(buttons, heights: bool = False, widths: bool = True) 
             button.setFixedHeight(height)
 
 
+def scroll_row(row: QWidget) -> QScrollArea:
+    """`row` on one line, scrolling sideways when the window is narrower.
+
+    A row of controls in a plain layout is the window's minimum width: the
+    Fancy sub-toolbar alone was ~1800px and ran anything narrower off the
+    screen. Here it keeps its line and gets a thin bar instead. Call it once
+    the row is full: the height is the row's own.
+    """
+    scroll = QScrollArea()
+    scroll.setWidget(row)
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.NoFrame)
+    scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    scroll.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+    # The area and its viewport are clear; the row keeps its own fill, which
+    # for the Editor's `opaque_strip` is the whole point of it.
+    scroll.setStyleSheet(
+        "QScrollArea, QScrollArea > QWidget { background: transparent; }"
+        "QScrollBar:horizontal { background: transparent; height: 6px; }"
+        "QScrollBar::handle:horizontal { background: #3a4554; border-radius: 3px; min-width: 32px; }"
+        "QScrollBar::handle:horizontal:hover { background: #ff66aa; }"
+        "QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page { width: 0; background: none; }")
+    # Its own height, plus the scroll bar's when the row is too wide.
+    scroll.setFixedHeight(row.sizeHint().height() + 8)
+    return scroll
+
+
 # Kiai flash. Notes in a kiai section brighten on every 1/1 beat and fade out
 # across it. Stacked objects -- a fake slider dropped on top of a note -- each
 # paint their own overlay, so a stack reads brighter than a lone note without
@@ -171,11 +200,25 @@ KAT_COLOR = (67, 141, 171)
 # the editor timeline and the gameplay preview draw the same object and had
 # drifted to two slightly different yellows.
 DRUMROLL_COLOR = (251, 183, 6)
+# `sliderscorepoint` on a drumroll: its yellow, halfway to white so it shows on
+# the body. taiko-rs's ROLL_TICK.
+DRUMROLL_TICK_COLOR = (253, 219, 131)
 
 
 def format_time(time_ms: int) -> str:
     value = max(0, int(time_ms))
     return f"{value // 60000:02d}.{(value % 60000) // 1000:02d}.{value % 1000:03d}"
+
+
+def osu_timestamp(time_ms: float, indexes=()) -> str:
+    """osu!'s editor link, `01:27:273 (777,778) - `, as the beatmap discussion
+    page reads it. The numbers are 1-based object indexes in file order, not
+    combo numbers: taiko has no combos to count. No objects, no brackets."""
+    value = max(0, int(time_ms))
+    stamp = f"{value // 60000:02d}:{(value % 60000) // 1000:02d}:{value % 1000:03d}"
+    if indexes:
+        stamp += f" ({','.join(str(index) for index in indexes)})"
+    return stamp + " - "
 
 
 _SPINNER_PIXMAP: QPixmap | None = None
@@ -203,16 +246,22 @@ def spinner_pixmap() -> QPixmap:
 
 def drumroll_tick_times(note, beat_points, timing_points, slider_multiplier) -> list[float]:
     """Where a real drumroll's ticks fall: every 1/4 beat of its red line,
-    from the head to the end. A fake slider -- no positive duration -- has
-    none. SliderTickRate 3 (1/3 beat) is not read by the parser, so not here.
+    from the head to the end -- 1/8 at 125 BPM or slower, 1/2 above 250, as
+    osu!taiko does (taiko-rs's `beatmap.rs` has the same rule). A fake slider
+    -- no positive duration -- has none. SliderTickRate 3 (1/3 beat) is not
+    read by the parser, so not here.
     """
-    if not note.is_slider or note.length is None or note.slides is None:
+    if not note.is_slider or note.length is None or note.slides is None or note.is_nan_slider:
         return []
     timing = active_uninherited_at(beat_points, note.time)
     duration = duration_for_slider_length(
         note.length * note.slides, timing.beat_length,
         sv_at(timing_points, note.time), slider_multiplier)
-    tick = timing.beat_length / 4
+    divisor = 4
+    if timing.beat_length > 0:
+        bpm = 60000.0 / timing.beat_length
+        divisor = 8 if bpm <= 125 else 2 if bpm > 250 else 4
+    tick = timing.beat_length / divisor
     if duration <= 0 or tick <= 0:
         return []
     count = int(duration / tick + 1e-6) + 1

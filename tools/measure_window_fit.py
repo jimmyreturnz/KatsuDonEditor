@@ -40,14 +40,17 @@ if len(sys.argv) > 1:
 screen = window.screen().availableGeometry()
 print(f"screen available {screen.width()}x{screen.height()}, dpr {window.devicePixelRatio()}")
 for index, name in ((gui.PAGE_LIBRARY, "library"), (gui.PAGE_EDITOR, "editor"),
-                    (gui.PAGE_GIMMICK, "gimmick"), (gui.PAGE_FANCY, "fancy")):
+                    (gui.PAGE_GIMMICK, "gimmick"), (gui.PAGE_FANCY, "fancy"), (gui.PAGE_MISC, "misc")):
     window._show_page(index)
     for _ in range(3):
         app.processEvents()
     frame, minimum = window.frameGeometry(), window.minimumSizeHint()
     over = max(0, minimum.width() - screen.width()), max(0, minimum.height() - screen.height())
+    # Windows' quarter snap on a 1080p screen: the frame, title bar included.
+    chrome = frame.size() - window.size()
+    snap = minimum.width() + chrome.width() <= 960 and minimum.height() + chrome.height() <= 540
     print(f"{name}: frame {frame.width()}x{frame.height()}, minimum {minimum.width()}x{minimum.height()}, "
-          f"over by {over[0]}x{over[1]}")
+          f"over by {over[0]}x{over[1]}, fits 960x540: {'yes' if snap else 'no'}")
     page = window.page_stack.currentWidget()
     for axis in ("width", "height"):
         print(f"  {axis} chain:")

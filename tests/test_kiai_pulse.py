@@ -284,14 +284,14 @@ class ShinyGlowTests(unittest.TestCase):
         self.assertFalse(hasattr(gui, "SHINY_GLOW_COLOR"))
         self.assertFalse(hasattr(gui, "draw_shiny_glow"))
 
-    def test_a_note_first_in_the_file_stays_over_its_pile(self):
-        """One millisecond, so file order decides (ppy/osu
-        HitObjectContainer.Compare): outside a chorus the note shows as
-        itself however deep the pile under it."""
+    def test_a_pile_on_the_notes_own_millisecond_goes_over_it(self):
+        """Owner's rule: on one millisecond a fake slider is drawn over
+        the don/kat, whatever the file order -- so the pile's yellow shows. A
+        pile at T+1 (Hyper Bass) still goes under its note."""
         for stack in (3, 8):
             with self.subTest(stack=stack):
                 shown = self._colour(stack, note=True)
-                self.assertNotEqual(
+                self.assertEqual(
                     (shown.red(), shown.green(), shown.blue()), gui.DRUMROLL_COLOR)
 
     def test_a_lone_note_flashes_white_and_a_pile_yellow(self):

@@ -338,15 +338,21 @@ class HitPositionTests(unittest.TestCase):
         return HitObject(x=256, y=192, time=time_ms, type=2, hit_sound=0,
                          extras=("L|624:192", "1", repr(length)))
 
-    def test_a_fake_slider_loses_its_head_at_the_target(self):
-        note = self._fake(1000)
-        view = self._view([note], at=1000.0)
-        self.assertTrue(view._has_been_hit(note))
+    def _fake_view(self, note, at):
+        view = self._view([note], at=at)
+        view._phantom_ends[note.uid] = view._compute_phantom_end(note)
+        return view
 
-    def test_a_fake_slider_still_short_of_it_keeps_its_head(self):
-        note = self._fake(1000)
-        view = self._view([note], at=999.0)
+    def test_a_fake_slider_loses_its_head_when_its_cap_lands(self):
+        """The cap sits ahead of the head, so it lands first and takes the
+        head with it."""
+        note = self._fake(1000, -100.0)
+        view = self._fake_view(note, at=0.0)
+        cap = view._phantom_ends[note.uid]
+        view.current_time = cap - 1.0
         self.assertFalse(view._has_been_hit(note))
+        view.current_time = cap
+        self.assertTrue(view._has_been_hit(note))
 
     def _what_is_drawn(self, note, at):
         """(skin elements asked for, tracks drawn, note heads) for one frame."""
@@ -418,31 +424,59 @@ class HitPositionTests(unittest.TestCase):
                     view.close()
                 self.assertEqual(len(heads), 1)
 
-    def test_it_is_still_drawn_once_its_head_has_left_the_screen(self):
-        """A long one is a thousand pixels of track behind a head that has
-        already gone past the left edge -- culled on the head it disappeared
-        while most of it was still on screen."""
-        note = self._fake(1000, -800.0)
-        view = self._view([note], at=1000.0)
-        view._phantom_ends[note.uid] = view._compute_phantom_end(note)
-        span = abs(view._phantom_ends[note.uid] - 1000.0)
-        width = span * view.velocity_at(1000.0) * view.px_per_beat
-        self.assertGreater(width, view.width(), "the fixture is too short to show it")
+    def _tracks_and_heads(self, view):
+        view.skin.scaled = lambda *a, **k: None  # built-in track, one drawRect
+        rects, heads, opacities = [], [], []
+        rect, sprite = gui.QPainter.drawRect, gameplay_view.draw_note_sprite
 
-        # Far enough past that the head is off the left edge, but not so far
-        # that the track has followed it off.
-        view.current_time = 1000.0 + (span / 2.0)
-        self.assertLess(view.x_for_time(1000.0), 0.0, "the head is still on screen")
-        view.skin.scaled = lambda *a, **k: None
-        drawn = []
-        original = gui.QPainter.drawRect
-        gui.QPainter.drawRect = lambda self, rect: drawn.append(rect)
+        def spy(painter, r):
+            rects.append(r)
+            opacities.append(painter.opacity())
+
+        gui.QPainter.drawRect = spy
+        gameplay_view.draw_note_sprite = lambda *a, **k: heads.append(1)
         try:
             view.grab()
         finally:
-            gui.QPainter.drawRect = original
+            gui.QPainter.drawRect = rect
+            gameplay_view.draw_note_sprite = sprite
             view.close()
-        self.assertTrue(drawn, "the track was culled with its head")
+        return rects, heads, opacities
+
+    def test_a_long_one_shows_only_its_track(self):
+        """-800: its cap landed before its head ever came on screen, so the
+        track is all there is."""
+        note = self._fake(1000, -800.0)
+        rects, heads, _ = self._tracks_and_heads(self._fake_view(note, at=900.0))
+        self.assertTrue(rects, "no track drawn")
+        self.assertEqual(heads, [])
+
+    def test_nothing_shows_before_the_head_comes_on_screen(self):
+        """The cap is ahead of the head, but the object is not alive yet."""
+        note = self._fake(3000, -100.0)
+        view = self._fake_view(note, at=0.0)
+        view.grab()  # settles the geometry the first paint lays out
+        view.current_time += (view.x_for_time(3000.0) - view.width() - 50) / (
+            view.velocity_at(3000.0) * view.px_per_beat)
+        self.assertGreater(view.x_for_time(3000.0), view.width())
+        self.assertLess(view.x_for_time(view._phantom_ends[note.uid]), view.width())
+        rects, heads, _ = self._tracks_and_heads(view)
+        self.assertEqual((rects, heads), ([], []))
+
+    def test_at_the_target_a_long_track_goes_and_a_short_one_fades(self):
+        fade_ms = gameplay_view.FAKE_SLIDER_FADE_MS
+        for length, shown in ((-800.0, False), (-100.0, True)):
+            with self.subTest(length=length):
+                note = self._fake(1000, length)
+                rects, _, opacity = self._tracks_and_heads(
+                    self._fake_view(note, at=1000.0 + fade_ms / 2))
+                self.assertEqual(bool(rects), shown)
+                if shown:
+                    self.assertAlmostEqual(opacity[-1], 0.5, delta=0.05)
+        note = self._fake(1000, -100.0)
+        rects, _, _ = self._tracks_and_heads(
+            self._fake_view(note, at=1000.0 + fade_ms))
+        self.assertEqual(rects, [])
 
     def test_the_slice_is_widened_by_the_forward_extent(self):
         """The same thing one level up: the visible-range slice has to reach
@@ -545,19 +579,29 @@ class DrumrollPartsTests(unittest.TestCase):
                 self.assertIn(piece, names)
 
     def test_a_negative_length_slider_is_all_three_pieces_too(self):
-        """Head, track and cap, the same three a real roll has -- the track
-        just runs the other way."""
-        names = [element for element, _c in self._preview_parts(-400.0)]
+        """Head, track and cap, the same three a real roll has, until its cap
+        (-100 here, 357ms ahead of the head) lands."""
+        names = [element for element, _c in self._preview_parts(-100.0)]
         for piece in ("taiko-roll-middle", "taiko-roll-end", "taikohitcircle"):
             with self.subTest(piece=piece):
                 self.assertIn(piece, names)
 
-    def test_a_fake_sliders_cap_outlives_its_head(self):
-        """Past the hit position the head is gone and the cap is still
-        travelling, which is the one way a fake slider is not like a circle."""
-        names = [element for element, _c in self._preview_parts(-400.0, at=1700.0)]
-        self.assertIn("taiko-roll-end", names)
+    def test_once_its_cap_lands_only_the_track_is_left(self):
+        """Owner, 2026-10-26: osu! cuts the head and the cap when the cap
+        reaches the hit position; the track carries on. A long one only
+        (FAKE_SLIDER_LINGER_LENGTH and up) -- see the next test."""
+        names = [element for element, _c in self._preview_parts(-300.0, at=1300.0)]
+        self.assertIn("taiko-roll-middle", names)
+        self.assertNotIn("taiko-roll-end", names)
         self.assertNotIn("taikohitcircle", names)
+
+    def test_a_short_ones_cap_passes_through_the_target(self):
+        """Owner, 2026-10-28: a short fake slider's cap and head go on through
+        the hit position like a real drumroll's."""
+        names = [element for element, _c in self._preview_parts(-100.0, at=1300.0)]
+        for piece in ("taiko-roll-middle", "taiko-roll-end", "taikohitcircle"):
+            with self.subTest(piece=piece):
+                self.assertIn(piece, names)
 
     def test_every_piece_takes_the_drumroll_colour(self):
         for element, colour in self._preview_parts(400.0):
@@ -621,9 +665,115 @@ class DrumrollPartsTests(unittest.TestCase):
         self.assertIn("taiko-roll-end", names)
 
 
+class SpinnerFadeTests(unittest.TestCase):
+    def test_a_spinner_fades_in_from_a_beat_and_a_half_before_it(self):
+        """ppy/osu#21769: hidden, then in over 666ms (the half beat if
+        shorter) from 1.5 beats before."""
+        from ui.gameplay_view import spinner_fade
+        self.assertEqual(spinner_fade(500.0, 850.0), 0.0)
+        self.assertEqual(spinner_fade(500.0, 625.0), 0.25)
+        self.assertEqual(spinner_fade(500.0, 500.0), 1.0)
+        self.assertEqual(spinner_fade(500.0, 0.0), 1.0)
+        self.assertEqual(spinner_fade(2000.0, 3000.0), 0.0)
+        self.assertEqual(spinner_fade(2000.0, 2334.0), 1.0)
+
+
+class PopUpTests(unittest.TestCase):
+    """senpai, notice me! [w] 189511: long fake sliders on 1ms red lines stand
+    by their length and fade in like a spinner (owner, 2026-10-28)."""
+
+    def _view(self):
+        view = gui.GameplayViewerView()
+        view.resize(900, 200)
+        points = [TimingPoint(time=0.0, beat_length=387.0, meter=4),
+                  TimingPoint(time=1000.0, beat_length=1.0, meter=4),
+                  TimingPoint(time=1001.0, beat_length=387.0, meter=4)]
+        view.timing_points = view.beat_points = points
+        view._beat_times = [0.0, 1000.0, 1001.0]
+        view.slider_multiplier = 1.8
+        view._rebuild_velocities()
+        return view
+
+    @staticmethod
+    def _fake(length, time=1000):
+        return HitObject(x=166, y=117, time=time, type=2, hit_sound=4,
+                         extras=("L|181:87", "1", repr(length)))
+
+    def test_it_stands_by_its_length_and_fades_in(self):
+        view = self._view()
+        hit = view._hit_x()
+        lane = view.width() - hit
+        view.current_time = 950.0
+        at = lambda length: (view._pop_up(self._fake(length))[0] - hit) / lane
+        # Stable: -300 at ~17% of the lane, the farthest well inside its first 75%.
+        self.assertAlmostEqual(at(-300.0), 0.17, delta=0.01)
+        self.assertLess(at(-510.0), 0.75)
+        view.current_time = 600.0
+        self.assertEqual(view._pop_up(self._fake(-510.0))[2], 1.0)
+        # Shown 300 / 180 beats before (645ms), -510 2.83 beats (1097ms).
+        view.current_time = 1000.0 - 650.0
+        self.assertEqual(view._pop_up(self._fake(-300.0))[2], 0.0)
+        self.assertGreater(view._pop_up(self._fake(-510.0))[2], 0.0)
+        view.current_time = 1000.0 - 600.0
+        self.assertGreater(view._pop_up(self._fake(-300.0))[2], 0.0)
+        # Gone at its time: no fade out in stable.
+        view.current_time = 1000.0
+        self.assertIsNone(view._pop_up(self._fake(-300.0)))
+
+    def test_at_an_ordinary_speed_it_is_the_usual_fake_slider(self):
+        view = self._view()
+        view.current_time = 450.0
+        self.assertIsNone(view._pop_up(self._fake(-300.0, time=500)))
+
+
+class RollTickTintTests(unittest.TestCase):
+    """Owner, 2026-10-28: `sliderscorepoint` takes the roll's yellow on the
+    rule's 1/4 (or 1/2) grid only; a slow roll's 1/8 ticks between keep the
+    image's own colour."""
+
+    def _tints(self, beat_length):
+        view = gui.GameplayViewerView()
+        view.resize(900, 200)
+        point = TimingPoint(time=0.0, beat_length=beat_length, meter=4)
+        view.timing_points = view.beat_points = [point]
+        view._beat_times = [0.0]
+        view.slider_multiplier = 1.4
+        view._rebuild_velocities()
+        roll = HitObject(x=256, y=192, time=1000, type=2, hit_sound=0,
+                         extras=("L|624:192", "1", "140.0"))
+        view.notes, view.note_times = [roll], [1000.0]
+        view._end_times = {roll.uid: view._compute_end_time(roll)}
+        view._phantom_ends, view._max_extend_ms = {}, view._end_times[roll.uid] - 1000.0
+        view.current_time = 900.0
+        seen = []
+        view._draw_roll_ticks = lambda painter, ticks, *rest: seen.extend(t for _x, t in ticks)
+        view.grab()
+        return seen
+
+    def test_a_slow_rolls_in_between_ticks_are_untinted(self):
+        self.assertEqual(self._tints(500.0), [True, False] * 4 + [True])  # 120 BPM: 1/8
+
+    def test_every_tick_is_tinted_at_ordinary_tempo(self):
+        tints = self._tints(300.0)  # 200 BPM: 1/4
+        self.assertTrue(tints and all(tints))
+
+
+class NanSliderTests(unittest.TestCase):
+    def test_it_is_invisible_in_the_preview_and_has_no_ticks(self):
+        from ui.common import drumroll_tick_times
+        note = HitObject(x=256, y=192, time=1500, type=2, hit_sound=0,
+                         extras=("L|268:192", "1", "NaN"))
+        self.assertTrue(note.is_nan_slider)
+        point = TimingPoint(time=0.0, beat_length=500.0, meter=4)
+        self.assertEqual(drumroll_tick_times(note, [point], [point], 1.4), [])
+        names = [element for element, _c in DrumrollPartsTests()._preview_parts(float("nan"))]
+        self.assertFalse({"taiko-roll-middle", "taiko-roll-end", "taikohitcircle"} & set(names))
+
+
 class DrawOrderTests(unittest.TestCase):
     """ppy/osu HitObjectContainer.Compare: the earlier StartTime is on top,
-    whatever the SV and whatever the object. On one millisecond, file order."""
+    whatever the SV and whatever the object. On one millisecond a slider goes
+    over a circle, then file order."""
 
     def _order(self, notes, at, green=()):
         view = gui.GameplayViewerView()
@@ -673,7 +823,8 @@ class DrawOrderTests(unittest.TestCase):
                                      meter=4, uninherited_flag=0))
         else:
             green[0].beat_length = -100.0 / second_sv
-        order = self._order([circle, other], at=1000.0, green=green)
+        # Both on screen: one off the edge is never handed to _draw_note.
+        order = self._order([circle, other], at=1450.0, green=green)
         return order.index(circle.uid), order.index(other.uid)
 
     def test_a_shiny_stack_goes_under_its_note(self):
@@ -685,12 +836,15 @@ class DrawOrderTests(unittest.TestCase):
         circle, fake = self._pair(1501, 0.5)
         self.assertGreater(circle, fake)
 
-    def test_on_one_millisecond_the_first_in_the_file_is_on_top(self):
-        circle = HitObject(x=256, y=192, time=1500, type=1, hit_sound=0)
-        fake = HitObject(x=256, y=192, time=1500, type=2, hit_sound=0,
-                         extras=("L|624:192", "1", "-0.001"))
-        order = self._order([circle, fake], at=1000.0)
-        self.assertGreater(order.index(circle.uid), order.index(fake.uid))
+    def test_on_one_millisecond_the_fake_slider_is_on_top(self):
+        """Owner, 2026-10-27: a fake slider on a note's own millisecond goes
+        over it, whichever comes first in the file."""
+        for fake_first in (False, True):
+            circle = HitObject(x=256, y=192, time=1500, type=1, hit_sound=0)
+            fake = HitObject(x=256, y=192, time=1500, type=2, hit_sound=0,
+                             extras=("L|624:192", "1", "-0.001"))
+            order = self._order([fake, circle] if fake_first else [circle, fake], at=1000.0)
+            self.assertGreater(order.index(fake.uid), order.index(circle.uid), fake_first)
 
     def test_a_real_drumroll_is_ordered_by_time_like_a_note(self):
         roll = HitObject(x=256, y=192, time=1400, type=2, hit_sound=0,
@@ -1120,14 +1274,15 @@ class PaintAndInputTests(unittest.TestCase):
                 self.view.current_time = time_ms
                 self.view.grab()
 
-    def test_painting_a_near_stopped_section_does_not_hang(self):
-        """A 0.01x section puts an unbounded amount of *time* on one screen;
-        the visible range is capped rather than scanning the whole map."""
+    def test_a_near_stopped_section_reaches_the_end_of_the_map(self):
+        """A 0.01x section puts minutes on one screen: the visible range is not
+        capped, so the map's last object is still looked for (owner,
+        2026-10-28), and painting it does not hang."""
         self.view.timing_points[1].set_sv(0.01)
         self.view._rebuild_velocities()
         self.view.current_time = 2000.0
-        start, end = self.view.visible_time_range()
-        self.assertLessEqual(end - start, 2 * gameplay_view.GAMEPLAY_MAX_LOOKAHEAD_MS)
+        _start, end = self.view.visible_time_range()
+        self.assertGreater(end, self.view.notes[-1].time)
         self.view.grab()
 
     def test_a_barline_gimmick_section_does_not_generate_millions_of_lines(self):

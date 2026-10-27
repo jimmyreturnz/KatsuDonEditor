@@ -1765,6 +1765,19 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
                 big=note.is_finisher,
                 selected=note.original_index in self.selected,
             )
+            if note.is_nan_slider:
+                # Invisible in osu! and the gameplay preview; marked here so
+                # it can be found and edited.
+                painter.save()
+                font = QFont(painter.font())
+                font.setPixelSize(max(6, round(radius * 0.6)))
+                font.setBold(True)
+                painter.setFont(font)
+                painter.setPen(QColor(255, 255, 255))
+                painter.drawText(
+                    QRectF(x - radius, note_center_y - radius, radius * 2, radius * 2),
+                    Qt.AlignCenter, "NaN")
+                painter.restore()
 
         self._draw_placement_ghost(painter, baseline_y, normal_note_radius, finisher_note_radius)
         self.draw_ctrl_precision_line(painter)

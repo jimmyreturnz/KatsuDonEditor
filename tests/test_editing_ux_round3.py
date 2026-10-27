@@ -101,9 +101,14 @@ class WindowTestCase(unittest.TestCase):
 class HeaderStatusPositionTests(WindowTestCase):
     def _header_order(self):
         # The header is a frame of its own (NSO draws it as a window).
+        # The chart name sits inside the header's scrolling group, so each
+        # widget is placed by the header item that holds it.
         row = self.window.settings_button.parentWidget().layout()
-        widgets = [row.itemAt(j).widget() for j in range(row.count())]
-        return {widget: j for j, widget in enumerate(widgets) if widget is not None}
+        items = [row.itemAt(j).widget() for j in range(row.count())]
+        wanted = (self.window.chart_version_label, self.window.chart_title_label,
+                  self.window.settings_button, self.window.page_tabs)
+        return {widget: j for widget in wanted for j, item in enumerate(items)
+                if item is not None and (item is widget or item.isAncestorOf(widget))}
 
     def test_status_message_is_in_the_status_bar(self):
         # Not the header: a message there read as a caption of the buttons
@@ -508,6 +513,20 @@ class ClipboardTests(WindowTestCase):
         times = {n.time for n in self.state.document.hit_objects}
         self.assertIn(30000, times)
         self.assertIn(30500, times, "relative spacing must be preserved")
+
+    def test_copy_puts_osus_timestamp_on_the_system_clipboard(self):
+        """For the beatmap discussion page (owner, 2026-10-27): the first
+        note's time and every picked note's 1-based index in file order."""
+        view = self._chart_view()
+        self.window._editor_view_focus_changed(None, view)
+        objects = self.state.document.hit_objects
+        sources = [n for n in objects if n.time in (1000, 1500)]
+        view.selected = {n.original_index for n in sources}
+
+        self.window.copy_selection()
+
+        indexes = ",".join(str(objects.index(n) + 1) for n in sources)
+        self.assertEqual(QApplication.clipboard().text(), f"00:01:000 ({indexes}) - ")
 
     def test_a_spinner_keeps_its_length_when_pasted_or_dragged(self):
         """Its end is an absolute millisecond in its extras: pasted, it ended

@@ -5,6 +5,10 @@
 
 `--rate R` plays at a speed button's rate (0.75, 0.5, 0.25).
 
+`--back` scrolls backward instead, and `--mixed` alternates two forward and
+one back: "the song scrolled back and the playhead waited for it" (owner,
+2026-10-27) was never measured while the harness only went forward.
+
 `--paused` scrolls a stopped track, which is how most scrolling happens while
 editing; `--editor` aims the notches at the Editor page's chart view and
 `--gimmick` at the Gimmick page's first layer (entered on the current
@@ -47,7 +51,8 @@ FRAME_MS = 1000.0 / 120.0
 
 
 def main() -> None:
-    flags = {"--burst", "--paused", "--editor", "--gimmick", "--profile", "--callers"}
+    flags = {"--burst", "--paused", "--editor", "--gimmick", "--profile", "--callers",
+             "--back", "--mixed"}
     args = [a for a in sys.argv[1:] if a not in flags]
     paused = "--paused" in sys.argv
     seconds = 3.0
@@ -94,10 +99,39 @@ def main() -> None:
         target = window._gimmick_views[0].chart_view
         pump(app, 0.5)
 
-    # (wall ms, work ms, broadcast, a seek parked in the engine)
-    frames: list[tuple[float, float, float, bool]] = []
+    # (wall ms, work ms, broadcast, a seek parked in the engine, cause)
+    frames: list[tuple[float, float, float, bool, str]] = []
     original_render = window._render_gameplay_frame
     engine = window.player._engine
+
+    # Which report the source clock is built on, for blaming a frozen frame.
+    # Hooked in front of the window's own slot so the echo queue is read as
+    # that report found it.
+    source = {"stale": False}
+    original_report = window._player_position_changed
+
+    def report_hook(position: float) -> None:
+        pending = window._unechoed_seeks
+        stale = bool(pending) and position != pending[0]
+        before = window.latest_audio_position
+        original_report(position)
+        if window.latest_audio_position != before or stale:
+            # Adopted while a seek was still unechoed: it was sent before the
+            # engine had seen that seek, so it is the position being left.
+            source["stale"] = stale
+
+    window.player.positionChanged.disconnect()
+    window.player.positionChanged.connect(report_hook)
+
+    def cause() -> str:
+        if getattr(engine, "_pending_seek_ms", None) is not None:
+            return "parked"
+        if source["stale"]:
+            return "stale"
+        sink = engine._sink
+        if sink is not None and sink.processedUSecs() == 0:
+            return "cold"  # a fresh sink whose play cursor has not moved yet
+        return "other"
 
     def render_hook() -> None:
         due = window._next_frame_due_ns
@@ -107,7 +141,8 @@ def main() -> None:
             return  # a timer tick that was not a frame
         frames.append((began * 1000.0, (time.perf_counter() - began) * 1000.0,
                        window._last_broadcast_position,
-                       getattr(engine, "_pending_seek_ms", None) is not None))
+                       getattr(engine, "_pending_seek_ms", None) is not None,
+                       cause()))
 
     window.gameplay_render_timer.timeout.disconnect()
     window.gameplay_render_timer.timeout.connect(render_hook)
@@ -133,9 +168,11 @@ def main() -> None:
     start = start_at if start_at is not None else float(window.state.document.hit_objects[0].time)
     print(f"map: {path.name}   from {start:.0f}ms   {seconds:.1f}s per run   "
           f"{'paused' if paused else 'playing'}   {type(target).__name__}")
+    direction = "back" if "--back" in sys.argv else "mixed" if "--mixed" in sys.argv else "forward"
+    print(f"notches: {direction}   rate {rate}")
     print(f"{'run':>10}  {'gap p50':>7} {'p95':>6} {'max':>6}  {'late':>9}  "
-          f"{'frozen':>6} {'parked':>6}  {'work p95':>8}  {'backward':>8} {'worst':>7}  "
-          f"{'notches':>7} {'seek p95':>8}")
+          f"{'frozen':>6} {'parked':>6} {'stale':>5} {'cold':>5} {'other':>5}  "
+          f"{'work p95':>8}  {'backward':>8} {'worst':>7}  {'notches':>7} {'seek p95':>8}")
 
     for interval in [None, *intervals]:
         if window.player.playbackState() == QMediaPlayer.PlayingState:
@@ -159,10 +196,13 @@ def main() -> None:
             profiler.enable()
         began = time.perf_counter()
         next_notch = began
+        notches = 0
         while time.perf_counter() - began < seconds:
             now = time.perf_counter()
             if interval is not None and now >= next_notch:
-                notch(target)
+                notch(target, back="--back" in sys.argv
+                      or ("--mixed" in sys.argv and notches % 3 == 2))
+                notches += 1
                 next_notch += interval / 1000.0
             app.processEvents()
             time.sleep(0.0005)
@@ -274,10 +314,10 @@ def enter_gimmick_page(window) -> None:
     window._show_page(gui.PAGE_GIMMICK)
 
 
-def notch(view) -> None:
+def notch(view, back: bool = False) -> None:
     centre = QPointF(view.width() / 2.0, view.height() / 2.0)
     event = QWheelEvent(
-        centre, view.mapToGlobal(centre), QPoint(0, 0), QPoint(0, -120),
+        centre, view.mapToGlobal(centre), QPoint(0, 0), QPoint(0, 120 if back else -120),
         Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False,
     )
     QApplication.sendEvent(view, event)
@@ -304,12 +344,16 @@ def report(name: str, frames, seek_costs) -> None:
         return
     gaps = [b[0] - a[0] for a, b in zip(frames, frames[1:])]
     work = [f[1] for f in frames]
-    steps = [(b[2] - a[2], b[3]) for a, b in zip(frames, frames[1:])]
-    backward = [s for s, _parked in steps if s < 0]
-    frozen = [parked for s, parked in steps if s == 0]
+    steps = [(b[2] - a[2], b[3], b[4]) for a, b in zip(frames, frames[1:])]
+    # A backward notch steps the playhead back on purpose; only a backward
+    # step no notch asked for is a snap to a stale report.
+    backward = [s for s, _parked, _cause in steps if s < 0]
+    frozen = [parked for s, parked, _cause in steps if s == 0]
+    causes = [c for s, _parked, c in steps if s == 0]
     late = sum(1 for g in gaps if g > FRAME_MS * 1.5)
     print(f"{name:>10}  {statistics.median(gaps):7.2f} {pct(gaps, 0.95):6.2f} {max(gaps):6.1f}  "
-          f"{late:4d}/{len(gaps):<4d}  {len(frozen):6d} {sum(frozen):6d}  "
+          f"{late:4d}/{len(gaps):<4d}  {len(frozen):6d} {sum(frozen):6d} "
+          f"{causes.count('stale'):5d} {causes.count('cold'):5d} {causes.count('other'):5d}  "
           f"{pct(work, 0.95):8.2f}  {len(backward):8d} {min(backward, default=0.0):7.1f}  "
           f"{len(seek_costs):7d} {pct(seek_costs, 0.95):8.2f}")
 

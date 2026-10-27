@@ -21,6 +21,7 @@ from chart.time_axis import KIAI_OPEN_END_MS, TimeAxisMixin, wheel_seek_time
 from ui.common import (
     DON_COLOR,
     DRUMROLL_COLOR,
+    DRUMROLL_TICK_COLOR,
     GAMEPLAY_MAX_ASPECT,
     GAMEPLAY_MIN_HEIGHT,
     KAT_COLOR,
@@ -93,6 +94,41 @@ PLAYFIELD_PULSE_ALPHA = 8
 # player is looking *through*; here it is most of what the view is, and at
 # full opacity every beat of a chorus flashed the whole preview.
 KIAI_GLOW_STRENGTH = 0.5
+# A fake slider's track, once it reaches the hit position, fades over this
+# long -- unless its length is at least FAKE_SLIDER_LINGER_LENGTH, when it is
+# gone at once. Owner's observation of stable, 2026-10-26.
+# ponytail: the cutoff is "somewhere before -200", measure it if a map disagrees.
+FAKE_SLIDER_FADE_MS = 250.0
+FAKE_SLIDER_LINGER_LENGTH = 200.0
+# A spinner fades in, easing in, from 1.5 beats before it over lazer's 666ms
+# or half a beat if that is shorter (ppy/osu#21769, owner 2026-10-28).
+# taiko-rs's `swell_fade` is the same.
+SPINNER_FADE_MS = 666.0
+# Where a pop-up fake slider's head stands (`_pop_up`), fitted to the owner's
+# stable screenshot (1080p): heads 95px apart per 30 of length, the -300 one
+# 270px past the target, on a 1560px lane. So lane fractions per unit of
+# length, counted from length 215: -510, the farthest, at 60%.
+# ponytail: a fit to one screenshot; re-measure if another map disagrees.
+POP_UP_PER_LENGTH = 95.0 / 30.0 / 1560.0
+POP_UP_FROM_LENGTH = 215.0
+# A pop-up head's fade in: lazer's swell 666ms (owner: a half beat was too
+# fast, 2026-10-28). No fade out: gone at its time, as in stable.
+# ponytail: guessed from "too fast"; measure stable's if it still looks off.
+POP_UP_FADE_MS = 666.0
+
+
+def spinner_fade(beat_length: float, until_ms: float) -> float:
+    """A spinner's opacity `until_ms` before it starts: hidden until 1.5
+    beats before, then fading in."""
+    if beat_length <= 0:
+        return 1.0
+    return fade_from(1.5 * beat_length, min(beat_length / 2.0, SPINNER_FADE_MS), until_ms)
+
+
+def fade_from(lead_ms: float, fade_ms: float, until_ms: float) -> float:
+    """Hidden until `lead_ms` before, then fading in (easing in) over `fade_ms`."""
+    p = min(1.0, max(0.0, (lead_ms - until_ms) / fade_ms))
+    return p * p
 
 
 # A circle's share of that, so a note glows without its colour being replaced.
@@ -417,11 +453,6 @@ def flashlight_combo_scale(combo: int) -> float:
     return 1.0
 
 
-# Cap on how far the visible-note lookup will search either way. A near-zero SV
-# section makes one screen cover an unbounded amount of *time*, and scanning a
-# whole map for it would cost a frame.
-GAMEPLAY_MAX_LOOKAHEAD_MS = 30000.0
-
 
 class GameplayViewerView(QWidget):
     """M6: read-only preview that scrolls the way osu!taiko does.
@@ -466,6 +497,8 @@ class GameplayViewerView(QWidget):
         self._velocity_times: list[float] = []
         self._velocities: list[float] = []
         self._slowest_velocity = 1.0 / 500.0
+        self._main_beat = 500.0
+        self._section_slowest: list[float] = []
         self._max_extend_ms = 0.0
         # Slider/spinner end time by note uid, rebuilt per edit -- see
         # refresh_notes. Circles are simply absent.
@@ -483,6 +516,7 @@ class GameplayViewerView(QWidget):
         self.don_brush = QColor(*DON_COLOR)
         self.kat_brush = QColor(*KAT_COLOR)
         self.slider_brush = QColor(*DRUMROLL_COLOR)
+        self.roll_tick_brush = QColor(*DRUMROLL_TICK_COLOR)
         self.spinner_band_brush = QColor(190, 195, 205, 90)
         self.note_pen = QPen(QColor(15, 18, 24, 220), 2)
         # An osu! skin's own note art, or the built-in drawing when no skin is
@@ -694,13 +728,17 @@ class GameplayViewerView(QWidget):
     def _compute_phantom_end(self, note) -> float | None:
         """The end time of a fake slider, which is *before* its start.
 
-        A fake slider is a drumroll with a negative `length` -- the canonical
-        one is `256,192,54692,2,12,L|624:192,643,-0.0001`. The duration derived
-        from it is negative, so the drumroll ends before it begins, no tick is
-        ever generated and nothing is hittable, while osu! still draws the head.
-        That is the whole trick, and it is why `GimmickConfig.__post_init__`
-        rejects a non-negative length instead of clamping it: a positive one is
-        a real, scoreable drumroll.
+        A fake slider is a drumroll whose `length` is at most
+        `FAKE_SLIDER_MAX_LENGTH` -- the canonical one is
+        `256,192,54692,2,12,L|624:192,643,-0.0001`, but `0.001` is the same
+        trick and what most maps write. Either way the duration is too short
+        (or negative) for a tick, so nothing is hittable while osu! still draws
+        the head.
+
+        Only a **negative** duration comes back here and is drawn by
+        `_draw_fake_slider`. A positive one, however small, is a real end time
+        from `_compute_end_time` and goes down the real-roll path, head and
+        cap included.
 
         The negative extent is real geometry, not an error to swallow, so it is
         computed and handed to the painter rather than discarded. Drawn, it
@@ -782,6 +820,18 @@ class GameplayViewerView(QWidget):
         # The slowest section decides how far ahead a full screen can reach,
         # and so how many notes the visible-range lookup has to consider.
         self._slowest_velocity = min(velocities)
+        # Per red-line section, for `barline_times`: asked every frame for
+        # every section once the visible range spans the map.
+        self._section_slowest = [
+            self.slowest_velocity_in(
+                point.time,
+                self.beat_points[i + 1].time if i + 1 < len(self.beat_points) else float("inf"))
+            for i, point in enumerate(self.beat_points)
+        ]
+        # What a pop-up fake slider fades in by (`_pop_up`): its own red line
+        # is a 1ms gimmick line.
+        last = self.notes[-1].time if self.notes else (points[-1].time if points else 0.0)
+        self._main_beat = most_common_beat_length(points, last) or 500.0
 
     @property
     def _scroll_scale(self) -> float:
@@ -959,11 +1009,13 @@ class GameplayViewerView(QWidget):
         """Time bounds wide enough to contain everything on screen.
 
         Bounded by the *slowest* velocity in the map, so it never misses an
-        object, and clamped: a near-stopped section would otherwise put an
-        unbounded amount of time on one screen and turn this into a full scan.
+        object -- and not capped: extremely slow notes are common, so the
+        whole map can be on screen at once, its last object included (owner,
+        2026-10-28). taiko-rs's lookahead is the same.
         """
+        # ponytail: one map-wide reach, so a slow section anywhere makes every
+        # frame scan the whole map; per-section reach if that gets slow.
         reach = self.osu_edge_x() / max(1e-6, self._slowest_velocity * self.px_per_beat)
-        reach = min(reach, GAMEPLAY_MAX_LOOKAHEAD_MS)
         return self.current_time - reach, self.current_time + reach
 
     def barline_times(self, start_ms: float, end_ms: float) -> list[float]:
@@ -998,6 +1050,9 @@ class GameplayViewerView(QWidget):
         claimed_columns: set[int] = set()
         width = self.width()
         hit_x = self._hit_x()
+        px_per_beat = self.px_per_beat
+        cached = self._section_slowest if len(self._section_slowest) == len(self.beat_points) else None
+        now = self.current_time
         first_point = bisect_left(self._beat_times, start_ms) - 1
         for index in range(max(0, first_point), len(self.beat_points)):
             point = self.beat_points[index]
@@ -1016,13 +1071,16 @@ class GameplayViewerView(QWidget):
             # gimmick authors 1e-9 here, and pairing an unclamped measure with a
             # clamped velocity would ask the walk below for millions of lines.
             measure = max(1e-4, point.beat_length) * max(1, point.meter)
-            velocity = self.slowest_velocity_in(point.time, min(section_end, end_ms))
+            # The whole section's slowest, cached: slower only widens the walk.
+            velocity = (
+                cached[index] if cached is not None
+                else self.slowest_velocity_in(point.time, min(section_end, end_ms)))
             # How much time this section fits on screen. Generous by a factor of
             # two: the hit position is not centered, so both sides need less
             # than a full width, and over-reaching only ever costs a little walk.
-            reach = width / max(1e-9, velocity * self.px_per_beat)
-            window_start = max(start_ms, self.current_time - reach)
-            window_end = min(end_ms, self.current_time + reach)
+            reach = width / max(1e-9, velocity * px_per_beat)
+            window_start = max(start_ms, now - reach)
+            window_end = min(end_ms, now + reach)
             if window_end < point.time or window_end < window_start or section_end <= window_start:
                 continue
             # Not a budget -- exactly the measure lines this window holds, which
@@ -1165,16 +1223,22 @@ class GameplayViewerView(QWidget):
             painter.drawEllipse(QPointF(hit_x, center_y), normal_radius, normal_radius)
         # osu!'s own order (ppy/osu HitObjectContainer.Compare): the earlier
         # StartTime is on top, whatever the SV -- a shiny's note at T covers the
-        # fake sliders it carries at T+1..3. A tie goes to the object added
-        # first -- added when it comes on screen, and two objects on one
-        # millisecond scroll at one speed, so that is file order. Barlines and
+        # fake sliders it carries at T+1..3. A tie puts a slider (and a gimmick
+        # spinner) over a circle, then goes to file order (the first on top).
+        # Barlines and
         # the hit target are an
         # underlay beneath all of it (TaikoPlayfield), drumrolls and spinners
         # included -- they share the one container with the notes.
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setOpacity(self.chart_opacity)
-        visible = list(enumerate(self.notes[first:after_last], first))
-        visible.sort(key=lambda item: (-item[1].time, -item[0]))
+        # The time range spans the whole map once any note crawls, so drop
+        # what can't be on screen before the per-object drawing does.
+        visible = [(i, self.notes[i]) for i in self._on_screen(first, after_last, big_radius)]
+        # The slider-over-circle tie: owner, 2026-10-27; taiko-rs does the same.
+        # A spinner too when the map ships its own `spinner-warning`.
+        gimmick_spinner = self.skin.from_beatmap("spinner-warning")
+        visible.sort(key=lambda item: (
+            -item[1].time, item[1].is_slider or (gimmick_spinner and item[1].is_spinner), -item[0]))
         for _index, note in visible:
             self._draw_note(painter, note, center_y, normal_radius, big_radius)
 
@@ -1205,7 +1269,9 @@ class GameplayViewerView(QWidget):
                     painter.setOpacity(1.0)  # the lane lights whatever the chart is doing
                     painter.fillRect(self.rect(), QColor(255, 255, 255, playfield_alpha))
                     painter.setOpacity(self.chart_opacity)
-            for note in self.notes[first:after_last]:
+            for _index, note in visible:
+                if note.is_nan_slider:
+                    continue
                 end_time = self._note_end_time(note)
                 hit = self._has_been_hit(note)
                 # A circle that has been played is gone and has nothing to
@@ -1450,11 +1516,15 @@ class GameplayViewerView(QWidget):
         so it travels through and out the far side; a spinner occupies its
         whole span in place. Neither is ever "hit" in this sense.
         """
-        if note.is_spinner or note.time > self.current_time:
+        if note.is_spinner or (note.is_slider and self._note_end_time(note) is not None):
             return False
-        return not (note.is_slider and self._note_end_time(note) is not None)
+        # A fake slider's head goes when its *cap* lands, which is behind it.
+        phantom = self._phantom_end_time(note)
+        return self.current_time >= (note.time if phantom is None else phantom)
 
     def _draw_note(self, painter, note, center_y, normal_radius, big_radius) -> None:
+        if note.is_nan_slider:
+            return  # osu! draws nothing for it
         x = self.x_for_time(note.time)
         radius = big_radius if (note.is_finisher or note.is_spinner) else normal_radius
         end_time = self._note_end_time(note)
@@ -1477,6 +1547,25 @@ class GameplayViewerView(QWidget):
             return
 
         if note.is_spinner:
+            fade = spinner_fade(
+                active_uninherited_at(self.beat_points, note.time).beat_length,
+                note.time - self.current_time)
+            if fade <= 0.0:
+                return
+            painter.save()
+            painter.setOpacity(painter.opacity() * fade)
+            # The spinner gimmick: the map's own `spinner-warning`, over the
+            # user's skin, as a small note -- which goes at the target like one.
+            warning = (
+                self.skin.scaled("spinner-warning", round(normal_radius * 2))
+                if self.skin.from_beatmap("spinner-warning") else None)
+            if warning is not None:
+                if self.current_time < note.time:
+                    draw_pixmap_subpixel(
+                        painter, warning, x - warning.width() / 2.0,
+                        center_y - warning.height() / 2.0)
+                painter.restore()
+                return
             painter.setPen(Qt.NoPen)
             painter.setBrush(self.spinner_band_brush)
             painter.drawRoundedRect(
@@ -1488,11 +1577,24 @@ class GameplayViewerView(QWidget):
                 painter.drawPixmap(
                     QRectF(x - radius, center_y - radius, size, size), pixmap, QRectF(pixmap.rect())
                 )
+            painter.restore()
             return
 
         if note.is_slider:
+            # The ticks still to come, at the head's speed like the body: one
+            # reaching the target is played, the way a circle is. Each is
+            # (x, tinted): on a slow roll's 1/8 ticks only every other one,
+            # the 1/4 grid, takes the yellow (`_draw_roll_ticks`).
+            slow = active_uninherited_at(self.beat_points, note.time).beat_length >= 480.0
+            ticks = [
+                (x + (time_ms - note.time) * self.velocity_at(note.time) * self.px_per_beat,
+                 not slow or index % 2 == 0)
+                for index, time_ms in enumerate(drumroll_tick_times(
+                    note, self.beat_points, self.timing_points, self.slider_multiplier))
+                if time_ms > self.current_time
+            ]
             if self._draw_skinned_roll(
-                painter, x, end_x, center_y, radius, note.is_finisher):
+                painter, x, end_x, center_y, radius, note.is_finisher, ticks):
                 return
             painter.setPen(self.note_pen)
             painter.setBrush(self.slider_brush)
@@ -1501,6 +1603,7 @@ class GameplayViewerView(QWidget):
                 radius,
                 radius,
             )
+            self._draw_roll_ticks(painter, ticks, center_y, radius)
             return
 
         if self._has_been_hit(note):
@@ -1581,8 +1684,29 @@ class GameplayViewerView(QWidget):
             return diameter
         return max(1, round(diameter * head_ink / ink))
 
+    def _draw_roll_ticks(self, painter, ticks, center_y, radius) -> None:
+        """`sliderscorepoint` on each drumroll tick at `ticks` ((x, tinted)),
+        at the note art's scale -- a 128px source to the note's diameter.
+        Tinted DRUMROLL_TICK_COLOR on the rule's 1/4 (or 1/2) grid; the 1/8
+        ticks between keep the image's own colour (owner, 2026-10-28).
+        Without one, a small dot, yellow or white the same way."""
+        if not ticks:
+            return
+        scale = radius * 2 / 128
+        dots = {True: self.skin.natural("sliderscorepoint", scale, colour=self.roll_tick_brush),
+                False: self.skin.natural("sliderscorepoint", scale)}
+        painter.setPen(Qt.NoPen)
+        for tick_x, tinted in ticks:
+            dot = dots[tinted]
+            if dot is not None:
+                painter.drawPixmap(
+                    QPointF(tick_x - dot.width() / 2.0, center_y - dot.height() / 2.0), dot)
+            else:
+                painter.setBrush(self.roll_tick_brush if tinted else QColor(255, 255, 255))
+                painter.drawEllipse(QPointF(tick_x, center_y), radius * 0.12, radius * 0.12)
+
     def _draw_skinned_roll(
-        self, painter, x, end_x, center_y, radius, big: bool = False,
+        self, painter, x, end_x, center_y, radius, big: bool = False, ticks=(),
     ) -> bool:
         """A drumroll as its three skin pieces: head, stretched body, tail cap.
 
@@ -1601,9 +1725,9 @@ class GameplayViewerView(QWidget):
           start by its radius. Centred on the end (which is what this did) the
           roll came up half a radius short.
 
-        Only a **real** roll reaches here. A negative length is a fake slider,
-        which is a bare track with no head and no cap -- a different object,
-        drawn by `_draw_fake_slider`.
+        A positive duration reaches here, however small -- a `+0.001` fake
+        slider included. A negative one is drawn by `_draw_fake_slider`, with
+        the same three pieces and a head that goes at the target.
 
         All three tint from the drumroll colour, multiplicatively, which is the
         blend mode the wiki gives for both roll pieces.
@@ -1623,6 +1747,7 @@ class GameplayViewerView(QWidget):
         tail = self.skin.scaled("taiko-roll-end", cap, self.slider_brush)
         if tail is not None:
             draw_pixmap_subpixel(painter, tail, body_end, center_y - tail.height() / 2.0)
+        self._draw_roll_ticks(painter, ticks, center_y, radius)
         # `big` matters here as much as it does for a finisher note: a big
         # drumroll's head is `taikobigcircle`, which skinners redraw rather
         # than scale up -- some are a different shape, some carry a second ring
@@ -1634,44 +1759,156 @@ class GameplayViewerView(QWidget):
         return True
 
     def _draw_fake_slider(self, painter, note, x, center_y, radius) -> None:
-        """A negative-length fake slider: a head, and a track reaching right.
+        """A negative-duration fake slider, as osu! stable draws one (owner's
+        reading of it, 2026-10-26):
 
-        `taikohitcircle` in the drumroll colour, the same head a real roll has,
-        plus `taiko-roll-middle` laid from the object's own x and reaching to
-        its **right** by the magnitude of the negative length. No
-        `taiko-roll-end`: the cap belongs to a roll that ends, and this one
-        ends before it starts. At the hit position the whole thing disappears
-        with nothing left travelling on.
+        * `taiko-roll-end` sits at the head **minus** the length -- to its
+          *left*, ahead of it -- and `taiko-roll-middle` reaches to its
+          **right** by the same amount. At `-0.001` both collapse onto the head
+          and it looks like an ordinary roll; at `-100` the cap is plainly in
+          front of the head.
+        * When the cap reaches the hit position the head and cap are cut, and
+          only the track carries on -- from `FAKE_SLIDER_LINGER_LENGTH` up.
+          A shorter one's pass through it like a real drumroll's (owner,
+          2026-10-28).
+        * Nothing is drawn before the head comes on screen, so a long one
+          (`-800`) has already lost its head and cap by then and shows only
+          its track.
+        * When the track itself reaches the hit position it is gone at once
+          from `FAKE_SLIDER_LINGER_LENGTH` up, and fades over
+          `FAKE_SLIDER_FADE_MS` below it.
+        * **Pop-up** (`_pop_up`): a long one too fast to ever be on screen
+          stands still by its length and fades in instead.
 
-        The track is drawn **to scale**, which is why the two ends of the range
-        look like different objects and are not. A `-800` track is over a
-        thousand pixels of the same yellow at the same height, so the head sits
-        at its left edge and reads as part of the bar; the canonical `-0.0001`
-        collapses the track to nothing and leaves the head as the only thing
-        on screen. Padding the track to visibility would invent geometry the
-        map does not have, and dropping the head because a long one hides it
-        made every short fake slider -- which is most of them -- invisible.
-
-        It appears at full opacity like any other object. There is no fade-in:
-        a stack of them is a stack of identical opaque objects and reads as
-        one, and what makes a shiny note brighter is the kiai stamp each of
-        them takes, not any difference in how they are drawn.
-
-        **Only the head is taken away at the hit position.** The track and its
-        cap pass straight through and carry on out to the left, the way a real
-        roll's do -- so the object outlives its own millisecond and cannot be
-        culled on where its head is.
+        All of it **to scale**: padding a short track to visibility would
+        invent geometry the map does not have.
         """
         end_time = self._phantom_end_time(note)
-        if end_time is None:
+        pop = self._pop_up(note)
+        if pop is not None:
+            x, pop_width, pop_alpha = pop
+            if pop_alpha <= 0.0:
+                return
+        if end_time is None or x - radius > self.width():
             return
-        width = abs(end_time - note.time) * self.velocity_at(note.time) * self.px_per_beat
-        cap = self._roll_height("taiko-roll-end", round(radius * 2), note.is_finisher)
-        # The cap butts onto the far end of the track and reaches past it by its
-        # own width (origin TopLeft), so that -- not the head -- is the right
-        # edge of what gets drawn.
-        if x + width + cap < 0 or x - radius > self.width():
+        opacity = 1.0
+        if pop is None and self.current_time >= note.time:
+            fade = (self.current_time - note.time) / FAKE_SLIDER_FADE_MS
+            if abs(note.length) >= FAKE_SLIDER_LINGER_LENGTH or fade >= 1.0:
+                return
+            opacity = 1.0 - fade
+        # A long one's head and cap go when the cap lands; a short one's pass
+        # through the target like a real drumroll's (owner, 2026-10-28).
+        cut = pop is None and abs(note.length) >= FAKE_SLIDER_LINGER_LENGTH and self._has_been_hit(note)
+        width = (
+            pop_width if pop is not None
+            else abs(end_time - note.time) * self.velocity_at(note.time) * self.px_per_beat)
+        if x + width < 0:
             return
+        if pop is not None:
+            painter.save()
+            painter.setOpacity(painter.opacity() * pop_alpha)
+            self._draw_fake_slider_parts(painter, note, x, center_y, radius, width, opacity, cut)
+            painter.restore()
+            return
+        self._draw_fake_slider_parts(painter, note, x, center_y, radius, width, opacity, cut)
+
+    def _screen_spans(self) -> list[tuple[float, float, float, float, float]]:
+        """Per note: (time, time its far end trails to, ms per scroll unit,
+        how long before its time it shows if it is a pop-up, else -inf, when
+        it is gone for good) -- what `_on_screen` needs, built once per edit.
+        Keyed on the lists it reads, since tests and edits replace them."""
+        key = (id(self.notes), len(self.notes), id(self._end_times),
+               id(self._phantom_ends), id(self._velocities))
+        if getattr(self, "_screen_spans_key", None) != key:
+            spans = []
+            for note in self.notes:
+                inverse = 1.0 / max(1e-12, self.velocity_at(note.time))
+                end = self._end_times.get(note.uid)
+                phantom = self._phantom_ends.get(note.uid)
+                trail = (end if end is not None and end > note.time
+                         else note.time + abs(phantom - note.time) if phantom is not None
+                         else note.time)
+                lead = float("-inf")
+                # A played circle is gone (`_has_been_hit`), a fake slider's
+                # track once faded or popped; a stopped note at 1E+15ms would
+                # otherwise be "on screen" for the rest of the map.
+                gone = float("inf")
+                if phantom is not None:
+                    gone = note.time + FAKE_SLIDER_FADE_MS
+                elif end is None and not note.is_spinner and not note.is_slider:
+                    gone = float(note.time)
+                if (phantom is not None and note.length is not None
+                        and note.length <= -FAKE_SLIDER_LINGER_LENGTH):
+                    lead = self._pop_up_lead(note)
+                spans.append((float(note.time), trail, inverse, lead, gone))
+            self._screen_spans_key, self._screen_spans_cache = key, spans
+        return self._screen_spans_cache
+
+    def _on_screen(self, first: int, after_last: int, radius: float) -> list[int]:
+        """Indexes in [first, after_last) `_draw_note` won't cull, a little
+        generously. The time range is sized for the map's slowest note, so
+        with a crawling one anywhere it holds the whole map, and drawing each
+        just to cull it cost a frame."""
+        if first >= after_last:
+            return []  # also before any map: no end-time tables yet
+        ppb = self.px_per_beat
+        hit = self._hit_x()
+        ahead = (self.width() - hit + radius) / ppb
+        behind = (hit + radius) / ppb
+        now = self.current_time
+        spans = self._screen_spans()
+        # A fake slider's track also reaches left of its head, by as much.
+        # A pop-up stands still near its time whatever its speed.
+        return [
+            i for i in range(first, after_last)
+            for time, trail, inverse, lead, gone in (spans[i],)
+            if now <= gone and (
+                time - (trail - time) - ahead * inverse <= now <= trail + behind * inverse
+                or -FAKE_SLIDER_FADE_MS < time - now <= lead)
+        ]
+
+    def _pop_up_lead(self, note) -> float:
+        """How long before its time a pop-up shows: |length| / (100 x
+        SliderMultiplier x SV) of the map's main beats (see `_pop_up`)."""
+        length = abs(note.length) * (note.slides or 1)
+        sv = sv_at(self.timing_points, note.time)
+        return length / (100.0 * max(0.01, self.slider_multiplier) * sv) * self._main_beat
+
+    def _pop_up(self, note) -> tuple[float, float, float] | None:
+        """A pop-up fake slider's (head x, body width, opacity), or None.
+
+        The Pop-up gimmick (senpai, notice me! [w] 189511-191449, owner
+        2026-10-28): stacks of long fake sliders, each on a 1ms red line, so
+        its head is far too fast to ever be on screen. osu! stable shows the
+        head standing still, farther out the longer it is (POP_UP_PER_LENGTH)
+        -- lengths vary within a stack to spread them across the lane -- for
+        |length| / (100 x SliderMultiplier x SV) of the map's main beats before
+        its time (the mapping doc: "-100 at x1.00 disappears in exactly 1
+        beat"), fading in from then over POP_UP_FADE_MS, and gone at its time
+        with no fade out (owner, checked in stable). taiko-rs's `popup` is the
+        same rule.
+        """
+        # ponytail: "too fast" is crossing the view within a 60Hz frame; refine
+        # if a map shows a middle case.
+        until = note.time - self.current_time
+        if (note.length is None or note.length > -FAKE_SLIDER_LINGER_LENGTH
+                or until <= 0):
+            return None
+        speed = self.velocity_at(note.time) * self.px_per_beat
+        if self.width() >= 16.0 * speed:
+            return None
+        per = POP_UP_PER_LENGTH * (self.width() - self._hit_x())
+        length = abs(note.length) * (note.slides or 1)
+        x = self._hit_x() + max(0.0, length - POP_UP_FROM_LENGTH) * per
+        lead = self._pop_up_lead(note)
+        return x, length * per, fade_from(lead, POP_UP_FADE_MS, until)
+
+    def _draw_fake_slider_parts(self, painter, note, x, center_y, radius, width, opacity, cut) -> None:
+        """Track, cap and head of `_draw_fake_slider`, the head at `x`."""
+        if opacity < 1.0:
+            painter.save()
+            painter.setOpacity(painter.opacity() * opacity)
         if width >= 0.5:
             height = self._roll_height("taiko-roll-middle", round(radius * 2), note.is_finisher)
             track = self.skin.scaled("taiko-roll-middle", height, self.slider_brush)
@@ -1686,20 +1923,24 @@ class GameplayViewerView(QWidget):
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(self.slider_brush)
                 painter.drawRect(QRectF(x, center_y - radius, width, radius * 2))
+        if opacity < 1.0:
+            painter.restore()
+        if cut:
+            return
+        cap = self._roll_height("taiko-roll-end", round(radius * 2), note.is_finisher)
         tail = self.skin.scaled("taiko-roll-end", cap, self.slider_brush)
         if tail is not None:
-            draw_pixmap_subpixel(painter, tail, x + width, center_y - tail.height() / 2.0)
+            draw_pixmap_subpixel(painter, tail, x - width, center_y - tail.height() / 2.0)
         else:
             # Without a skin there is no cap art, so the stand-in is the
             # drumroll colour in the shape a built-in drumroll ends in: a disc.
             painter.setPen(self.note_pen)
             painter.setBrush(self.slider_brush)
             painter.drawEllipse(
-                QPointF(x + width + radius / 2.0, center_y), radius, radius)
-        if not self._has_been_hit(note):
-            # Last, so it sits on the near end of its own track the way a real
-            # roll's head does -- and gone once played, like any circle.
-            draw_note_sprite(
-                painter, self.slider_brush, self.note_pen, x, center_y, radius,
-                self.skin, big=note.is_finisher,
-            )
+                QPointF(x - width + radius / 2.0, center_y), radius, radius)
+        # Last, so it sits on the near end of its own track the way a real
+        # roll's head does.
+        draw_note_sprite(
+            painter, self.slider_brush, self.note_pen, x, center_y, radius,
+            self.skin, big=note.is_finisher,
+        )

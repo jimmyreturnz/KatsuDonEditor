@@ -143,6 +143,14 @@ class HitObject:
             return None
 
     @property
+    def is_nan_slider(self) -> bool:
+        """A slider of length NaN: osu! draws nothing for it, and the don/kat
+        right before it can't be hit (owner, 2026-10-28; taiko-rs plays that).
+        The chart still shows it, marked NaN, so it can be found."""
+        length = self.length
+        return length is not None and length != length
+
+    @property
     def length(self) -> float | None:
         if not self.is_slider or len(self.extras) < 3:
             return None

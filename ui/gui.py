@@ -93,8 +93,8 @@ from ui.common import (
     ACCENT_PINK, DON_COLOR, DRUMROLL_COLOR, KAT_COLOR, SCROLL_MODS, SLIDER_MULTIPLIER_ASSUMED,
     SONG_SELECT_PREVIEW_DEFAULT_PERCENT, application_icon, button_text_width,
     display_frame_interval_ns, draw_note_sprite, drumroll_tick_times, equalize_button_widths,
-    format_time, next_frame_due, resource_roots, set_view_ground_alpha, spinner_pixmap, tabular,
-    view_ground_is_opaque,
+    format_time, next_frame_due, osu_timestamp, resource_roots, scroll_row, set_view_ground_alpha, spinner_pixmap,
+    tabular, view_ground_is_opaque,
 )
 from ui.misc_page import MiscPage
 from ui.dialogs import (
@@ -1901,6 +1901,20 @@ def opaque_strip(strip: QHBoxLayout) -> QWidget:
     return holder
 
 
+def size_stack_to_current(stack: QStackedWidget) -> None:
+    """Only the page on show sets the window's minimum.
+
+    QStackedLayout takes the largest minimum of every page, hidden ones
+    included, so the library page (1095px on its own) was held at the Fancy
+    page's 1338 and no page could go below 1354x567 -- too wide to snap to
+    half the screen. An Ignored page counts as zero.
+    """
+    for index in range(stack.count()):
+        policy = QSizePolicy.Preferred if index == stack.currentIndex() else QSizePolicy.Ignored
+        stack.widget(index).setSizePolicy(policy, policy)
+    stack.updateGeometry()
+
+
 def see_through_row(row: QWidget) -> QWidget:
     """`row` and the plain containers inside it. Buttons, boxes and other
     controls keep their own fills: only a bare QWidget is chrome."""
@@ -3114,7 +3128,10 @@ class MainWindow(QMainWindow):
             root = skins_root(self.settings.string_value("library/songs_folder", ""))
             if root is not None and (root / name).is_dir():
                 folder = root / name
-        self.skin = TaikoSkin(folder)
+        # The open map's own images over the skin's, as osu! plays it.
+        state = getattr(self, "state", None)
+        self._skin_beatmap = state.source_path.parent if state is not None else None
+        self.skin = TaikoSkin(folder, self._skin_beatmap)
         # Every view that draws a note, not just the gameplay preview: the
         # chart layers draw the same don and kat, and a skin that changed one
         # and not the other would read as a bug.
@@ -3245,7 +3262,13 @@ class MainWindow(QMainWindow):
         # (windose.app_chrome); every other theme sees the plain ground.
         self.app_header = QFrame()
         self.app_header.setObjectName("appHeader")
-        header = QHBoxLayout(self.app_header)
+        header_row = QHBoxLayout(self.app_header)
+        header_row.setContentsMargins(0, 0, 0, 0)
+        # Everything up to Settings scrolls sideways in a narrow window; the
+        # page tabs stay put. As one row the header alone was 1045px, wider
+        # than a window snapped to half a 1080p screen.
+        header_actions = QWidget()
+        header = QHBoxLayout(header_actions)
         header.setContentsMargins(0, 0, 0, 0)
 
         open_button = QPushButton(tr("MainWindow", "Open .osu"))
@@ -3315,6 +3338,8 @@ class MainWindow(QMainWindow):
             " border-radius: 4px; padding: 1px 6px; font-weight: 700;")
         self.mods_chip.setVisible(False)
         header.addWidget(self.mods_chip)
+        header_row.addWidget(scroll_row(header_actions), 1)
+        header = header_row
 
         self.settings_button = QPushButton(f"⚙ {tr('SettingsDialog', 'Settings')}")
         self.settings_button.setObjectName("settingsButton")
@@ -3379,6 +3404,8 @@ class MainWindow(QMainWindow):
         self.misc_page = MiscPage(self)
         self.page_stack.addWidget(self.misc_page)
         self.page_stack.setCurrentIndex(PAGE_LIBRARY)
+        self.page_stack.currentChanged.connect(lambda _index: size_stack_to_current(self.page_stack))
+        size_stack_to_current(self.page_stack)
         root.addWidget(self.page_stack, 1)
         # The page left slides away and the new one arrives (_show_page).
         self._page_slide = PageSlide(self.page_stack, "#191f29")
@@ -3588,19 +3615,6 @@ class MainWindow(QMainWindow):
         sub_toolbar_row = QWidget()
         sub_toolbar = QHBoxLayout(sub_toolbar_row)
         sub_toolbar.setContentsMargins(0, 0, 0, 0)
-        sub_toolbar_scroll = QScrollArea()
-        sub_toolbar_scroll.setWidget(sub_toolbar_row)
-        sub_toolbar_scroll.setWidgetResizable(True)
-        sub_toolbar_scroll.setFrameShape(QFrame.NoFrame)
-        sub_toolbar_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        sub_toolbar_scroll.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-        sub_toolbar_scroll.setStyleSheet(
-            "QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }"
-            "QScrollBar:horizontal { background: transparent; height: 6px; }"
-            "QScrollBar::handle:horizontal { background: #3a4554; border-radius: 3px; min-width: 32px; }"
-            "QScrollBar::handle:horizontal:hover { background: #ff66aa; }"
-            "QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page { width: 0; background: none; }")
-        self.fancy_sub_toolbar = sub_toolbar_scroll
 
         self.play_button = QPushButton(tr("MainWindow", "Play"))
         self.play_button.clicked.connect(self.toggle_playback)
@@ -3647,7 +3661,6 @@ class MainWindow(QMainWindow):
         self.circle_size_control=DifficultyValueControl("CS",7.0,"Circle Size: 0 is biggest, 10 is smallest. Starts at the map's own CS.")
         sub_toolbar.addWidget(self.approach_rate_control)
         sub_toolbar.addWidget(self.circle_size_control)
-        page_layout.addWidget(sub_toolbar_scroll)
 
         # Every box but the canvas is a dock: moved to any edge, floated, closed
         # and brought back from the Layout menu, with the arrangement kept
@@ -3706,8 +3719,8 @@ class MainWindow(QMainWindow):
         sub_toolbar.addWidget(self.fancy_layout_button)
         sub_toolbar.addWidget(self.reset_button)
         sub_toolbar.addWidget(self.export_button)
-        # Its own height, plus the scroll bar's when the row is too wide.
-        sub_toolbar_scroll.setFixedHeight(sub_toolbar_row.sizeHint().height() + 8)
+        # Wrapped once the row is full: scroll_row sizes itself from it.
+        page_layout.insertWidget(0, scroll_row(sub_toolbar_row))
 
         self.mode_combo = QComboBox()
         # Item data is the stable mode identifier. The display text is localized,
@@ -3804,7 +3817,11 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
-        timeline_controls = QHBoxLayout()
+        # Both rows of this dock scroll sideways rather than holding the
+        # window open: together they were 974px of its minimum width.
+        timeline_controls_row = QWidget()
+        timeline_controls = QHBoxLayout(timeline_controls_row)
+        timeline_controls.setContentsMargins(0, 0, 0, 0)
         # The same snap slider as the Editor and Gimmick pages, with its own
         # "Snap" caption; each page keeps its own divisor, as before.
         self.snap_combo = SnapSlider(4)
@@ -3826,7 +3843,7 @@ class MainWindow(QMainWindow):
         hint_row.addWidget(key_hint(["Shift", wheel], tr("MainWindow", "1 beat")))
         hint_row.addWidget(key_hint(["Ctrl", wheel], tr("MainWindow", "zoom")))
         timeline_controls.addWidget(hints)
-        layout.addLayout(timeline_controls)
+        layout.addWidget(scroll_row(timeline_controls_row))
 
         self.timeline = TimelineGameplay()
         # Drawn as the Editor's chart views are -- notes on a centred row, the
@@ -3844,7 +3861,8 @@ class MainWindow(QMainWindow):
         # in one row -- matches the Editor page's own strip layout, per
         # owner feedback that this row previously had the timing bar split
         # out on its own and was missing the percentage the Editor strip has.
-        timeline_row=QHBoxLayout();timeline_row.setSpacing(5)
+        timeline_row_widget=QWidget()
+        timeline_row=QHBoxLayout(timeline_row_widget);timeline_row.setContentsMargins(0,0,0,0);timeline_row.setSpacing(5)
         time_area=QWidget()
         time_area_layout=QHBoxLayout(time_area);time_area_layout.setContentsMargins(0,0,0,0);time_area_layout.addStretch()
         self.timeline_time=QLabel("00:00:000   0.0%");self.timeline_time.setAlignment(Qt.AlignCenter);self.timeline_time.setStyleSheet("font-size:18px;font-weight:700;");time_area_layout.addWidget(self.timeline_time)
@@ -3881,7 +3899,7 @@ class MainWindow(QMainWindow):
             button=QPushButton(label);button.setCheckable(True);button.setProperty("playbackRate",rate)
             button.clicked.connect(lambda checked=False,r=rate:self._choose_speed(r));self.playback_speed_buttons.append(button)
         timeline_row.addWidget(segmented(self.playback_speed_buttons))
-        layout.addLayout(timeline_row)
+        layout.addWidget(scroll_row(timeline_row_widget))
 
         self.fancy_density = DensityOverview()
         self.fancy_density.seek_requested.connect(self.seek_audio)
@@ -3891,7 +3909,17 @@ class MainWindow(QMainWindow):
         # "&&": a single & in a dock title is taken as a mnemonic and vanishes.
         self.fancy_timeline_dock = QDockWidget(tr("MainWindow", "Timeline & playback").replace("&", "&&"), docks)
         self.fancy_timeline_dock.setObjectName("fancy_timeline_dock")
-        self.fancy_timeline_dock.setWidget(timeline_box)
+        # Scrolls rather than holding the page open, as the Transform dock's
+        # panel does: its four rows were 242px of a window that has to fit
+        # half of a 1080p screen's height.
+        timeline_scroll = QScrollArea()
+        timeline_scroll.setWidgetResizable(True)
+        timeline_scroll.setFrameShape(QFrame.NoFrame)
+        timeline_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        timeline_scroll.setWidget(timeline_box)
+        smooth(timeline_scroll)
+        keep_width_under_scrollbar(timeline_scroll, layout)
+        self.fancy_timeline_dock.setWidget(timeline_scroll)
         self.fancy_timeline_dock.setMinimumHeight(120)
         docks.addDockWidget(Qt.BottomDockWidgetArea, self.fancy_timeline_dock)
 
@@ -4544,7 +4572,7 @@ class MainWindow(QMainWindow):
         for button in height_box.findChildren(QPushButton):
             button.setProperty("role", "ghost")
 
-        layout.addWidget(opaque_strip(strip))
+        layout.addWidget(scroll_row(opaque_strip(strip)))
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -4633,7 +4661,7 @@ class MainWindow(QMainWindow):
             self.gimmick_playback_speed_buttons.append(button)
         self._build_mod_strip(strip)
 
-        layout.addWidget(opaque_strip(strip))
+        layout.addWidget(scroll_row(opaque_strip(strip)))
 
         # Which file is edited and whose timing it follows: the status bar,
         # shown only on this page (see _build_status_bar). It was a row of
@@ -8293,6 +8321,10 @@ class MainWindow(QMainWindow):
         }.values())
         if not notes and not lines:
             return
+        # Outside the app, Ctrl+V gives osu!'s timestamp for the modding thread
+        # (owner, 2026-10-27). What was picked, not what the expansion below
+        # grows it into: a mod names the note, not its gimmick's fake sliders.
+        self._copy_timestamp(notes, lines)
         # Grown into the whole structure first, the same way a drag and a delete
         # are. The fake slider layer never selects red lines -- it does not own
         # them -- so without this its Ctrl+C copied the slider and left the
@@ -8410,6 +8442,18 @@ class MainWindow(QMainWindow):
         self.status.setText(
             tr("MainWindow", "Copied {count} notes.").format(count=len(notes) + len(lines))
         )
+
+    def _copy_timestamp(self, notes, lines) -> None:
+        state = self._states.get(self._difficulty_for_view(self._active_chart_view))
+        if state is None:
+            return
+        # Matched by uid against the difficulty's own list, which is kept in
+        # time order -- the order osu! numbers objects in.
+        picked = {note.uid for note in notes}
+        indexes = [index for index, note in enumerate(state.document.hit_objects, 1)
+                   if note.uid in picked]
+        times = [note.time for note in notes] or [point.time for point in lines]
+        QApplication.clipboard().setText(osu_timestamp(min(times), indexes))
 
     def _paste_notes(self, at_time: float | None = None) -> None:
         """Paste at the playhead, or at `at_time` (Ctrl+D's clone)."""
@@ -9820,6 +9864,13 @@ class MainWindow(QMainWindow):
         for button in (*self.page_button_group.buttons(), self.gimmick_reference_button):
             button.ensurePolished()
             fit_button_width(button)
+        # The header and the Fancy sub-toolbar, floored at their labels. A
+        # window that can shrink puts these rows at their minimum, which is
+        # the stylesheet-short hint: "Reset Applied Transforms" drew at 177px
+        # for 202px of label, Settings at 81 for 93.
+        equalize_button_widths(
+            [*self.app_header.findChildren(QPushButton), self.reset_button, self.export_button],
+            widths=False)
 
     def _snapshot_transform_group(self, group: str):
         ref = self._transform_page_refs[group]
@@ -10161,6 +10212,8 @@ class MainWindow(QMainWindow):
 
         self.state = state
         self.setWindowTitle(f"{state.source_path.name} - {self.app_name}")
+        if state.source_path.parent != getattr(self, "_skin_beatmap", None):
+            self._apply_appearance_settings()
 
         if state.audio_path is not None and (previous is None or previous.audio_path != state.audio_path):
             self.player.setSource(QUrl.fromLocalFile(str(state.audio_path)))

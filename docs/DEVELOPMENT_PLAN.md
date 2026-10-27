@@ -2205,7 +2205,7 @@ as spread out and a generated sweep can be judged without exporting and opening 
 - A slider or spinner **body travels with its head**: one object at one speed, not a series of
   points each reading its own timing.
 - `visible_time_range` is bounded by the *slowest* velocity in the map (so it never misses an
-  object) and clamped by `GAMEPLAY_MAX_LOOKAHEAD_MS`; objects a fast section throws well off either
+  object), uncapped (slow notes are common, so the whole map may be on screen); objects a fast section throws well off either
   edge are culled per note during paint.
 - **Coincident points resolve the same way `sv_series` does**: an inherited point sharing a
   timestamp with an uninherited one wins over the 1.0x reset, since a green line stacked on a red

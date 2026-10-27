@@ -91,15 +91,20 @@ class SampleChoiceTests(unittest.TestCase):
 
     def test_a_real_drumrolls_ticks_sound_and_a_fake_sliders_do_not(self):
         """Owner, 2026-10-10: a roll is heard the way the autoplay hits it --
-        a don every 1/4 beat, head to end. At SliderMultiplier 1.2, 1.0x and a
-        500ms beat, length 120 is one beat: ticks at 0, 125, 250, 375, 500."""
+        a don every tick, head to end. At SliderMultiplier 1.2, 1.0x and a
+        400ms beat (150 BPM: 1/4 ticks), length 120 is one beat: ticks at 0,
+        100, 200, 300, 400. At 120 BPM they are 1/8, and above 250 BPM 1/2."""
         roll = HitObject(x=256, y=192, time=1000, type=TYPE_SLIDER, hit_sound=0,
                          extras=("L|356:192", "1", "120"))
-        points = [TimingPoint(time=0.0, beat_length=500.0, meter=4)]
+        points = [TimingPoint(time=0.0, beat_length=400.0, meter=4)]
         times, keys, _volumes = gui.hitsound_schedule(
             [roll, fake_slider(3000)], points, slider_multiplier=1.2)
-        self.assertEqual(times, [1000.0, 1125.0, 1250.0, 1375.0, 1500.0])
+        self.assertEqual(times, [1000.0, 1100.0, 1200.0, 1300.0, 1400.0])
         self.assertEqual(set(keys), {"normal"})
+        for beat, spacing in ((500.0, 62.5), (200.0, 100.0)):
+            points = [TimingPoint(time=0.0, beat_length=beat, meter=4)]
+            times, _keys, _volumes = gui.hitsound_schedule([roll], points, slider_multiplier=1.2)
+            self.assertEqual(times[1] - times[0], spacing, beat)
 
     def test_a_finisher_schedules_both_its_samples_on_one_millisecond(self):
         times, keys, _volumes = gui.hitsound_schedule([

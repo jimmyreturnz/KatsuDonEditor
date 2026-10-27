@@ -102,6 +102,7 @@ from ui.common import (
     next_frame_due,
     osu_screen_height_for,
     resource_roots,
+    scroll_row,
     tabular,
 )
 from ui.gameplay_view import GameplayViewerView
@@ -1257,7 +1258,13 @@ class LibraryPageController:
         layout.setContentsMargins(12, 10, 12, 6)
         layout.setSpacing(8)
 
-        top = QHBoxLayout()
+        # Scrolls sideways in a narrow window (scroll_row): it was 826px, and
+        # beside the song list that held the window wider than half a screen.
+        # Named as the column it heads, so it is drawn like one.
+        top_row = QWidget()
+        top_row.setObjectName("libraryColumn")
+        top = QHBoxLayout(top_row)
+        top.setContentsMargins(0, 0, 0, 0)
         top.setSpacing(10)
         self.library_search = QLineEdit()
         self.library_search.setPlaceholderText(
@@ -1388,7 +1395,7 @@ class LibraryPageController:
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
-        right_layout.addLayout(top)
+        right_layout.addWidget(scroll_row(top_row))
 
         # Continue: the last charts opened here, one click from reopening.
         self.continue_row = QWidget()

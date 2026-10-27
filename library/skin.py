@@ -77,6 +77,11 @@ SKIN_ELEMENTS = {
     # yellow too, and osu! tints both from the drumroll's colour. Leaving the
     # cap out of the tint put an untinted end on a tinted body.
     "taiko-roll-end": True,
+    # The drumroll's ticks, tinted a pale drumroll yellow (DRUMROLL_TICK_COLOR).
+    "sliderscorepoint": True,
+    # Only drawn when the *map* ships it (`from_beatmap`): the spinner gimmick,
+    # a spinner drawn as a small note. A skin's own is left to the built-in icon.
+    "spinner-warning": False,
     "taiko-bar-right": False,
     "taiko-bar-right-glow": False,
     "taiko-barline": False,
@@ -375,7 +380,11 @@ class TaikoSkin:
     which frame it is drawn on.
     """
 
-    def __init__(self, folder: Path | None = None) -> None:
+    def __init__(self, folder: Path | None = None, beatmap: Path | None = None) -> None:
+        """`beatmap`: the open map's folder, whose images win over the skin's
+        the way osu!'s beatmap skins do -- katacheh-style gimmick maps ship a
+        see-through `taiko-roll-middle`/`taiko-roll-end` (and spinner) so only
+        the head is left."""
         self.name = folder.name if folder is not None else ""
         self.sounds: dict[str, Path] = {}
         self.ui_sounds: dict[str, Path] = {}
@@ -391,9 +400,13 @@ class TaikoSkin:
         self._density: dict[str, float] = {}
         self._natural: dict[tuple, QPixmap] = {}
         self.version = skin_version(folder) if folder is not None else LATEST_SKIN_VERSION
-        if folder is None or not folder.is_dir():
-            return
-        for element, path in element_paths(folder).items():
+        paths = element_paths(folder) if folder is not None and folder.is_dir() else {}
+        self._from_beatmap: frozenset[str] = frozenset()
+        if beatmap is not None:
+            ours = element_paths(beatmap)
+            self._from_beatmap = frozenset(ours)
+            paths.update(ours)
+        for element, path in paths.items():
             pixmap = QPixmap(str(path))
             self._density[element] = 2.0 if "@2x" in path.name.lower() else 1.0
             if not pixmap.isNull():
@@ -405,14 +418,19 @@ class TaikoSkin:
                 # otherwise draw half of its playfield at half scale.
                 pixmap.setDevicePixelRatio(1.0)
                 self._sources[element] = pixmap
-        self.sounds = sound_paths(folder)
-        self.ui_sounds = sound_paths(folder, UI_SOUNDS)
+        if folder is not None and folder.is_dir():
+            self.sounds = sound_paths(folder)
+            self.ui_sounds = sound_paths(folder, UI_SOUNDS)
 
     def __bool__(self) -> bool:
         return bool(self._sources) or bool(self.sounds)
 
     def has(self, element: str) -> bool:
         return element in self._sources
+
+    def from_beatmap(self, element: str) -> bool:
+        """Whether `element` is the open map's own (a beatmap skin's)."""
+        return element in self._from_beatmap and element in self._sources
 
     def scaled(self, element: str, diameter: int, colour: QColor | None = None) -> QPixmap | None:
         """`element` at `diameter` pixels tall, tinted if it takes a colour."""

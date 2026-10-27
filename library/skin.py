@@ -77,7 +77,7 @@ SKIN_ELEMENTS = {
     # yellow too, and osu! tints both from the drumroll's colour. Leaving the
     # cap out of the tint put an untinted end on a tinted body.
     "taiko-roll-end": True,
-    # The drumroll's ticks, tinted a pale drumroll yellow (DRUMROLL_TICK_COLOR).
+    # The drumroll's ticks, tinted by where they fall on the beat (common.tick_tint).
     "sliderscorepoint": True,
     # Only drawn when the *map* ships it (`from_beatmap`): the spinner gimmick,
     # a spinner drawn as a small note. A skin's own is left to the built-in icon.

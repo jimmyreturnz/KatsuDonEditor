@@ -202,7 +202,23 @@ KAT_COLOR = (67, 141, 171)
 DRUMROLL_COLOR = (251, 183, 6)
 # `sliderscorepoint` on a drumroll: its yellow, halfway to white so it shows on
 # the body. taiko-rs's ROLL_TICK.
-DRUMROLL_TICK_COLOR = (253, 219, 131)
+DRUMROLL_TICK_COLOR = (255, 255, 0)
+# A drumroll tick as stable tints it (owner's screenshot, IT'S SOOOO
+# CREATIVE): DRUMROLL_TICK_COLOR on the beat, this on the half beat, and the
+# image's own colour elsewhere (`tick_tint`). taiko-rs's ROLL_TICK_* match.
+DRUMROLL_HALF_TICK_COLOR = (255, 230, 150)
+
+
+def tick_tint(time_ms: float, origin_ms: float, beat_length: float) -> tuple | None:
+    """A roll tick's tint at `time_ms` on its red line's beat grid: yellow on
+    a beat, pale orange on a half beat, None (untinted) elsewhere."""
+    if beat_length <= 0:
+        return None
+    for division, colour in ((1.0, DRUMROLL_TICK_COLOR), (2.0, DRUMROLL_HALF_TICK_COLOR)):
+        x = (time_ms - origin_ms) / beat_length * division
+        if abs(x - round(x)) < 0.02 * division:
+            return colour
+    return None
 
 
 def format_time(time_ms: int) -> str:

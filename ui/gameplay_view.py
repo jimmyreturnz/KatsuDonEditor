@@ -21,7 +21,7 @@ from chart.time_axis import KIAI_OPEN_END_MS, TimeAxisMixin, wheel_seek_time
 from ui.common import (
     DON_COLOR,
     DRUMROLL_COLOR,
-    DRUMROLL_TICK_COLOR,
+    tick_tint,
     GAMEPLAY_MAX_ASPECT,
     GAMEPLAY_MIN_HEIGHT,
     KAT_COLOR,
@@ -516,7 +516,6 @@ class GameplayViewerView(QWidget):
         self.don_brush = QColor(*DON_COLOR)
         self.kat_brush = QColor(*KAT_COLOR)
         self.slider_brush = QColor(*DRUMROLL_COLOR)
-        self.roll_tick_brush = QColor(*DRUMROLL_TICK_COLOR)
         self.spinner_band_brush = QColor(190, 195, 205, 90)
         self.note_pen = QPen(QColor(15, 18, 24, 220), 2)
         # An osu! skin's own note art, or the built-in drawing when no skin is
@@ -1583,14 +1582,13 @@ class GameplayViewerView(QWidget):
         if note.is_slider:
             # The ticks still to come, at the head's speed like the body: one
             # reaching the target is played, the way a circle is. Each is
-            # (x, tinted): on a slow roll's 1/8 ticks only every other one,
-            # the 1/4 grid, takes the yellow (`_draw_roll_ticks`).
-            slow = active_uninherited_at(self.beat_points, note.time).beat_length >= 480.0
+            # (x, tint): see `tick_tint`.
+            red = active_uninherited_at(self.beat_points, note.time)
             ticks = [
                 (x + (time_ms - note.time) * self.velocity_at(note.time) * self.px_per_beat,
-                 not slow or index % 2 == 0)
-                for index, time_ms in enumerate(drumroll_tick_times(
-                    note, self.beat_points, self.timing_points, self.slider_multiplier))
+                 tick_tint(time_ms, red.time, red.beat_length))
+                for time_ms in drumroll_tick_times(
+                    note, self.beat_points, self.timing_points, self.slider_multiplier)
                 if time_ms > self.current_time
             ]
             if self._draw_skinned_roll(
@@ -1685,24 +1683,25 @@ class GameplayViewerView(QWidget):
         return max(1, round(diameter * head_ink / ink))
 
     def _draw_roll_ticks(self, painter, ticks, center_y, radius) -> None:
-        """`sliderscorepoint` on each drumroll tick at `ticks` ((x, tinted)),
-        at the note art's scale -- a 128px source to the note's diameter.
-        Tinted DRUMROLL_TICK_COLOR on the rule's 1/4 (or 1/2) grid; the 1/8
-        ticks between keep the image's own colour (owner, 2026-10-28).
-        Without one, a small dot, yellow or white the same way."""
+        """`sliderscorepoint` on each drumroll tick at `ticks` ((x, tint)),
+        at the note art's scale -- a 128px source to the note's diameter --
+        tinted as `tick_tint` says (None: the image's own colour). Without
+        one, a small dot in that colour, or white."""
         if not ticks:
             return
         scale = radius * 2 / 128
-        dots = {True: self.skin.natural("sliderscorepoint", scale, colour=self.roll_tick_brush),
-                False: self.skin.natural("sliderscorepoint", scale)}
+        dots = {}
         painter.setPen(Qt.NoPen)
-        for tick_x, tinted in ticks:
-            dot = dots[tinted]
+        for tick_x, tint in ticks:
+            if tint not in dots:
+                dots[tint] = self.skin.natural(
+                    "sliderscorepoint", scale, colour=QColor(*tint) if tint else None)
+            dot = dots[tint]
             if dot is not None:
                 painter.drawPixmap(
                     QPointF(tick_x - dot.width() / 2.0, center_y - dot.height() / 2.0), dot)
             else:
-                painter.setBrush(self.roll_tick_brush if tinted else QColor(255, 255, 255))
+                painter.setBrush(QColor(*tint) if tint else QColor(255, 255, 255))
                 painter.drawEllipse(QPointF(tick_x, center_y), radius * 0.12, radius * 0.12)
 
     def _draw_skinned_roll(

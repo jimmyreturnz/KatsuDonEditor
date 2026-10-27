@@ -727,9 +727,9 @@ class PopUpTests(unittest.TestCase):
 
 
 class RollTickTintTests(unittest.TestCase):
-    """Owner, 2026-10-28: `sliderscorepoint` takes the roll's yellow on the
-    rule's 1/4 (or 1/2) grid only; a slow roll's 1/8 ticks between keep the
-    image's own colour."""
+    """As stable tints `sliderscorepoint` (owner's screenshot, IT'S SOOOO
+    CREATIVE): yellow on the beat, pale orange on the half beat, the image's
+    own colour elsewhere."""
 
     def _tints(self, beat_length):
         view = gui.GameplayViewerView()
@@ -750,12 +750,16 @@ class RollTickTintTests(unittest.TestCase):
         view.grab()
         return seen
 
-    def test_a_slow_rolls_in_between_ticks_are_untinted(self):
-        self.assertEqual(self._tints(500.0), [True, False] * 4 + [True])  # 120 BPM: 1/8
-
-    def test_every_tick_is_tinted_at_ordinary_tempo(self):
-        tints = self._tints(300.0)  # 200 BPM: 1/4
-        self.assertTrue(tints and all(tints))
+    def test_yellow_on_the_beat_orange_on_the_half(self):
+        from ui.common import DRUMROLL_HALF_TICK_COLOR as half, DRUMROLL_TICK_COLOR as beat
+        # 200 BPM, 1/4 ticks from 1000 (not on the 300ms grid: 1000 = 3.33 beats).
+        self.assertTrue(all(t is None for t in self._tints(300.0)))
+        # 120 BPM, 1/8 ticks from 1000 (beat 2): beat, then 1/8s, the half at 4.
+        tints = self._tints(500.0)
+        self.assertEqual(tints[0], beat)
+        self.assertEqual(tints[4], half)
+        self.assertEqual(tints[8], beat)
+        self.assertTrue(all(tints[i] is None for i in (1, 2, 3, 5, 6, 7)))
 
 
 class NanSliderTests(unittest.TestCase):

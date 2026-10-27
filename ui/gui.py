@@ -92,7 +92,7 @@ from chart.transformer import available_transformations, transform, transform_gr
 from ui.common import (
     ACCENT_PINK, DON_COLOR, DRUMROLL_COLOR, KAT_COLOR, SCROLL_MODS, SLIDER_MULTIPLIER_ASSUMED,
     SONG_SELECT_PREVIEW_DEFAULT_PERCENT, application_icon, button_text_width,
-    display_frame_interval_ns, draw_note_sprite, drumroll_tick_times, equalize_button_widths,
+    display_frame_interval_ns, draw_note_sprite, drumroll_tick_times, equalize_button_widths, spans_circles,
     format_time, next_frame_due, osu_timestamp, resource_roots, scroll_row, set_view_ground_alpha, spinner_pixmap,
     tabular, view_ground_is_opaque,
 )
@@ -357,11 +357,13 @@ def hitsound_schedule(
         ordered_points = sorted_by_time(list(timing_points))
         beat_points = uninherited_points(ordered_points)
         if beat_points:
+            circle_times = sorted(float(note.time) for note in hit_objects if note.is_circle)
             for note in hit_objects:
                 if note.is_slider:
-                    scheduled.extend(
-                        (float(time_ms), "normal") for time_ms in drumroll_tick_times(
-                            note, beat_points, ordered_points, slider_multiplier))
+                    ticks = drumroll_tick_times(note, beat_points, ordered_points, slider_multiplier)
+                    if ticks and spans_circles(note.time, ticks[-1], circle_times):
+                        continue  # a roll across notes is heard as the notes
+                    scheduled.extend((float(time_ms), "normal") for time_ms in ticks)
     scheduled.sort()
     times = [time_ms for time_ms, _key in scheduled]
     keys = [key for _time, key in scheduled]

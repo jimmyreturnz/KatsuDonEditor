@@ -33,6 +33,7 @@ from ui.common import (
     draw_note_sprite,
     draw_pixmap_subpixel,
     drumroll_tick_times,
+    spans_circles,
     duration_for_slider_length,
     most_common_beat_length,
     osu_screen_height_for,
@@ -686,8 +687,12 @@ class GameplayViewerView(QWidget):
             autoplay.note_halves(
                 [(note.time, note.is_kat, note.is_finisher) for note in circles],
                 beat, style, binding, left)))
+        circle_times = [float(note.time) for note in circles]
         for note in self.notes:
             if note.is_slider and note.uid in self._end_times:
+                # A tick between the notes would take a note's timing window.
+                if spans_circles(note.time, self._end_times[note.uid], circle_times):
+                    continue
                 hits.extend(autoplay.roll_halves(drumroll_tick_times(
                     note, self.beat_points, self.timing_points, self.slider_multiplier), left))
         hits.sort(key=lambda hit: hit[0])

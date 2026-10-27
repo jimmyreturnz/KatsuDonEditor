@@ -762,6 +762,42 @@ class RollTickTintTests(unittest.TestCase):
         self.assertTrue(all(tints[i] is None for i in (1, 2, 3, 5, 6, 7)))
 
 
+class AutoplayRollOverNotesTests(unittest.TestCase):
+    """Owner, 2026-10-28: a drumroll mapped across notes is played as the
+    notes alone; one with nothing under it is rolled as before."""
+
+    def _hits(self, notes):
+        from chart.autoplay import FULL_ALT
+        view = gui.GameplayViewerView()
+        view.resize(900, 200)
+        point = TimingPoint(time=0.0, beat_length=500.0, meter=4)
+        view.timing_points = view.beat_points = [point]
+        view._beat_times = [0.0]
+        view.slider_multiplier = 1.4
+        view._rebuild_velocities()
+        view.notes = sorted(notes, key=lambda n: n.time)
+        view.note_times = [n.time for n in view.notes]
+        view._end_times = {}
+        for note in view.notes:
+            end = view._compute_end_time(note)
+            if end is not None:
+                view._end_times[note.uid] = end
+        view.set_autoplay((FULL_ALT, "1234", False))
+        return view._all_hits
+
+    @staticmethod
+    def _roll():
+        return HitObject(x=256, y=192, time=1000, type=2, hit_sound=0,
+                         extras=("L|624:192", "1", "280.0"))  # 2 beats: 1000-2000
+
+    def test_a_roll_over_notes_plays_only_the_notes(self):
+        notes = [HitObject(x=256, y=192, time=t, type=1, hit_sound=h) for t, h in ((1250, 0), (1500, 2))]
+        self.assertEqual(self._hits([self._roll(), *notes]), [1250.0, 1500.0])
+
+    def test_a_roll_alone_is_rolled(self):
+        self.assertGreater(len(self._hits([self._roll()])), 8)
+
+
 class NanSliderTests(unittest.TestCase):
     def test_it_is_invisible_in_the_preview_and_has_no_ticks(self):
         from ui.common import drumroll_tick_times

@@ -260,6 +260,15 @@ def spinner_pixmap() -> QPixmap:
 
 
 
+def spans_circles(start_ms: float, end_ms: float, circle_times) -> bool:
+    """Whether a don or kat (`circle_times`, sorted) lies in [start, end]. A
+    drumroll mapped across notes is played -- and heard -- as the notes alone
+    (owner, 2026-10-28): autoplay skips its ticks and so do its hitsounds.
+    taiko-rs's `roll_over_notes` is the same rule."""
+    from bisect import bisect_left, bisect_right
+    return bisect_right(circle_times, end_ms) > bisect_left(circle_times, start_ms)
+
+
 def drumroll_tick_times(note, beat_points, timing_points, slider_multiplier) -> list[float]:
     """Where a real drumroll's ticks fall: every 1/4 beat of its red line,
     from the head to the end -- 1/8 at 125 BPM or slower, 1/2 above 250, as

@@ -106,6 +106,16 @@ class SampleChoiceTests(unittest.TestCase):
             times, _keys, _volumes = gui.hitsound_schedule([roll], points, slider_multiplier=1.2)
             self.assertEqual(times[1] - times[0], spacing, beat)
 
+    def test_a_roll_across_notes_is_heard_as_the_notes(self):
+        """Owner, 2026-10-28: a real drumroll mapped through dons and kats
+        plays no ticks -- only the notes sound, as autoplay hits only them."""
+        roll = HitObject(x=256, y=192, time=1000, type=TYPE_SLIDER, hit_sound=0,
+                         extras=("L|356:192", "1", "120"))
+        points = [TimingPoint(time=0.0, beat_length=400.0, meter=4)]
+        times, keys, _volumes = gui.hitsound_schedule(
+            [roll, circle(1200, HITSOUND_CLAP)], points, slider_multiplier=1.2)
+        self.assertEqual((times, keys), ([1200.0], ["clap"]))
+
     def test_a_finisher_schedules_both_its_samples_on_one_millisecond(self):
         times, keys, _volumes = gui.hitsound_schedule([
             circle(100, HITSOUND_FINISH),

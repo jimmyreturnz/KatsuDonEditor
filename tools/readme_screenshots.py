@@ -1,7 +1,7 @@
 """Take the README's screenshots from the running app.
 
     python tools/readme_screenshots.py <chart.osu> <gimmick.osu> [out_dir]
-        [--at MS] [--gimmick-at MS]
+        [--at MS] [--gimmick-at MS] [--theme NAME]
 
 Real platform (the offscreen one has no fonts), at 1920x1080. Writes nothing
 of the user's: settings come from the test suite's private copy (importing
@@ -46,6 +46,7 @@ GIMMICK_MAP = Path(args[1]).resolve()
 OUT = Path(args[2]) if len(args) > 2 else ROOT / "docs" / "screenshots"
 AT_MS = option("--at", 47000.0)
 GIMMICK_AT_MS = option("--gimmick-at", 115800.0)
+THEME = sys.argv[sys.argv.index("--theme") + 1] if "--theme" in sys.argv else None
 OUT.mkdir(parents=True, exist_ok=True)
 
 app = QApplication.instance() or QApplication([])
@@ -112,10 +113,10 @@ from app import settings as _settings  # noqa: E402
 _settings.SettingsManager().set_value("appearance/skin", "")
 # And the defaults for what the screenshots are of, whatever the copy holds.
 _settings.SettingsManager().set_value("appearance/view_opacity", 100)
-# The default theme, which is what a new user sees: the test settings pin the
-# colours as written, which stopped being the default when it moved to #1f1e33.
+# The default theme unless --theme names one (the README uses taiko): the test
+# settings pin the colours as written, which stopped being the default.
 from ui import theme  # noqa: E402
-theme.install(theme.DEFAULT)
+theme.install(THEME or theme.DEFAULT)
 
 window = gui.MainWindow()
 window.resize(1920, 1080)
@@ -150,12 +151,14 @@ def only_views(*views: tuple[str, Path]) -> None:
 # -- editor: every difficulty of the song, easiest first ---------------------------
 window._load_map_path(MAP)
 window._show_page(gui.PAGE_EDITOR)
+settle(30, wait_ms=1500)  # the page's own chart and SV views open first
 difficulties = sorted(
     MAP.parent.glob("*.osu"),
     key=lambda path: len(window._ensure_state(path.resolve()).document.hit_objects),
 )
 only_views(*[("chart", path.resolve()) for path in difficulties])
 window.seek_audio(AT_MS)
+settle(30, wait_ms=1500)
 shoot(window, "editor")
 
 # -- one difficulty: its chart, its SV and the gameplay preview ----------------------
@@ -174,6 +177,8 @@ chosen = {
 window._selection_changed(chosen)
 page = window.control_tabs.widget(0)
 page.combo.setCurrentIndex(page.combo.findData("star"))
+# The map's own CS 2 piles the star into a blob; 6 lets its points read.
+window.circle_size_control.value_box.setValue(6.0)
 settle(30, wait_ms=1200)
 shoot(window, "fancy-arranger")
 
@@ -185,9 +190,27 @@ try:
     if window._enter_gimmick_page():
         window._show_page(gui.PAGE_GIMMICK)
         window.seek_audio(GIMMICK_AT_MS)
+        settle(30, wait_ms=1500)  # past the page switch's slide
         shoot(window, "gimmick-editor")
 finally:
     gui.GimmickEntryDialog = original_entry
+
+# -- miscellaneous: one shot per tool ----------------------------------------------
+# The charting map again, two rates picked, and three difficulties in a pack.
+window._load_map_path(MAP)
+window._show_page(gui.PAGE_MISC)
+misc = window.misc_page
+misc.refresh()
+for rate in (1.2, 1.5):
+    misc._rate_toggled(rate, True)
+misc._sync_rate_pills()
+for path in (MAP, GIMMICK_MAP, *[p for p in sorted(MAP.parent.glob("*.osu")) if p.resolve() != MAP][:1]):
+    misc.add_difficulty(path)
+window._toast.hide()  # "Added ... to the Mappack Creator"
+for key in ("rate", "mania", "mappack"):
+    window.misc_page.sheet.jump_to(key)
+    settle(20, wait_ms=600)
+    shoot(window, f"misc-{key}")
 
 # -- dialogs -----------------------------------------------------------------------
 config = window._gimmick_config("barline")

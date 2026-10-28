@@ -19,7 +19,7 @@ Discordもjimmyreturnzです\
 
 *日本語版は [README_JP.md](README_JP.md) をご覧ください。*
 
-KatsuDon Editor (formerly Taiko Fancy Arranger) started as a tool for turning osu!taiko notes into visual patterns such as text, shapes, equations, drawings, spirals, or even an image, without placing every circle by hand. Version 2.0.0 grew it into an editor: browse your osu! Songs folder, open a difficulty, edit notes, edit scroll velocity, preview the chart the way osu! renders it, and still arrange notes into patterns when you want to. Version 3.0.0 adds a dedicated gimmick editor, for the fake sliders, barline gimmick and extreme SV effects that osu!taiko mappers build out of timing points rather than notes. 
+KatsuDon Editor (formerly Taiko Fancy Arranger) started as a tool for turning osu!taiko notes into visual patterns such as text, shapes, equations, drawings, spirals, or even an image, without placing every circle by hand. Version 2.0.0 grew it into an editor: browse your osu! Songs folder, open a difficulty, edit notes, edit scroll velocity, preview the chart the way osu! renders it, and still arrange notes into patterns when you want to. Version 3.0.0 adds a dedicated gimmick editor, for the fake sliders, barline gimmick and extreme SV effects that osu!taiko mappers build out of timing points rather than notes. Since then it has gained a song select with star ratings, mods and autoplay in the gameplay preview, six app themes, and a Miscellaneous page with a Rate Changer, Taiko to Mania and a Mappack Creator.
 
 The editor does not support editing storyboards, breaks, colours, editor bookmarks yet.
 
@@ -44,7 +44,7 @@ The main inspirations include Alchyr's ranked maps *13 Stairs* and *Helios*, whi
 
 ![Editor](docs/screenshots/editor.png)
 
-**Gameplay preview.** Sized to match the osu! playfield.
+**Gameplay preview.** Sized to match the osu! playfield, with mods and an autoplay that hits like a player.
 
 ![Gameplay preview](docs/screenshots/gameplay-preview.png)
 
@@ -56,6 +56,10 @@ The main inspirations include Alchyr's ranked maps *13 Stairs* and *Helios*, whi
 
 ![Fancy Arranger](docs/screenshots/fancy-arranger.png)
 
+**Miscellaneous.** Set-wide chores: metadata, offset, Taiko to Mania, a Rate Changer and a Mappack Creator.
+
+![Rate Changer](docs/screenshots/misc-rate.png)
+
 **Config sheets.** Every tool's options, in a redesigned sheet.
 
 | | |
@@ -65,14 +69,16 @@ The main inspirations include Alchyr's ranked maps *13 Stairs* and *Helios*, whi
 
 ---
 
-## What is new in 3.5.9
+## What is new in 3.6.0
 
-- **Rate Changer without ffmpeg works again**: it failed with "mode must be r, rb, w, or wb" whenever it had to write WAV.
-- **Rate Changer:** a target BPM instead of a rate, any rate up to 1000 BPM, every cell of the table typeable, resizable columns, a remove button per row, and names from a template such as `{name} at {bpm}BPM ({rate}x)`.
-- **One copy across gimmick layers:** notes and a barline structure picked in different layers paste together.
-- **The tab switch sound can be turned off.**
+- **New logo and app icon:** a drum face in don red and kat blue.
+- **The update loop is fixed.** v3.5.10 and v3.5.11 reported themselves as 3.5.9, so they kept offering the update they had just installed. Update once more and it stops.
+- **Fake sliders in the gameplay preview follow osu! stable:** the head vanishes when the cap reaches the hit position, then the body scrolls on for 200 of slider length, stops and fades. A slider written 0.1 long or less disappears at the hit position.
+- **Kiai flash follows stable:** beats from the first red line, 3/4 of a beat long.
+- **Autoplay skips sliders written between -0.1 and 0.1 long**, so `+0.0001` stacks no longer make a loud noise.
+- **Ctrl+C timestamps** number notes by combo.
 
-Details: [`docs/releases/v3.5.9.md`](docs/releases/v3.5.9.md)
+Details: [`docs/releases/v3.6.0.md`](docs/releases/v3.6.0.md). Earlier: [3.5.11](docs/releases/v3.5.11.md) (drumroll tick colours) and [3.5.10](docs/releases/v3.5.10.md) (the KatsuDon Editor name, W/E/R, pop-up and NaN sliders).
 
 
 The full development log is in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md).
@@ -81,7 +87,7 @@ The full development log is in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLA
 
 ## Windows SmartScreen notice
 
-KatsuDon Editor v3.5.9 is an unsigned Windows application. The release validates its input files, ships with automated tests, and publishes SHA-256 checksums.
+KatsuDon Editor is an unsigned Windows application. The release validates its input files, ships with automated tests, and publishes SHA-256 checksums.
 
 Windows Defender SmartScreen may still show an "unrecognized app" warning, because a new executable has no download reputation yet.
 
@@ -92,6 +98,16 @@ Windows Defender SmartScreen may still show an "unrecognized app" warning, becau
 Currently supports English and Japanese. There is no Thai translation yet even though I am Thai myself 😂
 
 Language is chosen on first start and can be changed in **Settings**. Changing it asks you to restart, because Qt does not retranslate widgets that already exist.
+
+---
+
+## Themes
+
+**Settings → Appearance → App theme**: osu! (the default), Taiko, Lantern Rite, Gold, Monokai and NSO. A theme changes as soon as it is picked. It recolours the window around the chart only: notes, snap ticks, the SV graph and star-rating colours stay osu!'s own. The screenshots in this README use Taiko.
+
+![The six themes on song select](docs/screenshots/themes.png)
+
+**Settings → Appearance → Background opacity** sets how strongly the map's background shows behind the Editor and Gimmick pages, and **View opacity** how see-through the views are over it.
 
 ---
 
@@ -132,9 +148,9 @@ Cancelling the folder picker leaves the library empty with a **Change folder** b
 
 The app opens on the library page.
 
-- Left: songs, shown as `Artist - Title · mapper · difficulty count`.
-- Right: the difficulties of the selected song.
-- Double-click a difficulty, or press **Edit this difficulty**, to open it in the editor.
+- Left: a row per song, with a dot per difficulty in osu!'s star colour. Above it, **Continue** holds the last charts you opened here.
+- Right: the selected difficulty's background, with its chart scrolling under it and a seek band of the whole song, then its difficulties with star ratings read from osu!stable's `osu!.db`.
+- Double-click a difficulty, or press **Edit**, to open it in the editor.
 
 Controls:
 
@@ -148,8 +164,6 @@ Controls:
 The preview plays at 1.00x and the song's own pitch whatever mod is selected. Mods apply in the editor.
 
 Only taiko charts are listed.
-
-There will be a rework on the song library soon, stay tuned!
 
 ---
 
@@ -170,7 +184,9 @@ View types:
 | Gameplay viewer | Read-only osu!taiko gameplay preview |
 | Density | The white-to-yellow note density heatmap |
 
-You can edit multiple difficulties at the same time as well. Ctrl+S saves every changed difficulty at once, and the Editor and the Gimmick editor each offer their own list of views to open.
+You can edit multiple difficulties at the same time as well. Ctrl+S saves the difficulty on screen, as in osu!'s editor; the header's **Save** asks which to write when more than one has changes. The Editor and the Gimmick editor each offer their own list of views to open.
+
+**Mods and autoplay.** The mod pills (HR EZ, HD FL, DT NC HT DC) apply to the gameplay preview and playback as in osu!. The **Autoplay** menu beside them picks how the preview's drum is hit: kddk full or semi alternate, single tap, roll or ddkk, the kddk binding, and the dominant hand.
 
 ### Note editing
 
@@ -180,14 +196,16 @@ The tool row sits at the bottom of the page and acts on the focused chart view.
 1  Select
 2  Don
 3  Kat
-4  Slider
-5  Spinner
-6  New combo
+4  Finisher
+5  Slider
+6  Spinner
+7  New combo
 ```
 
 - Left click places at the snapped time. A translucent ghost shows where it will land.
 - Sliders and spinners are **click-dragged** to their length. Press near the right edge of an existing one to resize it, or drag its tail with the **Select** tool afterwards.
-- Holding **Shift** places a finisher.
+- Holding **Shift** places a finisher, and **E** keeps the Finisher tool on.
+- On a selection, **W** makes every circle a kat (whistle), **R** a kat (clap), **E** a finisher, and **Q** toggles new combo. With nothing selected, **W** switches between Don and Kat.
 - Right click deletes the note under the cursor.
 - Each millisecond holds one object, spinners excepted. Placing over a note replaces it, as a single undo step.
 
@@ -199,6 +217,7 @@ With an SV view focused, the tool row becomes:
 1  Select
 2  Green line
 3  Function
+4  Scale SV
 ```
 
 - Red lines are uninherited (BPM) points, green are inherited (SV), yellow means both share a millisecond.
@@ -216,19 +235,31 @@ linear   sin in   sin out   exp1.3   exp1.6   true exp   sin
 
 The tool places points on the notes in range by default, or every N snaps. The default -5 ms offset puts the SV in force before the note it governs arrives. However many points it makes, it is one undo step.
 
+**Scale SV** (`Ctrl+M`, or tool 4 as a rubber band) multiplies the selected green lines' SV and then adds a number, so a copied effect can be pasted elsewhere and rescaled.
+
 Will eventually add an option to select exp(x>=1) SV for an experimental purpose.
 
 ### Editor shortcuts
 
 ```text
-Space               Play or pause
+Space / C           Play or pause
+Z                   Jump to the first note
+X                   Play from 00:00
 Ctrl+Z / Ctrl+Y     Undo / redo (per difficulty)
 Ctrl+C / Ctrl+V     Copy / paste notes or SV points, snapped on paste
-Ctrl+S              Save every changed difficulty
+                    (Ctrl+C also copies osu!'s timestamp, like 00:01:000 (1,2) - )
+Ctrl+X / Ctrl+D     Cut / clone the selection one measure later
+Ctrl+G              Reverse the selection in time
+Ctrl+R              Resnap objects to their own snap
+Ctrl+M              Scale the selected green lines' SV
+Q / W / E / R       New combo / kat (whistle) / finisher / kat (clap)
+Ctrl+S              Save
+F5                  Reload the chart from disk
 Ctrl+A              Select all in the focused view
 Delete              Delete the selection
 Esc                 Back to the song list
-1 - 6               Tools, routed to whichever tool row is showing
+1 - 7               Tools, routed to whichever tool row is showing
+Shift+1 - 9         Beat snap 1/1 to 1/9
 Mouse wheel         Seek by one snap
 Shift+wheel         Seek by one beat
 Ctrl+wheel          Zoom
@@ -245,7 +276,7 @@ Leaving the editor with unsaved work lists which difficulties are unsaved by nam
 
 A "gimmick" in osu!taiko is a visual effect built out of timing points rather than notes. Examples are drumrolls of negative length that are drawn but never hittable ("fake sliders"), notes drawn out of barlines, and extreme BPM and SV values that move objects around the screen.
 
-The gimmick page stacks six layers over one difficulty: the normal chart, a fake slider layer, a barline gimmick layer, and an SV layer for each of the three.
+The gimmick page stacks seven layers over one difficulty: the normal chart, a fake slider layer, a barline gimmick layer, an SV layer for each of the three, and a Kiai and Sound Volume layer.
 
 Entering it for a difficulty asks once whether to edit that difficulty in place or copy it into a new `[Gimmick]` difficulty, and remembers the answer permanently.\
 You can also change the timing reference for a smoother scrolling experience, it is suggested to use a clean version of the chart though.\
@@ -269,25 +300,28 @@ Fake sliders with a long negative length are drawn to scale in the gameplay prev
 Tools:
 
 ```text
+Select
 Fake Slider
-Don / Kat
+Don / Kat / Finisher
 Shiny
 Multiple Fake Slider
 Function
 Convert Notes
-Kiai
 ```
 
 - **Multiple Fake Slider** writes a whole run of fake sliders at a set spacing in one click.
 - **Function** fills a dragged range.
 - **Convert Notes** turns the chart's own notes into fake slider or shiny structures.
-- **Kiai** drags a range and turns every timing point inside it into one kiai section.
+
+The **Kiai and Sound Volume** layer has **Kiai**, which drags a range and turns every timing point inside it into one kiai section, and **Volume**, which sweeps hitsound volume over a range.
 
 ### Barline gimmicks
 
 Notes drawn out of red lines. A Don is one mirrored pair of bars and a Kat is three, and you can set up each pair on its own.\
 Bars can be mirrored around the note or trail it. A red line tool has its own configurable BPM, and a Function tool fills a range with red lines on a millisecond count or the beat grid, with an optional BPM ramp and a chosen SV.\
 You can also do the same kind of behavior with fake sliders where you might want to apply SV to this specific BPM, or better, BPM range.
+
+Every barline structure is red lines, and a red line resets SV to 1.0x. **Convert Notes → Barline notes** has a **Keep SV** switch that writes the chart's own speed back after each one, following its curves. **Experimental Conversion → Convert Whole Map, Keep SV…** turns a whole difficulty into barline notes or an anti-barline wall in one undo step.
 
 ### Per-structure SV
 
@@ -432,11 +466,31 @@ Notes glide to their new places when a transformation changes. **Settings → Ap
 
 ---
 
+## Miscellaneous page
+
+Set-wide tools, one per section of the sheet. Each change here is a normal edit: Save writes it and Ctrl+Z undoes it.
+
+- **Metadata.** Artist, title, source and tags for one difficulty or all of them. Blank fields are left alone, and tags are counted against osu!'s 1000-character limit.
+- **Taiko Utilities.** Shift the whole map's offset (notes, lines, bookmarks, the preview point, breaks and the video), scale every green line's SV, and set every kat to whistle or clap.
+- **Taiko to Mania.** Writes a 4K or 1K osu!mania difficulty, played the way the autoplay plays it, so its playstyle, binding and hand carry over. Drumrolls and spinners become hold notes.
+
+![Taiko to Mania](docs/screenshots/misc-mania.png)
+
+- **Rate Changer.** Any difficulty at 0.8x to 1.5x, a typed rate, or a target BPM, each as a new difficulty with its own song. Pitch can be kept or changed, and OD can scale with the rate. Gimmicks survive: two objects 1 ms apart stay 1 ms apart. It follows the difficulty selected in osu!, or else the one being edited.
+
+![Rate Changer](docs/screenshots/misc-rate.png)
+
+- **Mappack Creator.** Difficulties from different sets become one set with your title and creator. Add one from osu!'s current selection, with **Alt+Shift+A** from anywhere, or with **Ctrl+Shift+=** on song select. It collects the tags, stores identical files once, and shows the size against osu!'s limits.
+
+![Mappack Creator](docs/screenshots/misc-mappack.png)
+
+---
+
 ## Saving and exporting
 
 | Action | Where | What it does |
 |---|---|---|
-| Save | Global header | Writes every changed difficulty at once, backing each one up first |
+| Save | Global header | Writes the changed difficulties (asking which when there are several), backing each one up first |
 | Export new difficulty | Global header | Writes a new difficulty file into the same song folder |
 | Export applied map | Fancy Arranger | Writes an arranged difficulty to a destination you choose |
 | Apply all changes to original file | Fancy Arranger | Overwrites the loaded `.osu`, after a backup |
@@ -492,7 +546,7 @@ Do not upload copyrighted audio or private beatmap assets unless permission has 
 
 ## Project status
 
-Version 3.5.9 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
+Version 3.6.0 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
 
 Not yet implemented, and next in line:
 

@@ -41,6 +41,15 @@ jobs:
       #   * scripts/build_windows.bat -- step [6/9], aborts the build on failure
       # Do not tag a release from a tree where those have not passed.
 
+      # The version the updater compares is the tag's: v3.5.10 and v3.5.11
+      # shipped a VERSION never bumped from 3.5.9, so every install kept
+      # being offered the update it had just installed.
+      - name: Stamp the version from the tag
+        if: github.event_name == 'release'
+        shell: pwsh
+        run: |
+          "${{ github.event.release.tag_name }}".TrimStart('vV') | Set-Content VERSION -NoNewline -Encoding ascii
+
       - name: Build portable Windows application
         run: pyinstaller --noconfirm --clean KatsuDonEditor.spec
 

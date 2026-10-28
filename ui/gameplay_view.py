@@ -60,26 +60,16 @@ from ui.common import (
 KIAI_PULSE_COLOR = DRUMROLL_COLOR
 
 
-# A don or kat on its own flashes **white**, as ppy/osu `CirclePiece`'s flash
-# box does (`Colour = Color4.White`, additive): the note lifts toward a paler
-# version of itself rather than toward yellow.
-KIAI_CIRCLE_PULSE_COLOR = (255, 255, 255)
-
-
-# osu!taiko's CirclePiece flashes at `kiai_flash_opacity = 0.15f` on each kiai
-# beat, and does it with `BlendingParameters.Additive`. Both matter: 0.31 (what
-# this was) is twice the brightness, and drawn as ordinary alpha it lays a film
-# over the note's colour instead of lighting it, which is why kiai used to wash
-# don and kat toward the same pale orange.
-# osu!'s own `kiai_flash_opacity` is 0.15. This is deliberately well above it,
-# and the reason is `TaikoSkin.flash`: the light is masked to the *colourable*
-# part of a note and then weighted by how bright the artwork is there, so it
-# reaches far less of the disc than a flat overlay did. 0.15 across what is
-# left read as almost nothing. Measured on a don in kiai, on the beat:
-#
-#     stack       0         1         3         8
-#             #ea6c2f   #f19d31   #f9d435   #fef93f
-KIAI_PULSE_ALPHA = round(0.337 * 255)
+# Every object's kiai flash starts at this, additive, in its own colour
+# brightened (`kiai_brighten`): stable's `Ruleset.UpdateKiai` (peppy's paste in
+# ppy/osu#26990), 2026-10-28. A pile of fake sliders stamps once per object.
+KIAI_PULSE_ALPHA = round(0.3 * 255)
+# How far ahead of the beat, in first-red-line beats, objects take its flash:
+# stable lit ~22 notes 250ms apart at 30 BPM, short of the screen (owner,
+# 2026-10-28).
+# ponytail: one measurement; stable's spawn window may also scale with
+# SliderMultiplier (1.4 there). Re-measure if a map looks off.
+KIAI_FLASH_REACH = 2.625
 
 
 # Deliberately far below KIAI_PULSE_ALPHA: this one washes the *entire* view
@@ -95,12 +85,21 @@ PLAYFIELD_PULSE_ALPHA = 8
 # player is looking *through*; here it is most of what the view is, and at
 # full opacity every beat of a chorus flashed the whole preview.
 KIAI_GLOW_STRENGTH = 0.5
-# A fake slider's track, once it reaches the hit position, fades over this
-# long -- unless its length is at least FAKE_SLIDER_LINGER_LENGTH, when it is
-# gone at once. Owner's observation of stable, 2026-10-26.
-# ponytail: the cutoff is "somewhere before -200", measure it if a map disagrees.
-FAKE_SLIDER_FADE_MS = 250.0
-FAKE_SLIDER_LINGER_LENGTH = 200.0
+# A fake slider fades out over this once its cap reaches the hit position, and
+# stops scrolling after this much more of slider length (owner's stable test
+# map, 2026-10-28: -200 at 3x stops 238ms on). taiko-rs has the same rule.
+# ponytail: the fade is only known to be 238..714ms; measure it if a map looks off.
+FAKE_SLIDER_FADE_MS = 500.0
+FAKE_SLIDER_FREEZE_LENGTH = 200.0
+
+
+def fake_slider_freeze(time_ms: float, ahead_ms: float, length: float, now_ms: float) -> float:
+    """How long a fake slider at `time_ms`, its cap `ahead_ms` ahead of its
+    head and `length` long as written (x spans), has stood still at `now_ms`:
+    it scrolls on after its cap lands for FAKE_SLIDER_FREEZE_LENGTH more of
+    slider length, then stops."""
+    moving = ahead_ms / max(1e-9, length) * FAKE_SLIDER_FREEZE_LENGTH
+    return max(0.0, now_ms - (time_ms - ahead_ms) - moving)
 # A spinner fades in, easing in, from 1.5 beats before it over lazer's 666ms
 # or half a beat if that is shorter (ppy/osu#21769, owner 2026-10-28).
 # taiko-rs's `swell_fade` is the same.
@@ -132,91 +131,49 @@ def fade_from(lead_ms: float, fade_ms: float, until_ms: float) -> float:
     return p * p
 
 
-# A circle's share of that, so a note glows without its colour being replaced.
-# 0.55 until 2026-10-08, when the owner found the kiai flash too bright. Only
-# the circle's share moved: a fake slider stamps at full KIAI_PULSE_ALPHA, so
-# the shiny stack readings above are unchanged.
-CIRCLE_KIAI_STRENGTH = 0.3
-
-
-# Under this a "beat" is a gimmick, not a pulse: an invisible-note section at
-# 0.0001ms per beat would strobe once per frame.
-KIAI_PULSE_MIN_BEAT_MS = 50.0
-
-
-# 60 BPM. Only a beat longer than this lets a kiai section that ends mid-pulse
-# carry it to the end -- see GameplayViewerView._unfinished_pulse_anchor. Above
-# 60 BPM the beat is short enough that a section ending inside one just stops,
-# which is what a chorus ending should look like; below it the beat is long
-# enough that the same cut lands on a flash still visibly fading.
-KIAI_PULSE_CARRY_MIN_BEAT_MS = 1000.0
-
-
-def beat_pulse(
-    timing_points: list[TimingPoint], time_ms: float, anchor_ms: float | None = None,
+def kiai_flash(
+    beat_points: list[TimingPoint], kiai_bands: list[tuple[float, float]],
+    time_ms: float, end_ms: float = math.inf, start_ms: float | None = None,
 ) -> float:
-    """Flash strength at `time_ms`: 1.0 on the beat, fading to 0 by the next.
+    """The kiai flash at `time_ms` on an object from `start_ms` (default
+    `time_ms`) to `end_ms`, 0..1.
 
-    Walks back past any point whose beat_length reads as a gimmick rather than
-    a real beat (a 60000 BPM section, a barline run) to the most recent point
-    that is one, and pulses against that instead. Without this, the section
-    active *right under the playhead* decided whether every note on screen
-    flashed at all -- which is why "some shiny notes have no glow" depended on
-    where the playhead happened to be sitting, not on the note. Returns 0.0
-    only when the map has no real section behind the playhead at all, which
-    keeps the original guard against strobing at 0.0001ms per beat.
+    stable's `Ruleset.UpdateKiai` (ppy/osu#26990): on each beat, if kiai is
+    on at that beat, every object still to come flashes from 1 to 0,
+    linearly, over int(3/4 beat) ms -- or until its own end, if that is
+    sooner. So a kiai with no beat in it never flashes and the last flash
+    finishes after the kiai ends. A note's end is its time; a real roll's,
+    its end.
 
-    `anchor_ms` is the start of the kiai section `time_ms` falls in (the
-    caller already has this from its kiai bands, so this doesn't search for
-    it). With an anchor, the pulse hits 1.0 there and repeats **every 1/1
-    beat**, fading linearly across it -- so a slower BPM fades slower for free,
-    with no separate constant. It ran on a measure for a while, which at 4/4 is
-    three beats out of four with nothing happening on them; a chorus pulses on
-    the beat. Without an anchor, falls back to the same one-beat period phased
-    from the timing point instead of from the section.
+    The beat is the first red line's, all map long, whatever line is in force
+    (owner's source, 2026-10-28), and only objects starting within
+    KIAI_FLASH_REACH of its beats ahead take it: a 2222 BPM first line
+    lights only what is at the drum.
+
+    A binary search on the bands: this runs per note per frame, and a barline
+    gimmick carries tens of thousands of points.
     """
-    point = pulse_beat_point(timing_points, time_ms)
-    if point is None:
+    if not beat_points or beat_points[0].beat_length <= 0:
         return 0.0
-    phase = point.time if anchor_ms is None else anchor_ms
-    return 1.0 - ((time_ms - phase) / point.beat_length) % 1.0
+    point = beat_points[0]
+    beat = point.time + math.floor((time_ms - point.time) / point.beat_length) * point.beat_length
+    band = bisect_right(kiai_bands, beat, key=lambda band: band[0]) - 1
+    if band < 0 or beat >= kiai_bands[band][1]:
+        return 0.0
+    start_ms = time_ms if start_ms is None else start_ms
+    if start_ms - beat > KIAI_FLASH_REACH * point.beat_length:
+        return 0.0
+    length = min(math.floor(point.beat_length * 0.75), end_ms - beat)
+    if length <= 0 or time_ms - beat >= length:
+        return 0.0
+    return 1.0 - (time_ms - beat) / length
 
 
-def pulse_beat_point(
-    timing_points: list[TimingPoint], time_ms: float,
-) -> TimingPoint | None:
-    """The section the pulse beats against: the most recent point at or before
-    `time_ms` whose beat_length is a real beat rather than a gimmick.
-
-    Binary search to the last point at or before the playhead, then walk back
-    from there -- not a scan from the end of the list. This runs once per
-    frame at 120Hz and a barline gimmick carries tens of thousands of points,
-    which is the difference between a repaint and a freeze (the same reason
-    `active_uninherited_at` is a binary search).
-    """
-    index = bisect_right(timing_points, time_ms, key=lambda point: point.time) - 1
-    while index >= 0:
-        point = timing_points[index]
-        if point.beat_length >= KIAI_PULSE_MIN_BEAT_MS:
-            return point
-        index -= 1
-    return None
-
-
-def kiai_flash_strength(note) -> float:
-    """How brightly `note` takes the kiai flash, relative to a drawn object.
-
-    A circle glows *slightly*: it is already a solid, saturated red or blue and
-    a full-strength overlay on top of it reads as the note changing colour
-    rather than as the chorus lighting up. A drumroll -- every fake slider and
-    every shiny -- takes the flash at full strength, because brightening that
-    yellow is the effect mappers stack them for in the first place. A shiny
-    then compounds all by itself: it is several drumrolls on one millisecond
-    and each one takes its own stamp, so a deep pile pulses harder than a lone
-    fake slider. Outside a chorus none of this happens and a fake slider is
-    flat #fbb706 -- see KIAI_PULSE_COLOR.
-    """
-    return CIRCLE_KIAI_STRENGTH if note.is_circle else 1.0
+def kiai_brighten(colour: tuple[int, int, int]) -> tuple[int, int, int]:
+    """A kiai flash's colour: the object's own, each channel up by
+    max(25, 300 - R - G - B) (stable)."""
+    add = max(25, 300 - sum(colour))
+    return tuple(min(255, c + add) for c in colour)
 
 
 def draw_note_light(
@@ -681,6 +638,13 @@ class GameplayViewerView(QWidget):
             return
         style, binding, left = self.autoplay
         circles = [note for note in self.notes if note.is_circle]
+        # The circle right before a NaN slider can't be hit, autoplay
+        # included, and isn't a miss either (owner, 2026-10-28; taiko-rs's
+        # `unhittable`).
+        times = [note.time for note in circles]
+        unhittable = {bisect_left(times, note.time) - 1
+                      for note in self.notes if note.is_nan_slider} - {-1}
+        circles = [note for k, note in enumerate(circles) if k not in unhittable]
         beat = most_common_beat_length(self.timing_points, self.notes[-1].time) or 500.0
         hits = list(zip(
             (float(note.time) for note in circles),
@@ -1174,14 +1138,7 @@ class GameplayViewerView(QWidget):
         # than in the flash pass at the bottom. kiai_bands is sorted by start,
         # so bisect straight to the band the playhead could be in.
         band_index = bisect_right(self.kiai_bands, self.current_time, key=lambda band: band[0]) - 1
-        anchor_ms = None
-        if 0 <= band_index < len(self.kiai_bands):
-            band_start, band_end = self.kiai_bands[band_index]
-            if band_start <= self.current_time < band_end:
-                anchor_ms = band_start
-            elif self.current_time >= band_end:
-                anchor_ms = self._unfinished_pulse_anchor(band_start, band_end)
-        pulse = beat_pulse(self.beat_points, self.current_time, anchor_ms) if anchor_ms is not None else 0.0
+        pulse = kiai_flash(self.beat_points, self.kiai_bands, self.current_time)
 
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
         self._draw_playfield(painter, center_y, normal_radius, big_radius, pulse)
@@ -1282,7 +1239,7 @@ class GameplayViewerView(QWidget):
                 # light. A slider always has something: its cap, which outlives
                 # its head -- a fake slider's included, since that passes
                 # straight through the hit position.
-                if hit and not note.is_slider:
+                if hit and (not note.is_slider or end_time is not None):
                     continue
                 # Not a spinner: its art is not a CirclePiece, and the full
                 # drumroll-strength stamp it took lit the whole swell yellow on
@@ -1297,7 +1254,15 @@ class GameplayViewerView(QWidget):
                 # that *is* the shiny: a stack of them under one note, each
                 # stamping the same millisecond, so the note above reads
                 # brighter the deeper the pile with nothing counting it.
-                strength = kiai_flash_strength(note)
+                # Each object's own flash, ending at its own end: a circle's
+                # and a fake slider's is its time.
+                note_pulse = kiai_flash(
+                    self.beat_points, self.kiai_bands, self.current_time,
+                    end_time if end_time is not None else note.time, note.time)
+                if note_pulse <= 0.0:
+                    continue
+                colour = kiai_brighten(
+                    (KAT_COLOR if note.is_kat else DON_COLOR) if note.is_circle else DRUMROLL_COLOR)
                 big = note.is_finisher or note.is_spinner
                 # A real roll past the target has lost its head, so only its
                 # cap lights from here on.
@@ -1307,8 +1272,8 @@ class GameplayViewerView(QWidget):
                         painter.save()
                         painter.setOpacity(painter.opacity() * alpha)
                         draw_kiai_flash(
-                            painter, x, center_y, radius, pulse, strength, self.skin, big,
-                            colour=KIAI_CIRCLE_PULSE_COLOR if note.is_circle else KIAI_PULSE_COLOR)
+                            painter, x, center_y, radius, note_pulse, 1.0, self.skin, big,
+                            colour=colour)
                         painter.restore()
                 # A roll's cap is part of the object and pulses with it. Its own
                 # shape and its own anchor, or the light lands on the track
@@ -1329,8 +1294,8 @@ class GameplayViewerView(QWidget):
                     end_x = x + span * self.velocity_at(note.time) * self.px_per_beat
                     if hit or end_x > x:
                         draw_kiai_flash(
-                            painter, max(end_x, x), center_y, radius, pulse,
-                            strength, self.skin, big, "taiko-roll-end", True,
+                            painter, max(end_x, x), center_y, radius, note_pulse,
+                            1.0, self.skin, big, "taiko-roll-end", True, colour,
                         )
         painter.setOpacity(1.0)
         if self._autoplay_shown():
@@ -1476,35 +1441,6 @@ class GameplayViewerView(QWidget):
             glow, QRectF(glow.rect()))
         painter.setOpacity(previous)
 
-    def _unfinished_pulse_anchor(self, band_start, band_end) -> float | None:
-        """`band_start` while the pulse the section left running is still fading.
-
-        A kiai section shorter than one beat starts a pulse it cannot finish:
-        at `band_end` the flash cut to black mid-fade, which reads as the
-        chorus being switched off rather than as a beat. The pulse that was in
-        progress when the section ended is allowed to run out -- so the
-        shortest possible kiai still shows one whole beat of light, and a
-        section that ends exactly on a beat is unchanged (`ceil` returns the
-        boundary itself).
-
-        **Under 60 BPM only** (`KIAI_PULSE_CARRY_MIN_BEAT_MS`). Above it the
-        beat is short enough that a section ending inside one simply stops,
-        which is what the end of a chorus should look like; carrying it there
-        would hold light past a kiai the map has finished with. Only a beat
-        long enough for the cut to land on a flash still visibly fading gets
-        to finish.
-
-        Anchored on the section rather than on the playhead: past `band_end`
-        there is no kiai to look up, and the fade has to keep the phase it
-        started with.
-        """
-        point = pulse_beat_point(self.beat_points, band_start)
-        if point is None or point.beat_length <= KIAI_PULSE_CARRY_MIN_BEAT_MS:
-            return None
-        span = band_end - band_start
-        finish = band_start + math.ceil(span / point.beat_length) * point.beat_length
-        return band_start if self.current_time < finish else None
-
     def _has_been_hit(self, note) -> bool:
         """Whether `note`'s circle head is played, and so off the screen.
 
@@ -1520,6 +1456,10 @@ class GameplayViewerView(QWidget):
         so it travels through and out the far side; a spinner occupies its
         whole span in place. Neither is ever "hit" in this sense.
         """
+        if note.is_slider and abs(note.length or 0.0) <= 0.1 and self._note_end_time(note) is not None:
+            # A +0.0001 goes at the target like a circle (Lunatic Rough
+            # Party!!'s first object; owner, 2026-10-28, stable).
+            return self.current_time >= note.time
         if note.is_spinner or (note.is_slider and self._note_end_time(note) is not None):
             return False
         # A fake slider's head goes when its *cap* lands, which is behind it.
@@ -1585,6 +1525,8 @@ class GameplayViewerView(QWidget):
             return
 
         if note.is_slider:
+            if self._has_been_hit(note):
+                return
             # The ticks still to come, at the head's speed like the body: one
             # reaching the target is played, the way a circle is. Each is
             # (x, tint): see `tick_tint`.
@@ -1771,17 +1713,16 @@ class GameplayViewerView(QWidget):
           **right** by the same amount. At `-0.001` both collapse onto the head
           and it looks like an ordinary roll; at `-100` the cap is plainly in
           front of the head.
-        * When the cap reaches the hit position the head and cap are cut, and
-          only the track carries on -- from `FAKE_SLIDER_LINGER_LENGTH` up.
-          A shorter one's pass through it like a real drumroll's (owner,
-          2026-10-28).
+        * When the cap reaches the hit position the head is gone, and track
+          and cap scroll on, fading out over `FAKE_SLIDER_FADE_MS`, until
+          they have gone `FAKE_SLIDER_FREEZE_LENGTH` of slider length further;
+          there they stop (`fake_slider_freeze`). Owner's stable test map,
+          2026-10-28: a -200 at 3x stops with its track just right of the
+          hit position, a -100 just left of it. A `-0.0001` one's cap lands
+          with its head.
         * Nothing is drawn before the head comes on screen, so a long one
-          (`-800`) has already lost its head and cap by then and shows only
-          its track.
-        * When the track itself reaches the hit position it is gone at once
-          from `FAKE_SLIDER_LINGER_LENGTH` up, and fades over
-          `FAKE_SLIDER_FADE_MS` below it.
-        * **Pop-up** (`_pop_up`): a long one too fast to ever be on screen
+          (`-800`) has already lost its head by then.
+        * **Pop-up** (`_pop_up`): one too fast to ever be on screen
           stands still by its length and fades in instead.
 
         All of it **to scale**: padding a short track to visibility would
@@ -1793,29 +1734,33 @@ class GameplayViewerView(QWidget):
             x, pop_width, pop_alpha = pop
             if pop_alpha <= 0.0:
                 return
-        if end_time is None or x - radius > self.width():
+        if end_time is None:
             return
-        opacity = 1.0
-        if pop is None and self.current_time >= note.time:
-            fade = (self.current_time - note.time) / FAKE_SLIDER_FADE_MS
-            if abs(note.length) >= FAKE_SLIDER_LINGER_LENGTH or fade >= 1.0:
-                return
-            opacity = 1.0 - fade
-        # A long one's head and cap go when the cap lands; a short one's pass
-        # through the target like a real drumroll's (owner, 2026-10-28).
-        cut = pop is None and abs(note.length) >= FAKE_SLIDER_LINGER_LENGTH and self._has_been_hit(note)
-        width = (
-            pop_width if pop is not None
-            else abs(end_time - note.time) * self.velocity_at(note.time) * self.px_per_beat)
+        ahead = abs(end_time - note.time)
+        speed = self.velocity_at(note.time) * self.px_per_beat
+        opacity, landed = 1.0, False
+        if pop is None:
+            lands = note.time - ahead
+            landed = self.current_time >= lands
+            if landed:
+                fade = (self.current_time - lands) / FAKE_SLIDER_FADE_MS
+                if fade >= 1.0:
+                    return
+                opacity = 1.0 - fade
+            x += fake_slider_freeze(
+                note.time, ahead, abs(note.length or 0.0) * (note.slides or 1), self.current_time) * speed
+        if x - radius > self.width():
+            return
+        width = pop_width if pop is not None else ahead * speed
         if x + width < 0:
             return
         if pop is not None:
             painter.save()
             painter.setOpacity(painter.opacity() * pop_alpha)
-            self._draw_fake_slider_parts(painter, note, x, center_y, radius, width, opacity, cut)
+            self._draw_fake_slider_parts(painter, note, x, center_y, radius, width, opacity, False)
             painter.restore()
             return
-        self._draw_fake_slider_parts(painter, note, x, center_y, radius, width, opacity, cut)
+        self._draw_fake_slider_parts(painter, note, x, center_y, radius, width, opacity, landed)
 
     def _screen_spans(self) -> list[tuple[float, float, float, float, float]]:
         """Per note: (time, time its far end trails to, ms per scroll unit,
@@ -1842,8 +1787,7 @@ class GameplayViewerView(QWidget):
                     gone = note.time + FAKE_SLIDER_FADE_MS
                 elif end is None and not note.is_spinner and not note.is_slider:
                     gone = float(note.time)
-                if (phantom is not None and note.length is not None
-                        and note.length <= -FAKE_SLIDER_LINGER_LENGTH):
+                if phantom is not None and note.length is not None:
                     lead = self._pop_up_lead(note)
                 spans.append((float(note.time), trail, inverse, lead, gone))
             self._screen_spans_key, self._screen_spans_cache = key, spans
@@ -1864,12 +1808,15 @@ class GameplayViewerView(QWidget):
         spans = self._screen_spans()
         # A fake slider's track also reaches left of its head, by as much.
         # A pop-up stands still near its time whatever its speed.
+        # A fake slider stands still near the target once its cap has landed
+        # (`fake_slider_freeze`), wherever its own scroll would put it.
         return [
             i for i in range(first, after_last)
             for time, trail, inverse, lead, gone in (spans[i],)
             if now <= gone and (
                 time - (trail - time) - ahead * inverse <= now <= trail + behind * inverse
-                or -FAKE_SLIDER_FADE_MS < time - now <= lead)
+                or -FAKE_SLIDER_FADE_MS < time - now <= lead
+                or (gone < float("inf") and trail > time and now >= time - (trail - time)))
         ]
 
     def _pop_up_lead(self, note) -> float:
@@ -1896,11 +1843,18 @@ class GameplayViewerView(QWidget):
         # ponytail: "too fast" is crossing the view within a 60Hz frame; refine
         # if a map shows a middle case.
         until = note.time - self.current_time
-        if (note.length is None or note.length > -FAKE_SLIDER_LINGER_LENGTH
-                or until <= 0):
+        if note.length is None or note.length >= 0 or until <= 0:
             return None
         speed = self.velocity_at(note.time) * self.px_per_beat
         if self.width() >= 16.0 * speed:
+            return None
+        # One whose cap lands under a ms ahead of its head scrolls in and goes
+        # at the target however fast it is: Lunatic Rough Party!!'s -1s at
+        # 100x on a 500ms line (owner, 2026-10-28, stable). Worked out with
+        # osu!'s clamped beat and SV, as taiko-rs's `fake_fades` is.
+        beat = min(60000.0, max(6.0, active_uninherited_at(self.beat_points, note.time).beat_length))
+        sv = min(10.0, max(0.1, sv_at(self.timing_points, note.time)))
+        if duration_for_slider_length(abs(note.length) * (note.slides or 1), beat, sv, self.slider_multiplier) < 1.0:
             return None
         per = POP_UP_PER_LENGTH * (self.width() - self._hit_x())
         length = abs(note.length) * (note.slides or 1)
@@ -1908,8 +1862,9 @@ class GameplayViewerView(QWidget):
         lead = self._pop_up_lead(note)
         return x, length * per, fade_from(lead, POP_UP_FADE_MS, until)
 
-    def _draw_fake_slider_parts(self, painter, note, x, center_y, radius, width, opacity, cut) -> None:
-        """Track, cap and head of `_draw_fake_slider`, the head at `x`."""
+    def _draw_fake_slider_parts(self, painter, note, x, center_y, radius, width, opacity, landed) -> None:
+        """Track, cap and head of `_draw_fake_slider`, the head at `x`; no
+        head once the cap has `landed`."""
         if opacity < 1.0:
             painter.save()
             painter.setOpacity(painter.opacity() * opacity)
@@ -1927,10 +1882,6 @@ class GameplayViewerView(QWidget):
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(self.slider_brush)
                 painter.drawRect(QRectF(x, center_y - radius, width, radius * 2))
-        if opacity < 1.0:
-            painter.restore()
-        if cut:
-            return
         cap = self._roll_height("taiko-roll-end", round(radius * 2), note.is_finisher)
         tail = self.skin.scaled("taiko-roll-end", cap, self.slider_brush)
         if tail is not None:
@@ -1942,6 +1893,12 @@ class GameplayViewerView(QWidget):
             painter.setBrush(self.slider_brush)
             painter.drawEllipse(
                 QPointF(x - width + radius / 2.0, center_y), radius, radius)
+        if opacity < 1.0:
+            painter.restore()
+        # The head is gone once the cap reaches the target (a skin gimmick
+        # hides the cap). A pop-up never gets here past its time.
+        if landed or self.current_time >= note.time:
+            return
         # Last, so it sits on the near end of its own track the way a real
         # roll's head does.
         draw_note_sprite(

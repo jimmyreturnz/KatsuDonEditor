@@ -226,10 +226,44 @@ def format_time(time_ms: int) -> str:
     return f"{value // 60000:02d}.{(value % 60000) // 1000:02d}.{value % 1000:03d}"
 
 
+def break_periods(lines) -> list[tuple[float, float]]:
+    """[Events]' breaks (`2,start,end` or `Break,start,end`) in a .osu's lines."""
+    out, section = [], None
+    for line in lines:
+        text = line.strip()
+        if text.startswith("["):
+            section = text
+        elif section == "[Events]":
+            fields = text.split(",")
+            if fields[0] in ("2", "Break") and len(fields) >= 3:
+                try:
+                    out.append((float(fields[1]), float(fields[2])))
+                except ValueError:
+                    pass
+    return out
+
+
+def combo_numbers(hit_objects, breaks=()):
+    """(combo number, object) in file order, as osu!'s editor numbers them for
+    a timestamp: counting from 1 again at every new combo and after every
+    break (owner, 2026-10-28). A spinner, and the object after one, always
+    start a new combo there."""
+    number, after_spinner, previous = 0, False, None
+    for index, note in enumerate(hit_objects):
+        after_break = previous is not None and any(
+            previous <= start and note.time >= end for start, end in breaks)
+        if index == 0 or note.is_new_combo or note.is_spinner or after_spinner or after_break:
+            number = 0
+        previous = note.time
+        number += 1
+        after_spinner = note.is_spinner
+        yield number, note
+
+
 def osu_timestamp(time_ms: float, indexes=()) -> str:
     """osu!'s editor link, `01:27:273 (777,778) - `, as the beatmap discussion
-    page reads it. The numbers are 1-based object indexes in file order, not
-    combo numbers: taiko has no combos to count. No objects, no brackets."""
+    page reads it. The numbers are combo numbers (`combo_numbers`). No
+    objects, no brackets."""
     value = max(0, int(time_ms))
     stamp = f"{value // 60000:02d}:{(value % 60000) // 1000:02d}:{value % 1000:03d}"
     if indexes:
@@ -274,19 +308,28 @@ def drumroll_tick_times(note, beat_points, timing_points, slider_multiplier) -> 
     from the head to the end -- 1/8 at 125 BPM or slower, 1/2 above 250, as
     osu!taiko does (taiko-rs's `beatmap.rs` has the same rule). A fake slider
     -- no positive duration -- has none. SliderTickRate 3 (1/3 beat) is not
-    read by the parser, so not here.
+    read by the parser, so not here. Nor does one written 0.1 to -0.1 long:
+    +0.0001 is a fake slider too, and three stacked on a note sounded three
+    ticks over it (owner, 2026-10-28).
+
+    The beat and SV are clamped as osu! (and taiko-rs) clamp them, 6..60000ms
+    and 0.1..10x: a 600px roll under a 0.06ms gimmick line and a near-zero SV
+    came to 10^12 ticks, and opening We Love Hardcore (katacheh) at its
+    preview point froze the editor (owner, 2026-10-28).
     """
     if not note.is_slider or note.length is None or note.slides is None or note.is_nan_slider:
         return []
+    if abs(note.length) <= 0.1:
+        return []
     timing = active_uninherited_at(beat_points, note.time)
-    duration = duration_for_slider_length(
-        note.length * note.slides, timing.beat_length,
-        sv_at(timing_points, note.time), slider_multiplier)
-    divisor = 4
-    if timing.beat_length > 0:
-        bpm = 60000.0 / timing.beat_length
-        divisor = 8 if bpm <= 125 else 2 if bpm > 250 else 4
-    tick = timing.beat_length / divisor
+    if timing.beat_length <= 0:
+        return []
+    beat_length = min(60000.0, max(6.0, timing.beat_length))
+    sv = min(10.0, max(0.1, sv_at(timing_points, note.time)))
+    duration = duration_for_slider_length(note.length * note.slides, beat_length, sv, slider_multiplier)
+    bpm = 60000.0 / beat_length
+    divisor = 8 if bpm <= 125 else 2 if bpm > 250 else 4
+    tick = beat_length / divisor
     if duration <= 0 or tick <= 0:
         return []
     count = int(duration / tick + 1e-6) + 1

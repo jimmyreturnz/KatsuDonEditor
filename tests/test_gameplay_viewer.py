@@ -443,13 +443,15 @@ class HitPositionTests(unittest.TestCase):
             view.close()
         return rects, heads, opacities
 
-    def test_a_long_one_shows_only_its_track(self):
-        """-800: its cap landed before its head ever came on screen, so the
-        track is all there is."""
+    def test_a_long_slow_one_has_faded_before_it_shows(self):
+        """-800 at 1x: its cap lands 2.9s ahead of its head and it is faded
+        500ms later (owner's stable test map, 2026-10-28), long before any of
+        it is on screen.
+        ponytail: earlier (2026-10-26) a -800 was seen showing its track;
+        re-check that map against this rule."""
         note = self._fake(1000, -800.0)
         rects, heads, _ = self._tracks_and_heads(self._fake_view(note, at=900.0))
-        self.assertTrue(rects, "no track drawn")
-        self.assertEqual(heads, [])
+        self.assertEqual((rects, heads), ([], []))
 
     def test_nothing_shows_before_the_head_comes_on_screen(self):
         """The cap is ahead of the head, but the object is not alive yet."""
@@ -463,20 +465,20 @@ class HitPositionTests(unittest.TestCase):
         rects, heads, _ = self._tracks_and_heads(view)
         self.assertEqual((rects, heads), ([], []))
 
-    def test_at_the_target_a_long_track_goes_and_a_short_one_fades(self):
+    def test_it_fades_out_from_when_its_cap_lands(self):
+        """Owner's stable test map, 2026-10-28: once the cap reaches the
+        target the head is gone, and the track fades out over
+        FAKE_SLIDER_FADE_MS. -20's cap is 71ms ahead of its head."""
         fade_ms = gameplay_view.FAKE_SLIDER_FADE_MS
-        for length, shown in ((-800.0, False), (-100.0, True)):
-            with self.subTest(length=length):
-                note = self._fake(1000, length)
-                rects, _, opacity = self._tracks_and_heads(
-                    self._fake_view(note, at=1000.0 + fade_ms / 2))
-                self.assertEqual(bool(rects), shown)
-                if shown:
-                    self.assertAlmostEqual(opacity[-1], 0.5, delta=0.05)
-        note = self._fake(1000, -100.0)
-        rects, _, _ = self._tracks_and_heads(
-            self._fake_view(note, at=1000.0 + fade_ms))
-        self.assertEqual(rects, [])
+        note = self._fake(1000, -20.0)
+        lands = 1000.0 - abs(self._view([note], at=0.0)._compute_phantom_end(note) - 1000.0)
+        rects, heads, opacities = self._tracks_and_heads(self._fake_view(note, at=lands + fade_ms / 2))
+        self.assertTrue(rects)
+        self.assertEqual(heads, [])
+        self.assertAlmostEqual(opacities[-1], 0.5, delta=0.02)
+        note = self._fake(1000, -20.0)
+        rects, heads, _ = self._tracks_and_heads(self._fake_view(note, at=lands + fade_ms + 1))
+        self.assertEqual((rects, heads), ([], []))
 
     def test_the_slice_is_widened_by_the_forward_extent(self):
         """The same thing one level up: the visible-range slice has to reach
@@ -499,7 +501,7 @@ class HitPositionTests(unittest.TestCase):
     def test_the_track_reaches_right_by_the_negative_length(self):
         """Its extent is the magnitude of the negative length, drawn to scale
         and to the right of the object."""
-        view = self._view([self._fake(1000, -400.0)], at=900.0)
+        view = self._view([self._fake(1000, -100.0)], at=600.0)
         note = view.notes[0]
         view._phantom_ends[note.uid] = view._compute_phantom_end(note)
         drawn = []
@@ -586,20 +588,32 @@ class DrumrollPartsTests(unittest.TestCase):
             with self.subTest(piece=piece):
                 self.assertIn(piece, names)
 
-    def test_once_its_cap_lands_only_the_track_is_left(self):
-        """Owner, 2026-10-26: osu! cuts the head and the cap when the cap
-        reaches the hit position; the track carries on. A long one only
-        (FAKE_SLIDER_LINGER_LENGTH and up) -- see the next test."""
-        names = [element for element, _c in self._preview_parts(-300.0, at=1300.0)]
-        self.assertIn("taiko-roll-middle", names)
-        self.assertNotIn("taiko-roll-end", names)
-        self.assertNotIn("taikohitcircle", names)
+    def test_once_its_cap_lands_the_head_goes_and_the_rest_fades_on(self):
+        """Owner's stable test map, 2026-10-28: when the cap reaches the hit
+        position the head is gone; track and cap carry on, fading."""
+        for length in (-100.0, -20.0):
+            with self.subTest(length=length):
+                # The head is at 1500; -100's cap is 357ms ahead, -20's 71.
+                names = [element for element, _c in self._preview_parts(length, at=1450.0)]
+                self.assertIn("taiko-roll-middle", names)
+                self.assertIn("taiko-roll-end", names)
+                self.assertNotIn("taikohitcircle", names)
+        # -100's landed at ~1143: faded by ~1643.
+        self.assertEqual(self._preview_parts(-100.0, at=1650.0), [])
 
-    def test_a_short_ones_cap_passes_through_the_target(self):
-        """Owner, 2026-10-28: a short fake slider's cap and head go on through
-        the hit position like a real drumroll's."""
-        names = [element for element, _c in self._preview_parts(-100.0, at=1300.0)]
-        for piece in ("taiko-roll-middle", "taiko-roll-end", "taikohitcircle"):
+    def test_a_sub_ms_ones_cap_alone_passes_through_the_target(self):
+        """Owner, 2026-10-28: a -0.001 fake slider's head lands first and
+        goes; only its cap carries on through the hit position."""
+        # Its track is under half a pixel, so not drawn.
+        names = [element for element, _c in self._preview_parts(-0.001, at=1600.0)]
+        self.assertIn("taiko-roll-end", names)
+        self.assertNotIn("taikohitcircle", names)
+        # Gone once its FAKE_SLIDER_FADE_MS are up.
+        names = [element for element, _c in self._preview_parts(-0.001, at=2010.0)]
+        self.assertNotIn("taiko-roll-end", names)
+        # Before it gets there, all of it.
+        names = [element for element, _c in self._preview_parts(-0.001, at=1400.0)]
+        for piece in ("taiko-roll-end", "taikohitcircle"):
             with self.subTest(piece=piece):
                 self.assertIn(piece, names)
 
@@ -797,6 +811,24 @@ class AutoplayRollOverNotesTests(unittest.TestCase):
     def test_a_roll_alone_is_rolled(self):
         self.assertGreater(len(self._hits([self._roll()])), 8)
 
+    def test_the_note_before_a_nan_slider_is_not_hit(self):
+        """Owner, 2026-10-28: autoplay can't hit it either (taiko-rs's
+        `unhittable`): the circle at 1000, not 500 or 2000."""
+        notes = [HitObject(x=256, y=192, time=t, type=1, hit_sound=0) for t in (500, 1000, 2000)]
+        nan = HitObject(x=256, y=192, time=1499, type=2, hit_sound=0,
+                        extras=("L|268:192", "1", "NaN"))
+        self.assertEqual(self._hits([*notes, nan]), [500.0, 2000.0])
+
+    def test_a_sub_ms_fake_slider_is_not_played(self):
+        """Owner, 2026-10-28: written 0.1 to -0.1 long, left alone."""
+        notes = [HitObject(x=256, y=192, time=t, type=1, hit_sound=0) for t in (500, 2000)]
+        fakes = [HitObject(x=256, y=192, time=1000, type=2, hit_sound=0, extras=("L|268:192", "1", length))
+                 for length in ("0.1", "-0.1", "0.001", "-0.001")]
+        self.assertEqual(self._hits([*notes, *fakes]), [500.0, 2000.0])
+        # Just past it, a roll is played again.
+        roll = HitObject(x=256, y=192, time=1000, type=2, hit_sound=0, extras=("L|268:192", "1", "0.11"))
+        self.assertIn(1000.0, self._hits([*notes, roll]))
+
 
 class NanSliderTests(unittest.TestCase):
     def test_it_is_invisible_in_the_preview_and_has_no_ticks(self):
@@ -808,6 +840,64 @@ class NanSliderTests(unittest.TestCase):
         self.assertEqual(drumroll_tick_times(note, [point], [point], 1.4), [])
         names = [element for element, _c in DrumrollPartsTests()._preview_parts(float("nan"))]
         self.assertFalse({"taiko-roll-middle", "taiko-roll-end", "taikohitcircle"} & set(names))
+
+
+class FakeSliderFreezeTests(unittest.TestCase):
+    def test_it_stops_200_of_length_after_its_cap_lands(self):
+        """Owner's stable test map, 2026-10-28, at 3x: a -200 (cap 238ms
+        ahead) stops at its head's time, its track's left end on the target;
+        a -100 (119ms) 119ms past it, its right end there. taiko-rs's
+        `fake_freeze` is the same."""
+        freeze = gameplay_view.fake_slider_freeze
+        self.assertAlmostEqual(freeze(2000.0, 238.1, 200.0, 2000.0), 0.0)
+        self.assertAlmostEqual(freeze(2000.0, 238.1, 200.0, 2100.0), 100.0)
+        self.assertAlmostEqual(freeze(5000.0, 119.05, 100.0, 5119.05), 0.0)
+        self.assertAlmostEqual(freeze(5000.0, 119.05, 100.0, 5169.05), 50.0)
+
+
+class LunaticRoughPartyTests(unittest.TestCase):
+    def test_a_fast_short_fake_slider_is_no_pop_up(self):
+        """Lunatic Rough Party!! (owner, 2026-10-28): a -1 under a 100x green
+        line on a 500ms red line crosses the view in under a frame, but in
+        stable it scrolls in and goes at the target, not standing still."""
+        point = TimingPoint(time=0.0, beat_length=500.0, meter=4)
+        fast = TimingPoint(time=0.0, beat_length=-1.0, meter=4, uninherited_flag=0)
+        view = gui.GameplayViewerView()
+        view.resize(1366, 300)
+        view.timing_points = [point, fast]
+        view.beat_points = [point]
+        view.slider_multiplier = 1.4
+        view._rebuild_velocities()
+        note = HitObject(x=224, y=192, time=1000, type=2, hit_sound=0, extras=("L", "1", "-1"))
+        view.current_time = 980.0
+        self.assertGreater(16.0 * view.velocity_at(1000.0) * view.px_per_beat, view.width())
+        self.assertIsNone(view._pop_up(note))
+        view.close()
+
+    def test_a_tiny_positive_one_goes_at_the_target(self):
+        """Its first object, +0.0001: gone at the target like a circle, where
+        a real roll passes through."""
+        tiny = DrumrollPartsTests()._preview_parts
+        names = [element for element, _c in tiny(0.0001, at=1490.0)]
+        self.assertIn("taikohitcircle", names)
+        self.assertEqual(tiny(0.0001, at=1510.0), [])
+        names = [element for element, _c in tiny(400.0, at=1510.0)]
+        self.assertIn("taikohitcircle", names)
+
+
+class GimmickRollTickTests(unittest.TestCase):
+    def test_a_roll_under_a_gimmick_line_has_osus_clamped_ticks(self):
+        """We Love Hardcore (katacheh), 242401: a 600px roll under a 0.06ms
+        red line and a near-zero SV came to 10^12 ticks and froze the editor
+        (owner, 2026-10-28). osu!'s 6ms / 0.1x floors make it 600 / 14 beats
+        of 6ms: 257ms at 1/2-beat ticks, 86 of them."""
+        from ui.common import drumroll_tick_times
+        note = HitObject(x=256, y=192, time=1000, type=2, hit_sound=0, extras=("L|268:192", "1", "600.25"))
+        red = TimingPoint(time=0.0, beat_length=0.0632386404957066, meter=4)
+        green = TimingPoint(time=500.0, beat_length=-1e12, uninherited_flag=0)
+        ticks = drumroll_tick_times(note, [red], [red, green], 1.4)
+        self.assertEqual(len(ticks), 86)
+        self.assertEqual(ticks[1] - ticks[0], 3.0)
 
 
 class DrawOrderTests(unittest.TestCase):

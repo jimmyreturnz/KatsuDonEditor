@@ -1,5 +1,7 @@
 # KatsuDon Editor (カツ丼)
 
+![KatsuDon Editor](docs/screenshots/banner.png)
+
 If you want to ask on how to use it, suggest ideas, or report bugs, my osu name is [jimmyreturnz](https://osu.ppy.sh/users/11306153)\
 my discord is also jimmyreturnz, thanks in advance!
 
@@ -15,7 +17,7 @@ KatsuDon Editor (formerly Taiko Fancy Arranger) started as a tool for turning os
 
 The editor does not support editing storyboards, breaks, colours, editor bookmarks yet.
 
-> **Current release:** v3.5.9  
+> **Current release:** v3.6.0  
 > **Platform:** Windows x64  
 > **Author:** [jimmyreturnz](https://osu.ppy.sh/users/11306153)
 

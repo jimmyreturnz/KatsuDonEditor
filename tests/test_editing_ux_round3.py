@@ -516,7 +516,8 @@ class ClipboardTests(WindowTestCase):
 
     def test_copy_puts_osus_timestamp_on_the_system_clipboard(self):
         """For the beatmap discussion page (owner, 2026-10-27): the first
-        note's time and every picked note's 1-based index in file order."""
+        note's time and every picked note's combo number (owner, 2026-10-28)."""
+        from ui.common import break_periods, combo_numbers
         view = self._chart_view()
         self.window._editor_view_focus_changed(None, view)
         objects = self.state.document.hit_objects
@@ -525,8 +526,22 @@ class ClipboardTests(WindowTestCase):
 
         self.window.copy_selection()
 
-        indexes = ",".join(str(objects.index(n) + 1) for n in sources)
+        numbers = dict((id(n), k) for k, n in combo_numbers(objects, break_periods(self.state.document.lines)))
+        indexes = ",".join(str(numbers[id(n)]) for n in sources)
         self.assertEqual(QApplication.clipboard().text(), f"00:01:000 ({indexes}) - ")
+
+    def test_combo_numbers_restart_on_new_combos_spinners_and_breaks(self):
+        from types import SimpleNamespace
+        from ui.common import break_periods, combo_numbers
+
+        def obj(time, nc=False, spinner=False):
+            return SimpleNamespace(time=time, is_new_combo=nc, is_spinner=spinner)
+
+        objects = [obj(0), obj(100), obj(200, nc=True), obj(300), obj(400, spinner=True),
+                   obj(900), obj(1000), obj(9000), obj(9100)]
+        breaks = break_periods(["[Events]\n", "2,1500,8500\n", "[TimingPoints]\n", "2,0,0\n"])
+        self.assertEqual(breaks, [(1500.0, 8500.0)])
+        self.assertEqual([k for k, _ in combo_numbers(objects, breaks)], [1, 2, 1, 2, 1, 1, 2, 1, 2])
 
     def test_a_spinner_keeps_its_length_when_pasted_or_dragged(self):
         """Its end is an absolute millisecond in its extras: pasted, it ended

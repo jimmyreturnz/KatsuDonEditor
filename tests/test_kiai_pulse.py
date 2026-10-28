@@ -46,63 +46,66 @@ def _brightness(view, half: int = 34) -> int:
 
 
 class PulseTests(unittest.TestCase):
+    """stable's `Ruleset.UpdateKiai` (ppy/osu#26990, owner 2026-10-28): on each
+    beat of the red line, if kiai is on then, 1 fading linearly to 0 over
+    int(3/4 beat) ms, or until the object's own end if that is sooner."""
+
     def setUp(self) -> None:
         self.points = [TimingPoint(time=0.0, beat_length=500.0)]
 
-    def test_it_is_full_on_the_beat_and_fades_to_the_next(self):
-        self.assertAlmostEqual(gameplay_view.beat_pulse(self.points, 2000.0), 1.0, places=9)
-        self.assertAlmostEqual(gameplay_view.beat_pulse(self.points, 2250.0), 0.5, places=9)
-        self.assertAlmostEqual(gameplay_view.beat_pulse(self.points, 2499.0), 0.002, places=9)
+    def flash(self, at, bands=((0, 20000),), end=float("inf"), points=None):
+        return gameplay_view.kiai_flash(points or self.points, list(bands), at, end)
 
-    def test_a_gimmick_beat_length_does_not_strobe(self):
-        """0.0001ms per beat would flash several times per frame."""
-        self.assertEqual(gameplay_view.beat_pulse([TimingPoint(time=0.0, beat_length=0.0001)], 1234.5), 0.0)
+    def test_it_is_full_on_the_beat_and_gone_by_three_quarters(self):
+        self.assertEqual(self.flash(2000.0), 1.0)
+        self.assertAlmostEqual(self.flash(2187.5), 0.5, places=9)
+        self.assertEqual(self.flash(2375.0), 0.0, "dark for the last quarter")
+        self.assertEqual(self.flash(2499.0), 0.0)
 
-    def test_with_an_anchor_it_is_full_at_the_section_start(self):
-        self.assertAlmostEqual(gameplay_view.beat_pulse(self.points, 3000.0, anchor_ms=3000.0), 1.0, places=9)
+    def test_it_is_phased_on_the_red_line_not_the_kiai(self):
+        """A kiai starting off the beat waits for the red line's next one."""
+        bands = [(3120, 20000)]
+        self.assertEqual(self.flash(3120.0, bands), 0.0)
+        self.assertEqual(self.flash(3500.0, bands), 1.0)
 
-    def test_with_an_anchor_the_period_is_one_beat(self):
-        """A chorus pulses on the beat. On a measure -- which this was for a
-        while -- three beats out of four have nothing happening on them."""
-        points = [TimingPoint(time=0.0, beat_length=500.0, meter=4)]
-        for beat in range(4):
+    def test_a_kiai_with_no_beat_in_it_never_flashes(self):
+        bands = [(1100, 1300)]
+        self.assertTrue(all(self.flash(float(t), bands) == 0.0 for t in range(1000, 2000, 5)))
+
+    def test_the_last_flash_finishes_after_the_kiai_ends(self):
+        """At any BPM: the flash a beat set off has its own fade."""
+        for beat in (250.0, 500.0, 2000.0):
             with self.subTest(beat=beat):
-                self.assertAlmostEqual(
-                    gameplay_view.beat_pulse(points, beat * 500.0, anchor_ms=0.0), 1.0, places=9)
-        self.assertAlmostEqual(gameplay_view.beat_pulse(points, 250.0, anchor_ms=0.0), 0.5, places=9)
+                points = [TimingPoint(time=0.0, beat_length=beat)]
+                band = [(beat * 4, beat * 4 + 10)]
+                self.assertGreater(self.flash(beat * 4 + 20, band, points=points), 0.0)
+                self.assertEqual(self.flash(beat * 4.75, band, points=points), 0.0)
 
-    def test_with_an_anchor_it_decays_monotonically_across_each_beat(self):
-        points = [TimingPoint(time=0.0, beat_length=500.0, meter=4)]
-        samples = [gameplay_view.beat_pulse(points, t, anchor_ms=0.0) for t in range(0, 500, 25)]
-        self.assertTrue(all(a >= b for a, b in zip(samples, samples[1:])))
+    def test_a_flash_stops_at_its_note(self):
+        """Fading over what is left to the note, gone once it has passed."""
+        self.assertAlmostEqual(self.flash(2025.0, end=2050.0), 0.5, places=9)
+        self.assertEqual(self.flash(2060.0, end=2050.0), 0.0)
 
-    def test_the_meter_no_longer_changes_the_period(self):
-        """It used to: the period was beat_length * meter, so a 3/4 section
-        pulsed at a different rate from a 4/4 one at the same BPM."""
-        for meter in (3, 4, 7):
-            points = [TimingPoint(time=0.0, beat_length=500.0, meter=meter)]
-            with self.subTest(meter=meter):
-                self.assertAlmostEqual(
-                    gameplay_view.beat_pulse(points, 500.0, anchor_ms=0.0), 1.0, places=9)
+    def test_a_gimmick_red_line_keeps_the_first_lines_beats(self):
+        """Kiai flashes on the first red line's beats all map long (owner's
+        source, 2026-10-28): a 1ms line at 2100 changes nothing."""
+        points = [TimingPoint(time=0.0, beat_length=500.0), TimingPoint(time=2100.0, beat_length=1.0)]
+        self.assertTrue(all(self.flash(2000.0 + t, points=points) == self.flash(2000.0 + t)
+                            for t in range(400)))
 
-    def test_a_slower_bpm_fades_slower(self):
-        """Same elapsed time since the anchor, a slower BPM (a longer beat) has
-        faded less -- the beat IS the fade, so nothing else needs tuning."""
-        fast = [TimingPoint(time=0.0, beat_length=500.0, meter=4)]
-        slow = [TimingPoint(time=0.0, beat_length=1000.0, meter=4)]
-        elapsed = 200.0
-        self.assertGreater(
-            gameplay_view.beat_pulse(slow, elapsed, anchor_ms=0.0),
-            gameplay_view.beat_pulse(fast, elapsed, anchor_ms=0.0),
-        )
+    def test_only_objects_within_reach_of_the_beat_flash(self):
+        """Up to 2.625 first-line beats past the beat (owner's stable test)."""
+        reach = 2.625 * 500.0
+        self.assertGreater(gameplay_view.kiai_flash(self.points, [(0, 20000)], 2000.0, float("inf"), 2000.0 + reach), 0.0)
+        self.assertEqual(gameplay_view.kiai_flash(self.points, [(0, 20000)], 2000.0, float("inf"), 2001.0 + reach), 0.0)
 
-    def test_the_anchor_only_moves_the_phase(self):
-        """With and without an anchor the period is the same beat; the anchor
-        decides where beat one of the pulse falls, so a section starting off
-        the timing point's own grid still flashes on its first beat."""
-        points = [TimingPoint(time=0.0, beat_length=500.0, meter=4)]
-        self.assertAlmostEqual(gameplay_view.beat_pulse(points, 3120.0, anchor_ms=3120.0), 1.0, places=9)
-        self.assertAlmostEqual(gameplay_view.beat_pulse(points, 3620.0, anchor_ms=3120.0), 1.0, places=9)
+    def test_slower_bpm_fades_slower(self):
+        slow = [TimingPoint(time=0.0, beat_length=1000.0)]
+        self.assertGreater(self.flash(200.0, points=slow), self.flash(200.0))
+
+    def test_colours_are_brightened(self):
+        self.assertEqual(gameplay_view.kiai_brighten((235, 69, 44)), (255, 94, 69))
+        self.assertEqual(gameplay_view.kiai_brighten((10, 20, 30)), (250, 255, 255))
 
     def test_kiai_reads_the_green_lines_too(self):
         """The fixture switches kiai on with an inherited point at 2000 and off
@@ -120,20 +123,13 @@ class PulseTests(unittest.TestCase):
 
 
 class ShortKiaiTests(unittest.TestCase):
-    """A kiai section shorter than one beat still shows one whole beat of
-    light: the pulse it starts runs out instead of cutting to black mid-fade.
+    """A short kiai with a beat in it flashes once, and that flash finishes
+    after the kiai is over (stable)."""
 
-    **Under 60 BPM only.** Above that the beat is short enough that a section
-    ending inside one simply stops, which is what a chorus ending looks like.
-    2000ms a beat is 30 BPM, well inside the rule.
-    """
-
-    BEAT = 2000.0
-
-    def _view(self, band, beat=None):
+    def _view(self, band):
         view = gui.GameplayViewerView()
         view.resize(900, 200)
-        point = TimingPoint(time=0.0, beat_length=beat or self.BEAT, meter=4)
+        point = TimingPoint(time=0.0, beat_length=500.0, meter=4)
         view.timing_points = [point]
         view.beat_points = [point]
         view._beat_times = [0.0]
@@ -144,51 +140,9 @@ class ShortKiaiTests(unittest.TestCase):
         view._end_times, view._phantom_ends, view._max_extend_ms = {}, {}, 0.0
         return view
 
-    def _anchor(self, band, at, beat=None):
-        view = self._view(band, beat)
-        view.current_time = at
-        try:
-            start, end = band
-            return (start if start <= at < end
-                    else view._unfinished_pulse_anchor(start, end))
-        finally:
-            view.close()
-
-    def test_a_pulse_cut_off_by_the_section_end_keeps_going(self):
-        band = (1000, 1100)          # 100ms of kiai, a twentieth of a beat
-        self.assertEqual(self._anchor(band, 1200.0), 1000)
-        self.assertEqual(self._anchor(band, 2999.0), 1000)
-
-    def test_it_stops_once_that_one_pulse_has_finished(self):
-        band = (1000, 1100)
-        self.assertIsNone(self._anchor(band, 3000.0))
-        self.assertIsNone(self._anchor(band, 5000.0))
-
-    def test_a_section_ending_on_a_beat_is_not_extended(self):
-        band = (1000, 5000)          # exactly two beats
-        self.assertIsNone(self._anchor(band, 5000.0))
-
-    def test_a_longer_section_finishes_only_the_pulse_it_was_in(self):
-        band = (1000, 3400)          # one beat and a fifth
-        self.assertEqual(self._anchor(band, 3500.0), 1000)
-        self.assertIsNone(self._anchor(band, 5000.0))
-
-    def test_at_60_bpm_and_above_the_chorus_just_stops(self):
-        """The rule is for beats long enough that the cut lands on a flash
-        still visibly fading. 1000ms a beat is exactly 60 BPM, which is out."""
-        band = (1000, 1100)
-        for beat in (gameplay_view.KIAI_PULSE_CARRY_MIN_BEAT_MS, 500.0, 250.0):
-            with self.subTest(beat=beat):
-                self.assertIsNone(self._anchor(band, 1200.0, beat=beat))
-
-    def test_just_under_60_bpm_still_carries(self):
-        band = (1000, 1100)
-        beat = gameplay_view.KIAI_PULSE_CARRY_MIN_BEAT_MS + 1.0
-        self.assertEqual(self._anchor(band, 1200.0, beat=beat), 1000)
-
     def test_the_light_is_actually_still_drawn_after_the_section_ends(self):
-        """The anchor is the mechanism; this is the pixel it exists for."""
-        view = self._view((1000, 1100))
+        """The beat at 1000 is in the kiai; at 1150 the kiai is over."""
+        view = self._view((900, 1100))
         view.current_time = 1150.0
         lit = _brightness(view)
         view.kiai_bands = []
@@ -294,11 +248,13 @@ class ShinyGlowTests(unittest.TestCase):
                 self.assertEqual(
                     (shown.red(), shown.green(), shown.blue()), gui.DRUMROLL_COLOR)
 
-    def test_a_lone_note_flashes_white_and_a_pile_yellow(self):
-        """CirclePiece's flash is white; the shiny's light is its heads' yellow."""
+    def test_a_lone_note_flashes_its_own_colour_and_a_pile_yellow(self):
+        """stable: each object flashes in its own colour brightened, so a don
+        lifts red, then green, then blue (red clips, so green over blue
+        is what shows); the shiny's light is its heads' yellow."""
         lone = self._colour(0, note=True, kiai=True)
         plain = self._colour(0, note=True)
-        self.assertGreater(lone.blue() - plain.blue(), 20, "white lifts blue too")
+        self.assertGreater(lone.green() - plain.green(), lone.blue() - plain.blue())
         shiny = self._colour(8, note=True, kiai=True)
         self.assertGreater(shiny.green() - lone.green(), shiny.blue() - lone.blue())
 

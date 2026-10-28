@@ -99,27 +99,6 @@ class WheelSeekTests(unittest.TestCase):
         self.assertEqual(wheel_seek_time(points, 1237.0, -1, 4), 1125.0)
 
 
-class BeatPulseWalkBackTests(unittest.TestCase):
-    """A gimmick section's beat_length must not blank the flash for every
-    note downstream of it -- only the section actually active decides that,
-    and here that section is the real one behind the gimmick line."""
-
-    def test_it_still_pulses_behind_a_60000_bpm_point(self) -> None:
-        points = [
-            TimingPoint(time=0.0, beat_length=500.0),
-            # A gimmick line, e.g. an invisible-note section: nearest to
-            # 2100.0, but not a "beat" by KIAI_PULSE_MIN_BEAT_MS's own rule.
-            TimingPoint(time=2000.0, beat_length=1.0),
-        ]
-        pulse = gameplay_view.beat_pulse(points, 2100.0)
-        # Walked back to the 500ms section: 1.0 - (2100/500 % 1.0) = 0.8.
-        self.assertAlmostEqual(pulse, 0.8, places=9)
-
-    def test_it_returns_zero_with_no_real_section_behind_it(self) -> None:
-        points = [TimingPoint(time=0.0, beat_length=1.0)]
-        self.assertEqual(gameplay_view.beat_pulse(points, 2100.0), 0.0)
-
-
 class SnapDirectionTests(unittest.TestCase):
     """A snapped millisecond goes **down**, which is what osu! writes.
 

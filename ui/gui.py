@@ -93,7 +93,7 @@ from ui.common import (
     ACCENT_PINK, DON_COLOR, DRUMROLL_COLOR, KAT_COLOR, SCROLL_MODS, SLIDER_MULTIPLIER_ASSUMED,
     SONG_SELECT_PREVIEW_DEFAULT_PERCENT, application_icon, button_text_width,
     display_frame_interval_ns, draw_note_sprite, drumroll_tick_times, equalize_button_widths, spans_circles,
-    format_time, next_frame_due, osu_timestamp, resource_roots, scroll_row, set_view_ground_alpha, spinner_pixmap,
+    break_periods, combo_numbers, format_time, next_frame_due, osu_timestamp, resource_roots, scroll_row, set_view_ground_alpha, spinner_pixmap,
     tabular, view_ground_is_opaque,
 )
 from ui.misc_page import MiscPage
@@ -8452,7 +8452,8 @@ class MainWindow(QMainWindow):
         # Matched by uid against the difficulty's own list, which is kept in
         # time order -- the order osu! numbers objects in.
         picked = {note.uid for note in notes}
-        indexes = [index for index, note in enumerate(state.document.hit_objects, 1)
+        breaks = break_periods(state.document.lines)
+        indexes = [number for number, note in combo_numbers(state.document.hit_objects, breaks)
                    if note.uid in picked]
         times = [note.time for note in notes] or [point.time for point in lines]
         QApplication.clipboard().setText(osu_timestamp(min(times), indexes))

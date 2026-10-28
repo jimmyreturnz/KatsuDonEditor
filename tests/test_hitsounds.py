@@ -116,6 +116,16 @@ class SampleChoiceTests(unittest.TestCase):
             [roll, circle(1200, HITSOUND_CLAP)], points, slider_multiplier=1.2)
         self.assertEqual((times, keys), ([1200.0], ["clap"]))
 
+    def test_a_tiny_positive_fake_slider_is_silent(self):
+        """Owner, 2026-10-28: three +0.0001 sliders 1ms after a don sounded
+        three ticks over it. Written 0.1 to -0.1 long, a slider has none."""
+        points = [TimingPoint(time=0.0, beat_length=400.0, meter=4)]
+        fakes = [HitObject(x=136, y=208, time=1001, type=TYPE_SLIDER, hit_sound=0,
+                           extras=("L|224:200", "1", length)) for length in ("0.0001", "0.1", "-0.1")]
+        times, keys, _volumes = gui.hitsound_schedule(
+            [circle(1000, 0), *fakes], points, slider_multiplier=1.2)
+        self.assertEqual((times, keys), ([1000.0], ["normal"]))
+
     def test_a_finisher_schedules_both_its_samples_on_one_millisecond(self):
         times, keys, _volumes = gui.hitsound_schedule([
             circle(100, HITSOUND_FINISH),

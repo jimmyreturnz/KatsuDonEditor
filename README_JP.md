@@ -11,7 +11,7 @@ KatsuDon Editor（旧Taiko Fancy Arranger）は、osu!taikoのノーツを手作
 
 ストーリーボード、ブレイク、色、エディターのブックマークの編集にはまだ対応していません。
 
-> **現行リリース:** v3.5.9
+> **現行リリース:** v3.6.0
 > **プラットフォーム:** Windows x64
 > **作者:** [jimmyreturnz](https://osu.ppy.sh/users/11306153)
 

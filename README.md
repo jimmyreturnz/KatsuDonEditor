@@ -2,6 +2,12 @@
 
 ![KatsuDon Editor](docs/screenshots/banner.png)
 
+[![Download](https://img.shields.io/github/v/release/jimmyreturnz/KatsuDonEditor?style=flat-square&label=download&color=EB452C)](https://github.com/jimmyreturnz/KatsuDonEditor/releases/latest)
+[![Build](https://img.shields.io/github/actions/workflow/status/jimmyreturnz/KatsuDonEditor/release-windows.yml?style=flat-square&label=build)](https://github.com/jimmyreturnz/KatsuDonEditor/actions/workflows/release-windows.yml)
+[![Downloads](https://img.shields.io/github/downloads/jimmyreturnz/KatsuDonEditor/total?style=flat-square&color=448DAB)](https://github.com/jimmyreturnz/KatsuDonEditor/releases)
+![Python](https://img.shields.io/badge/made%20with-Python%20%2B%20PySide6-FCB806?style=flat-square)
+[![Stars](https://img.shields.io/github/stars/jimmyreturnz/KatsuDonEditor?style=flat-square&label=%E2%98%85%20star&color=f3a6bd)](https://github.com/jimmyreturnz/KatsuDonEditor/stargazers)
+
 If you want to ask on how to use it, suggest ideas, or report bugs, my osu name is [jimmyreturnz](https://osu.ppy.sh/users/11306153)\
 my discord is also jimmyreturnz, thanks in advance!
 

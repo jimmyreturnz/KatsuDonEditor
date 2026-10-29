@@ -2248,7 +2248,7 @@ class FakeSliderFunctionDialog(BarlineFunctionDialog):
         self._load_kind_multiplier()
         self._update_object_mode()
 
-    RUN_COLOR = "#fbb706"
+    RUN_COLOR = "#%02x%02x%02x" % DRUMROLL_COLOR
 
     def _title(self) -> str:
         return tr("MainWindow", "Generate fake sliders")

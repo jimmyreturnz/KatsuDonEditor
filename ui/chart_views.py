@@ -455,7 +455,7 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
         # It is deliberately *not* what the game does, and the comment that
         # used to be here claimed otherwise -- that a stack "washes out to
         # white" in play. It does not: a pile of opaque heads reads as one
-        # head, which is why the gameplay preview draws it flat #fbb706.
+        # head, which is why the gameplay preview draws it flat #fcb806.
         self.shiny_brush = QColor(255, 254, 245, 235)
         self.ghost_shiny_brush = QColor(255, 254, 245, 120)
         # Spinner extent: grey so it reads as "this span is occupied" rather

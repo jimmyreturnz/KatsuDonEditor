@@ -198,8 +198,9 @@ KAT_COLOR = (67, 141, 171)
 # The drumroll yellow, and the colour every drumroll part is tinted from --
 # head, `taiko-roll-middle` and `taiko-roll-end` alike. One constant because
 # the editor timeline and the gameplay preview draw the same object and had
-# drifted to two slightly different yellows.
-DRUMROLL_COLOR = (251, 183, 6)
+# drifted to two slightly different yellows. Stable's own drumroll is
+# `Color(252, 184, 6)`, read from osu!.exe (2026-10-30).
+DRUMROLL_COLOR = (252, 184, 6)
 # `sliderscorepoint` on a drumroll: its yellow, halfway to white so it shows on
 # the body. taiko-rs's ROLL_TICK.
 DRUMROLL_TICK_COLOR = (255, 255, 0)

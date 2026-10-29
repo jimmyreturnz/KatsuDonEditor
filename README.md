@@ -23,7 +23,7 @@ KatsuDon Editor (formerly Taiko Fancy Arranger) started as a tool for turning os
 
 The editor does not support editing storyboards, breaks, colours, editor bookmarks yet.
 
-> **Current release:** v3.6.0  
+> **Current release:** v3.6.1  
 > **Platform:** Windows x64  
 > **Author:** [jimmyreturnz](https://osu.ppy.sh/users/11306153)
 
@@ -68,6 +68,16 @@ The main inspirations include Alchyr's ranked maps *13 Stairs* and *Helios*, whi
 | ![Generate SV](docs/screenshots/generate-sv.png) | ![Settings](docs/screenshots/settings.png) |
 
 ---
+
+## What is new in 3.6.1
+
+- **Long fake sliders show again** in the gameplay preview: they scroll in, fade in as they come and stop no earlier than their own time.
+- **Drumrolls and spinners fade:** a drumroll's body fades out after its end, and a slow spinner fades in.
+- **The kiai flash is no longer too bright:** a new flash replaces an object's last one, so plain notes no longer light like shiny ones. It reaches the same notes at any preview size.
+- **Skin gimmicks show in the preview:** the kiai flash lights a skin's drumroll track and cap.
+- **No barlines past the last object.**
+
+Details: [`docs/releases/v3.6.1.md`](docs/releases/v3.6.1.md).
 
 ## What is new in 3.6.0
 
@@ -546,7 +556,7 @@ Do not upload copyrighted audio or private beatmap assets unless permission has 
 
 ## Project status
 
-Version 3.6.0 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
+Version 3.6.1 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
 
 Not yet implemented, and next in line:
 

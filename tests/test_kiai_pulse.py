@@ -46,15 +46,17 @@ def _brightness(view, half: int = 34) -> int:
 
 
 class PulseTests(unittest.TestCase):
-    """stable's `Ruleset.UpdateKiai` (ppy/osu#26990, owner 2026-10-28): on each
-    beat of the red line, if kiai is on then, 1 fading linearly to 0 over
-    int(3/4 beat) ms, or until the object's own end if that is sooner."""
+    """stable's beat event and `Ruleset.UpdateKiai`, read from osu!.exe
+    (2026-10-30): on each beat of the red line, if kiai is on then, 1 fading
+    linearly to 0 over int(3/4 beat x 100 / rate) ms, or until the object's
+    own end if that is sooner."""
 
     def setUp(self) -> None:
         self.points = [TimingPoint(time=0.0, beat_length=500.0)]
 
-    def flash(self, at, bands=((0, 20000),), end=float("inf"), points=None):
-        return gameplay_view.kiai_flash(points or self.points, list(bands), at, end)
+    def flash(self, at, bands=((0, 20000),), end=float("inf"), points=None, rate=100.0):
+        beats = gameplay_view.KiaiBeats(points or self.points, rate)
+        return gameplay_view.kiai_flash(beats, list(bands), at, end)
 
     def test_it_is_full_on_the_beat_and_gone_by_three_quarters(self):
         self.assertEqual(self.flash(2000.0), 1.0)
@@ -67,6 +69,11 @@ class PulseTests(unittest.TestCase):
         bands = [(3120, 20000)]
         self.assertEqual(self.flash(3120.0, bands), 0.0)
         self.assertEqual(self.flash(3500.0, bands), 1.0)
+
+    def test_kiai_is_read_5ms_ahead(self):
+        """A kiai from 2003 already counts on the beat at 2000."""
+        self.assertEqual(self.flash(2000.0, [(2003, 20000)]), 1.0)
+        self.assertEqual(self.flash(2000.0, [(2006, 20000)]), 0.0)
 
     def test_a_kiai_with_no_beat_in_it_never_flashes(self):
         bands = [(1100, 1300)]
@@ -86,18 +93,56 @@ class PulseTests(unittest.TestCase):
         self.assertAlmostEqual(self.flash(2025.0, end=2050.0), 0.5, places=9)
         self.assertEqual(self.flash(2060.0, end=2050.0), 0.0)
 
-    def test_a_gimmick_red_line_keeps_the_first_lines_beats(self):
-        """Kiai flashes on the first red line's beats all map long (owner's
-        source, 2026-10-28): a 1ms line at 2100 changes nothing."""
-        points = [TimingPoint(time=0.0, beat_length=500.0), TimingPoint(time=2100.0, beat_length=1.0)]
-        self.assertTrue(all(self.flash(2000.0 + t, points=points) == self.flash(2000.0 + t)
-                            for t in range(400)))
+    def test_a_fast_red_line_flashes_fast(self):
+        """The beat is the red line in force: a 6 ms line at 2400 strobes,
+        lit for int(4.5) = 4 ms of every 6."""
+        points = [TimingPoint(time=0.0, beat_length=500.0), TimingPoint(time=2400.0, beat_length=6.0)]
+        self.assertEqual(self.flash(2400.0, points=points), 1.0)
+        self.assertAlmostEqual(self.flash(2402.0, points=points), 0.5, places=9)
+        self.assertEqual(self.flash(2404.0, points=points), 0.0)
+        self.assertEqual(self.flash(2406.0, points=points), 1.0)
+        # Before it, the 500 ms line's beats as ever.
+        self.assertEqual(self.flash(2000.0, points=points), 1.0)
 
-    def test_only_objects_within_reach_of_the_beat_flash(self):
-        """Up to 2.625 first-line beats past the beat (owner's stable test)."""
-        reach = 2.625 * 500.0
-        self.assertGreater(gameplay_view.kiai_flash(self.points, [(0, 20000)], 2000.0, float("inf"), 2000.0 + reach), 0.0)
-        self.assertEqual(gameplay_view.kiai_flash(self.points, [(0, 20000)], 2000.0, float("inf"), 2001.0 + reach), 0.0)
+    def test_a_red_line_fires_5ms_early_and_again_on_itself(self):
+        """In force from 2395, at beat index -1; index 0 at 2400. Each flash
+        replaces the one before it, so both read full."""
+        points = [TimingPoint(time=0.0, beat_length=500.0), TimingPoint(time=2400.0, beat_length=400.0)]
+        self.assertAlmostEqual(self.flash(2390.0, points=points), 0.0, places=9)
+        self.assertEqual(self.flash(2395.0, points=points), 1.0)
+        self.assertEqual(self.flash(2400.0, points=points), 1.0)
+        self.assertAlmostEqual(self.flash(2550.0, points=points), 0.5, places=9)
+
+    def test_a_new_flash_replaces_the_last_rather_than_adding(self):
+        """stable FadeOut(0)s an object's previous copies before cloning: a
+        lone note under a wall of red lines is lit once, not hundreds of
+        times (owner: it read as bright as a shiny)."""
+        points = [TimingPoint(time=0.0, beat_length=750.0)] + [
+            TimingPoint(time=1000 + i * 10.4167, beat_length=2250.0) for i in range(500)]
+        self.assertTrue(all(0.0 <= self.flash(float(t), points=points) <= 1.0
+                            for t in range(1000, 6000, 7)))
+
+    def test_a_beat_with_kiai_off_kills_nothing(self):
+        """It never reaches the Ruleset: the flash from the kiai beat runs on."""
+        points = [TimingPoint(time=0.0, beat_length=500.0), TimingPoint(time=2100.0, beat_length=400.0)]
+        # The line fires at 2095 and 2100, both past the kiai's end.
+        self.assertAlmostEqual(
+            self.flash(2150.0, [(1900, 2050)], points=points), 1.0 - 150.0 / 375.0, places=9)
+
+    def test_a_1ms_red_line_never_flashes(self):
+        """int(0.75 * 1) = 0: nothing to fade over."""
+        points = [TimingPoint(time=0.0, beat_length=500.0), TimingPoint(time=2400.0, beat_length=1.0)]
+        self.assertTrue(all(self.flash(2400.0 + t, points=points) == 0.0 for t in range(400)))
+
+    def test_the_flash_is_divided_by_the_rate(self):
+        """int(500 x 0.75 x 100 / 150) = 250ms under DT."""
+        self.assertAlmostEqual(self.flash(2125.0, rate=150.0), 0.5, places=9)
+        self.assertEqual(self.flash(2250.0, rate=150.0), 0.0)
+
+    def test_no_red_lines_no_flash(self):
+        """Song select paints before a map is loaded; this once raised there."""
+        beats = gameplay_view.KiaiBeats([])
+        self.assertEqual(gameplay_view.kiai_flash(beats, [(0, 20000)], 1000.0), 0.0)
 
     def test_slower_bpm_fades_slower(self):
         slow = [TimingPoint(time=0.0, beat_length=1000.0)]
@@ -151,8 +196,44 @@ class ShortKiaiTests(unittest.TestCase):
         self.assertGreater(lit, dark)
 
 
+class ReachTests(unittest.TestCase):
+    """Which objects a flash reaches is a window of *time*, stable's PreEmpt
+    either side plus one object past it -- not lane pixels, so the preview's
+    size changes nothing."""
+
+    def _view(self, width):
+        view = gui.GameplayViewerView()
+        view.resize(width, 200)
+        point = TimingPoint(time=0.0, beat_length=2000.0, meter=4)  # 30 BPM
+        view.timing_points = view.beat_points = [point]
+        view._beat_times = [0.0]
+        view.slider_multiplier = 1.4
+        view.kiai_bands = [(0, 100000)]
+        view._rebuild_velocities()
+        view.notes = [HitObject(x=256, y=192, time=t, type=1, hit_sound=0)
+                      for t in range(0, 40000, 250)]
+        view.note_times = [float(n.time) for n in view.notes]
+        view._end_times, view._phantom_ends, view._max_extend_ms = {}, {}, 0.0
+        return view
+
+    def _reach(self, view, fire):
+        lit = [n.time for i, n in enumerate(view.notes)
+               if n.time >= fire and view._kiai_since(i, n) <= fire]
+        return max(lit) - fire
+
+    def test_30_bpm_reaches_two_and_five_eighths_beats(self):
+        """The owner's stable measurement: PreEmpt 10204 capped at 5000 is
+        2.5 beats, plus one note 250ms on."""
+        view = self._view(900)
+        self.assertEqual(view._preempt_ms(), 5000)
+        self.assertEqual(self._reach(view, 10000.0), 2.625 * 2000)
+
+    def test_the_preview_size_does_not_move_it(self):
+        self.assertEqual(self._reach(self._view(600), 10000.0), self._reach(self._view(1800), 10000.0))
+
+
 class ShinyGlowTests(unittest.TestCase):
-    """A fake slider is #fbb706 outside a chorus, whatever is stacked on it.
+    """A fake slider is #fcb806 outside a chorus, whatever is stacked on it.
 
     There is no separate "shiny" effect and no brightening with stack depth: a
     pile of fake sliders is a pile of identical opaque objects and reads as
@@ -182,17 +263,18 @@ class ShinyGlowTests(unittest.TestCase):
         view.slider_multiplier = 1.4
         view.kiai_bands = [(0, 20000)] if kiai else []
         view._rebuild_velocities()
+        at = 1500
         notes = []
         if note:
-            notes.append(HitObject(x=256, y=192, time=1500, type=1,
+            notes.append(HitObject(x=256, y=192, time=at, type=1,
                                    hit_sound=8 if kat else 0))
         notes += [
-            HitObject(x=256, y=192, time=1500, type=2, hit_sound=0,
+            HitObject(x=256, y=192, time=at, type=2, hit_sound=0,
                       extras=("L|624:192", "1", "-100.0"))
             for _ in range(stack)
         ]
         view.notes = notes
-        view.note_times = [1500.0] * len(notes)
+        view.note_times = [float(at)] * len(notes)
         view._end_times, view._phantom_ends, view._max_extend_ms = {}, {}, 0.0
         for each in view.notes:
             phantom = view._compute_phantom_end(each)
@@ -204,12 +286,12 @@ class ShinyGlowTests(unittest.TestCase):
     def _colour(self, stack: int, **kwargs):
         view = self._view(stack, **kwargs)
         image = view.grab().toImage()
-        return image.pixelColor(round(view.x_for_time(1500.0)), 100)
+        return image.pixelColor(round(view.x_for_time(view.notes[0].time)), 100)
 
     def _brightness(self, stack: int, **kwargs) -> float:
         view = self._view(stack, **kwargs)
         image = view.grab().toImage()
-        cx, cy = round(view.x_for_time(1500.0)), 100
+        cx, cy = round(view.x_for_time(view.notes[0].time)), 100
         radius = round(view.height() * gameplay_view.TAIKO_NOTE_SIZE / 2.0 * 0.6)
         total = count = 0
         for y in range(cy - radius, cy + radius):
@@ -350,7 +432,7 @@ class TailFlashTests(unittest.TestCase):
         self.assertGreater(on_beat.blue(), late.blue())
 
     def test_outside_kiai_it_is_just_the_drumroll_colour(self):
-        """#fbb706 and nothing added to it -- if the anchor were wrong this
+        """#fcb806 and nothing added to it -- if the anchor were wrong this
         would be sampling the track, or the lane."""
         plain = self._tail(False, 1000.0)
         self.assertEqual(

@@ -79,6 +79,18 @@ class ScrollVelocityTests(unittest.TestCase):
         self.assertAlmostEqual(self.view.velocity_at(2500.0), 0.75 / 500.0, places=9)
         self.assertAlmostEqual(self.view.velocity_at(4500.0), 2.0 / 500.0, places=9)
 
+    def test_a_nan_green_line_is_1x_and_a_lengthless_red_line_keeps_the_beat(self):
+        """As osu! parses them (LegacyBeatmapDecoder) and the client draws them."""
+        from osu_io.timing import TimingPoint
+        self.assertEqual(TimingPoint(time=0.0, beat_length=float("nan"), uninherited_flag=0).sv_multiplier, 1.0)
+        points = [TimingPoint(time=0.0, beat_length=500.0),
+                  TimingPoint(time=1000.0, beat_length=float("nan"), uninherited_flag=0),
+                  TimingPoint(time=2000.0, beat_length=0.0)]
+        self.view.timing_points = points
+        self.view._rebuild_velocities()
+        self.assertAlmostEqual(self.view.velocity_at(1500.0), self.view.velocity_at(500.0), places=12)
+        self.assertAlmostEqual(self.view.velocity_at(2500.0), self.view.velocity_at(500.0), places=12)
+
     def test_each_object_uses_the_speed_at_its_own_time(self):
         """The osu!taiko rule, and the reason this is not an integral: a note
         in a 2.0x section is twice as far out as one the same time away in a
@@ -443,15 +455,28 @@ class HitPositionTests(unittest.TestCase):
             view.close()
         return rects, heads, opacities
 
-    def test_a_long_slow_one_has_faded_before_it_shows(self):
-        """-800 at 1x: its cap lands 2.9s ahead of its head and it is faded
-        500ms later (owner's stable test map, 2026-10-28), long before any of
-        it is on screen.
-        ponytail: earlier (2026-10-26) a -800 was seen showing its track;
-        re-check that map against this rule."""
+    def test_a_long_one_fades_its_track_in_as_it_comes(self):
+        """-800 at 1x: its cap lands 2.9s ahead of its head and its fade-out is
+        long over by the time it is on screen, so stable's other fade -- in
+        over the PreEmpt to its time -- brings the track on, headless, opaque
+        on arrival (osu!.exe, 2026-10-30; owner: mekurume [eclosion]
+        1:55.518's track went missing). This replaced a 2026-10-28 reading of
+        the owner's test map that had it gone; that one disagreed with a
+        -800 seen showing its track on 2026-10-26."""
         note = self._fake(1000, -800.0)
-        rects, heads, _ = self._tracks_and_heads(self._fake_view(note, at=900.0))
-        self.assertEqual((rects, heads), ([], []))
+        view = self._fake_view(note, at=900.0)
+        preempt = view._preempt_ms()
+        rects, heads, opacities = self._tracks_and_heads(view)
+        self.assertEqual((len(rects), heads), (1, []))
+        self.assertAlmostEqual(opacities[0], 1.0 - 100.0 / preempt, places=2)
+        early = self._fake_view(note, at=1000.0 - preempt - 10.0)
+        self.assertEqual(self._tracks_and_heads(early)[:2], ([], []))
+
+    def test_a_long_one_does_not_stop_before_its_time(self):
+        """mekurume's -800 x2 lands 9s ahead; extrapolated, the freeze stopped
+        it 6.7s early, off screen. Until its time it is on its approach."""
+        self.assertEqual(gameplay_view.fake_slider_freeze(115518, 9000, 1600, 115000), 0.0)
+        self.assertEqual(gameplay_view.fake_slider_freeze(115518, 9000, 1600, 115600), 82.0)
 
     def test_nothing_shows_before_the_head_comes_on_screen(self):
         """The cap is ahead of the head, but the object is not alive yet."""
@@ -468,14 +493,17 @@ class HitPositionTests(unittest.TestCase):
     def test_it_fades_out_from_when_its_cap_lands(self):
         """Owner's stable test map, 2026-10-28: once the cap reaches the
         target the head is gone, and the track fades out over
-        FAKE_SLIDER_FADE_MS. -20's cap is 71ms ahead of its head."""
-        fade_ms = gameplay_view.FAKE_SLIDER_FADE_MS
+        two thirds of the map's PreEmpt (stable's SliderTaiko). -20's cap is
+        71ms ahead of its head."""
         note = self._fake(1000, -20.0)
-        lands = 1000.0 - abs(self._view([note], at=0.0)._compute_phantom_end(note) - 1000.0)
-        rects, heads, opacities = self._tracks_and_heads(self._fake_view(note, at=lands + fade_ms / 2))
+        probe = self._view([note], at=0.0)
+        fade_ms = int(probe._preempt_ms() * 2 / 3)
+        lands = 1000.0 - abs(probe._compute_phantom_end(note) - 1000.0)
+        # A tenth in: by halfway it has coasted off the left edge.
+        rects, heads, opacities = self._tracks_and_heads(self._fake_view(note, at=lands + fade_ms / 10))
         self.assertTrue(rects)
         self.assertEqual(heads, [])
-        self.assertAlmostEqual(opacities[-1], 0.5, delta=0.02)
+        self.assertAlmostEqual(opacities[-1], 0.9, delta=0.02)
         note = self._fake(1000, -20.0)
         rects, heads, _ = self._tracks_and_heads(self._fake_view(note, at=lands + fade_ms + 1))
         self.assertEqual((rects, heads), ([], []))
@@ -598,8 +626,10 @@ class DrumrollPartsTests(unittest.TestCase):
                 self.assertIn("taiko-roll-middle", names)
                 self.assertIn("taiko-roll-end", names)
                 self.assertNotIn("taikohitcircle", names)
-        # -100's landed at ~1143: faded by ~1643.
-        self.assertEqual(self._preview_parts(-100.0, at=1650.0), [])
+        # -100's landed at ~1143; 500ms beat at SM 1.4 is a 2551ms PreEmpt,
+        # so it fades out over 1700ms: gone by ~2843.
+        self.assertTrue(self._preview_parts(-100.0, at=2800.0))
+        self.assertEqual(self._preview_parts(-100.0, at=2850.0), [])
 
     def test_a_sub_ms_ones_cap_alone_passes_through_the_target(self):
         """Owner, 2026-10-28: a -0.001 fake slider's head lands first and
@@ -608,8 +638,8 @@ class DrumrollPartsTests(unittest.TestCase):
         names = [element for element, _c in self._preview_parts(-0.001, at=1600.0)]
         self.assertIn("taiko-roll-end", names)
         self.assertNotIn("taikohitcircle", names)
-        # Gone once its FAKE_SLIDER_FADE_MS are up.
-        names = [element for element, _c in self._preview_parts(-0.001, at=2010.0)]
+        # Gone once its 1700ms fade out is up.
+        names = [element for element, _c in self._preview_parts(-0.001, at=3210.0)]
         self.assertNotIn("taiko-roll-end", names)
         # Before it gets there, all of it.
         names = [element for element, _c in self._preview_parts(-0.001, at=1400.0)]
@@ -680,16 +710,33 @@ class DrumrollPartsTests(unittest.TestCase):
 
 
 class SpinnerFadeTests(unittest.TestCase):
-    def test_a_spinner_fades_in_from_a_beat_and_a_half_before_it(self):
-        """ppy/osu#21769: hidden, then in over 666ms (the half beat if
-        shorter) from 1.5 beats before."""
+    def test_a_spinner_fades_in_linearly_over_the_maps_preempt(self):
+        """Stable's SpinnerTaiko: 0 -> 1 from PreEmpt to 0.6 PreEmpt before."""
         from ui.gameplay_view import spinner_fade
-        self.assertEqual(spinner_fade(500.0, 850.0), 0.0)
-        self.assertEqual(spinner_fade(500.0, 625.0), 0.25)
-        self.assertEqual(spinner_fade(500.0, 500.0), 1.0)
-        self.assertEqual(spinner_fade(500.0, 0.0), 1.0)
-        self.assertEqual(spinner_fade(2000.0, 3000.0), 0.0)
-        self.assertEqual(spinner_fade(2000.0, 2334.0), 1.0)
+        self.assertEqual(spinner_fade(1000, 1200.0), 0.0)
+        self.assertEqual(spinner_fade(1000, 1000.0), 0.0)
+        self.assertEqual(spinner_fade(1000, 800.0), 0.5)
+        self.assertEqual(spinner_fade(1000, 600.0), 1.0)
+        self.assertEqual(spinner_fade(1000, 0.0), 1.0)
+
+    def test_a_roll_fades_out_over_two_thirds_of_the_preempt(self):
+        """Stable's SliderTaiko: whole until its end, gone 2/3 PreEmpt on."""
+        from ui.gameplay_view import roll_fade
+        self.assertEqual(roll_fade(1000.0, 1500, 900.0), 1.0)
+        self.assertEqual(roll_fade(1000.0, 1500, 1000.0), 1.0)
+        self.assertEqual(roll_fade(1000.0, 1500, 1500.0), 0.5)
+        self.assertEqual(roll_fade(1000.0, 1500, 2000.0), 0.0)
+
+    def test_preempt_is_1000_osu_px_at_the_first_point_capped(self):
+        """THE POWER OF UNDERGROUND [BREAKTHROUGH]: SM 1.4, first red line
+        307.22ms, so 1567ms -- faded in by 8974 - 940, and the 1.5x spinner
+        there only enters the screen ~724ms before: it arrives whole."""
+        from ui.gameplay_view import stable_preempt, spinner_fade
+        preempt = stable_preempt(140.0 * 1.4 / 307.219662058372)
+        self.assertEqual(preempt, 1567)
+        self.assertEqual(spinner_fade(preempt, 724.0), 1.0)
+        self.assertEqual(stable_preempt(0.01), 5000)
+
 
 
 class PopUpTests(unittest.TestCase):
@@ -1340,6 +1387,33 @@ class BarlineTests(unittest.TestCase):
     def test_a_map_with_no_timing_points_draws_no_barlines(self):
         self.view.beat_points = []
         self.assertEqual(self.view.barline_times(0.0, 10000.0), [])
+
+    def test_barlines_stop_at_the_last_objects_end(self):
+        """Stable lays none past the last object's end + 1ms, and none on a
+        map with no objects: a 0.01x slider ending the song has nothing
+        behind it however long it has been creeping in."""
+        view = self.view
+        circle = HitObject(x=256, y=192, time=5000, type=1, hit_sound=0)
+        roll = HitObject(x=256, y=192, time=5000, type=2, hit_sound=0,
+                             extras=("L|624:192", "1", "300.0"))
+        fake = HitObject(x=256, y=192, time=5000, type=2, hit_sound=0,
+                             extras=("L|624:192", "1", "-100.0"))
+        for note, cut in ((circle, 5001), (roll, None), (fake, None)):
+            with self.subTest(type=note.type, extras=note.extras):
+                view.notes, view.note_times = [note], [float(note.time)]
+                view._end_times, view._phantom_ends = {}, {}
+                end = view._compute_end_time(note)
+                if end is not None:
+                    view._end_times[note.uid] = end
+                phantom = view._compute_phantom_end(note)
+                if phantom is not None:
+                    view._phantom_ends[note.uid] = phantom
+                reach = end if end is not None else phantom
+                expected = cut if cut is not None else 5000 + int(reach - 5000) + 1
+                self.assertEqual(view._last_barline_ms(), expected)
+        self.assertLess(view._last_barline_ms(), 5000, "a fake slider ends before it starts")
+        view.notes = []
+        self.assertEqual(view._last_barline_ms(), float("-inf"))
 
     def _document(self, *points: gui.TimingPoint):
         document = parse_osu(write_fixture(Path(self._temp.name), "full_v14"))

@@ -91,7 +91,9 @@ class TimingPoint:
         """Slider velocity multiplier. Uninherited points always read as 1.0x."""
         if self.uninherited:
             return 1.0
-        if self.beat_length >= 0:
+        # `not < 0` rather than `>= 0`: a NaN green line is 1.0x in osu!, every
+        # comparison against NaN being false (LegacyBeatmapDecoder).
+        if not self.beat_length < 0:
             return 1.0
         return -100.0 / self.beat_length
 

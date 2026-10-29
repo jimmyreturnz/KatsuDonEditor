@@ -16,7 +16,7 @@ from ui.settings_dialog import SettingsDialog
 _APP: QApplication | None = None
 
 # What a theme must never touch: they mean something in the chart.
-CHART_COLOURS = ("#e54c2e", "#438dab", "#fbb706", "#738098", "#f4f7fb", "#ffffff")
+CHART_COLOURS = ("#e54c2e", "#438dab", "#fcb806", "#738098", "#f4f7fb", "#ffffff")
 
 
 def setUpModule() -> None:

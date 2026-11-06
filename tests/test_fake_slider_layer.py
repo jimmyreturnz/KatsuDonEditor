@@ -17,6 +17,7 @@ from PySide6.QtCore import QEvent, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
 
+from model.hit_object import HITSOUND_CLAP, HITSOUND_WHISTLE
 from ui import gui
 from ui import chart_views
 from osu_io.parser import OsuDocument
@@ -422,16 +423,16 @@ class BigVariantTests(_Layer2, unittest.TestCase):
         self.window._editor_view_focus_changed(None, self.layer)
         buttons = self.window.gimmick_tool_buttons["fake_slider"]
         buttons["don"].setChecked(True)
-        self.window._editor_keys._toggle_kat(gui.HITSOUND_WHISTLE)
+        self.window._editor_keys._toggle_kat(HITSOUND_WHISTLE)
         self.assertTrue(buttons["kat"].isChecked(), "the layer's own Kat, not the Editor page's")
         self.assertEqual(self.layer.tool, "kat")
-        self.window._editor_keys._toggle_kat(gui.HITSOUND_WHISTLE)
+        self.window._editor_keys._toggle_kat(HITSOUND_WHISTLE)
         self.assertEqual(self.layer.tool, "don")
 
-    def test_a_kat_structures_note_is_a_whistle_kat(self) -> None:
+    def test_a_kat_structures_note_is_a_clap_kat(self) -> None:
         self.window._place_gimmick("fake_slider", "kat", self.SNAP)
         note = next(n for n in self.document.hit_objects if n.time == self.SNAP and n.is_circle)
-        self.assertEqual(note.hit_sound, gui.HITSOUND_WHISTLE)
+        self.assertEqual(note.hit_sound, HITSOUND_CLAP)
 
     def test_the_ghost_previews_the_big_size(self) -> None:
         self.layer.set_tool("regular")

@@ -79,11 +79,12 @@ from ui.motion import (
 )
 from ui.smooth_scroll import SmoothScroller, reduced_motion
 from ui.config_sheet import segmented
-from library.skin import UI_SOUNDS
+from library.skin import UI_SOUNDS, TaikoSkin, element_paths
 from app.i18n import tr
 from ui import theme, windose
 from osu_io.parser import parse_osu
 from library.song_library import (
+    Cache,
     group_by_song,
     heard_tempo,
     load_cache,
@@ -1475,6 +1476,7 @@ class LibraryPageController:
         self.chart_preview.setAttribute(Qt.WA_OpaquePaintEvent, True)
         self.chart_preview.setFocusPolicy(Qt.NoFocus)  # the arrows are the lists'
         self.chart_preview.setMinimumHeight(0)
+        self._set_skin_key, self._set_skin = None, None
         if getattr(self.window, "skin", None) is not None:
             self.chart_preview.set_skin(self.window.skin)
         self.set_chart_preview_share(self.window.settings.int_value(
@@ -1543,6 +1545,13 @@ class LibraryPageController:
         split.setStretchFactor(0, 145)
         split.setStretchFactor(1, 100)
         split.setSizes([740, 510])
+        # Where the user last left the divider between the list and the
+        # background (owner, 2026-11-04).
+        saved = self.window.settings.value("library/split_state")
+        if saved is not None:
+            split.restoreState(saved)
+        split.splitterMoved.connect(
+            lambda *_: self.window.settings.set_value("library/split_state", split.saveState()))
         layout.addWidget(split, 1)
         self._split, self._handle_width = split, split.handleWidth()
 
@@ -1869,7 +1878,7 @@ class LibraryPageController:
             self.window._library_cache_path().unlink()
         except OSError:
             pass  # Never there, or not ours to delete: the walk still rebuilds it.
-        self.library_cache = {}
+        self.library_cache = Cache()
         self.library_songs = {}
         self.listed_paths = set()
         self.start_scan()
@@ -2451,8 +2460,31 @@ class LibraryPageController:
         if path == self._chart_pending:  # still the one wanted
             self._show_chart(path, document)
 
+    def apply_skin(self) -> None:
+        """The chosen skin under the shown set's own images, as osu! plays
+        it. `window.skin` carries the *editor's* map, so on its own the
+        preview showed that map's art, or none of the set's (owner,
+        2026-11-05)."""
+        base = getattr(self.window, "skin", None)
+        if base is None:
+            return
+        folder = self._chart_shown.parent if self._chart_shown is not None else None
+        # A set without art of its own wears the chosen skin alone: `base`
+        # still carries the editor's map, so a beatmap skin left with it went
+        # on showing on every other song (owner, 2026-11-05).
+        own = folder is not None and bool(element_paths(folder))
+        key = (id(base), folder if own else None)
+        if self._set_skin_key != key:
+            # One at a time: it is the shown one, and each holds pixmaps.
+            self._set_skin_key = key
+            self._set_skin = TaikoSkin(base.folder, folder if own else None)
+        skin = self._set_skin
+        if self.chart_preview.skin is not skin:
+            self.chart_preview.set_skin(skin)
+
     def _show_chart(self, path: Path, document) -> None:
         self._chart_shown = path
+        self.apply_skin()
         self.chart_preview.refresh_notes(document)
         self.song_banner.set_kiai(self.chart_preview.kiai_bands)
         # In from nothing whatever the last one was doing: its fade out may
@@ -2554,7 +2586,16 @@ class LibraryPageController:
             preview_ms = int(float(difficulty.preview))
         except ValueError:
             preview_ms = -1
-        self._preview_pending = (song_file(difficulty.folder, difficulty.audio), preview_ms)
+        audio = song_file(difficulty.folder, difficulty.audio)
+        # A difficulty open in the editor plays what the editor has, saved or
+        # not: the index is the file on disk, so after Add silence it went on
+        # naming the old track (owner, 2026-11-05).
+        wanted = os.path.normcase(str(difficulty.path))
+        open_state = next((state for path, state in getattr(self.window, "_states", {}).items()
+                           if os.path.normcase(str(path)) == wanted), None)
+        if open_state is not None and getattr(open_state, "audio_path", None) is not None:
+            audio = open_state.audio_path
+        self._preview_pending = (audio, preview_ms)
         self.preview_timer.start()
 
     def start_preview(self) -> None:

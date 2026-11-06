@@ -46,10 +46,10 @@ from app.i18n import install_translator, tr
 from ui.image_trace_dialog import ImageTraceDialog
 from model.commands import (
     CompositeCommand, EditTimingPoint, InsertHitObjects, InsertTimingPoints,
-    MoveNotes, RemoveHitObjects, RemoveTimingPoints, SetNoteFields, SetNotePositions,
+    MoveNotes, RemoveHitObjects, RemoveTimingPoints, ReplaceDocumentLines, SetNoteFields, SetNotePositions,
 )
 from model.editor_state import DifficultyState
-from model.hit_object import HITSOUND_FINISH, HITSOUND_WHISTLE, HitObject, TYPE_CIRCLE, TYPE_NEW_COMBO, TYPE_SLIDER, TYPE_SPINNER
+from model.hit_object import HITSOUND_CLAP, HITSOUND_FINISH, HitObject, TYPE_CIRCLE, TYPE_NEW_COMBO, TYPE_SLIDER, TYPE_SPINNER
 from app.settings import (
     NOTE_OPACITY_DEFAULT_PERCENT,
     NOTE_OPACITY_MIN_PERCENT,
@@ -93,8 +93,8 @@ from ui.common import (
     ACCENT_PINK, DON_COLOR, DRUMROLL_COLOR, KAT_COLOR, SCROLL_MODS, SLIDER_MULTIPLIER_ASSUMED,
     SONG_SELECT_PREVIEW_DEFAULT_PERCENT, application_icon, button_text_width,
     display_frame_interval_ns, draw_note_sprite, drumroll_tick_times, equalize_button_widths, spans_circles,
-    break_periods, combo_numbers, format_time, next_frame_due, osu_timestamp, resource_roots, scroll_row, set_view_ground_alpha, spinner_pixmap,
-    tabular, view_ground_is_opaque,
+    VBlankWaiter, VsyncPacer, break_periods, combo_numbers, format_time, next_frame_due, osu_timestamp, resource_roots, scroll_row, set_view_ground_alpha, spinner_pixmap,
+    tabular,
 )
 from ui.misc_page import MiscPage
 from ui.dialogs import (
@@ -358,12 +358,17 @@ def hitsound_schedule(
         beat_points = uninherited_points(ordered_points)
         if beat_points:
             circle_times = sorted(float(note.time) for note in hit_objects if note.is_circle)
+            # Stacked rolls share their ticks' milliseconds; each is one hit,
+            # so one sound (the autoplay's rule, `refresh_notes`).
+            ticked = set()
             for note in hit_objects:
                 if note.is_slider:
                     ticks = drumroll_tick_times(note, beat_points, ordered_points, slider_multiplier)
                     if ticks and spans_circles(note.time, ticks[-1], circle_times):
                         continue  # a roll across notes is heard as the notes
-                    scheduled.extend((float(time_ms), "normal") for time_ms in ticks)
+                    fresh = [time_ms for time_ms in ticks if round(time_ms) not in ticked]
+                    ticked.update(round(time_ms) for time_ms in fresh)
+                    scheduled.extend((float(time_ms), "normal") for time_ms in fresh)
     scheduled.sort()
     times = [time_ms for time_ms, _key in scheduled]
     keys = [key for _time, key in scheduled]
@@ -1805,7 +1810,6 @@ def set_view_opacity(percent: int, widgets) -> None:
         if isinstance(widget, EditorViewFrame):
             widget.refresh_ground()
         else:
-            widget.setAttribute(Qt.WA_OpaquePaintEvent, view_ground_is_opaque())
             widget.update()
 
 
@@ -1864,13 +1868,15 @@ class MapBackdrop(QWidget):
         painter.end()
         return baked
 
-    def paintEvent(self, event) -> None:
-        if self._source is None or self._percent == 0:
-            QPainter(self).fillRect(event.rect(), self.ground())
-            return
+    def baked(self) -> QPixmap:
+        """The floor as painted; what a see-through lane lays under itself
+        (`common.view_underlay`)."""
         if self._baked is None or self._baked.size() != self.size():
             self._baked = self._bake()
-        QPainter(self).drawPixmap(event.rect(), self._baked, event.rect())
+        return self._baked
+
+    def paintEvent(self, event) -> None:
+        QPainter(self).drawPixmap(event.rect(), self.baked(), event.rect())
 
 
 def see_through(*widgets: QWidget) -> None:
@@ -2489,6 +2495,9 @@ class ToolStateController:
 
 
 class MainWindow(QMainWindow):
+    # One per vblank, from VBlankWaiter's thread; queued onto this one.
+    _vblank_tick = Signal()
+
     def __init__(self) -> None:
         super().__init__()
         # Set only while song select opens a chart (_ensure_default_editor_views).
@@ -2683,6 +2692,12 @@ class MainWindow(QMainWindow):
         self.gameplay_render_timer.setInterval(4)
         self.gameplay_render_timer.timeout.connect(self._render_gameplay_frame)
         self.gameplay_render_timer.start()
+        # The vsync loop that replaces the timer once the window is on a
+        # screen (_follow_screen); the timer stays wherever there is none.
+        self._vblank: VBlankWaiter | None = None
+        self._vblank_pending = False
+        self._vsync_pacer = VsyncPacer()
+        self._vblank_tick.connect(self._on_vblank)
 
         self.info_timer = QTimer(self)
         self.info_timer.setInterval(16)
@@ -2711,6 +2726,8 @@ class MainWindow(QMainWindow):
         self.preview_timer.timeout.connect(self.update_preview)
 
         self._build_ui()
+        for bar in self._timing_bars:
+            bar.bookmark_requested.connect(self._bookmark_requested)
         # After _build_ui: these are scoped to self.editor_page, which does
         # not exist until the pages are built.
         self._build_clipboard_shortcuts()
@@ -3152,7 +3169,7 @@ class MainWindow(QMainWindow):
         self._apply_view_opacity()
         # getattr: this first runs before the song list's page is built.
         if getattr(getattr(self, "_library", None), "chart_preview", None) is not None:
-            self._library.chart_preview.set_skin(self.skin)
+            self._library.apply_skin()
             self._library.set_chart_preview_share(self.settings.int_value(
                 "song_select/preview_percent", SONG_SELECT_PREVIEW_DEFAULT_PERCENT))
 
@@ -4009,6 +4026,59 @@ class MainWindow(QMainWindow):
         if self.settings.bool_value("audio/page_click", True):
             self._library.play_ui_sound("select_difficulty", volume=1.0)
 
+    def _snap_bookmark_ms(self, ms: float) -> int:
+        """The gridline nearest `ms` at the page's snap, committed as osu!
+        commits one (`osu_snap_ms`). The gimmick page snaps against its base
+        timing, or a 60000 BPM line would make every millisecond a gridline."""
+        state = self.state
+        if state is None:
+            return round(ms)
+        pairing = self._gimmick_pairing
+        if pairing is not None and self.page_stack.currentIndex() == PAGE_GIMMICK:
+            points, divisor = pairing.base_timing, self._gimmick_snap_divisor()
+        else:
+            points, divisor = state.document.timing_points, int(self.editor_snap_combo.currentData())
+        if not any(point.uninherited for point in points):
+            return round(ms)
+        return max(0, osu_snap_ms(snap_time(points, ms, divisor)))
+
+    def _set_bookmarks(self, state, times) -> None:
+        """[Editor] Bookmarks as `times`, as one undoable edit."""
+        times = sorted({max(0, int(time)) for time in times})
+        document = state.document
+        if times:
+            lines = metadata.with_keys(document.lines, "Editor", {"Bookmarks": ",".join(map(str, times))},
+                                       document.line_ending)
+        else:
+            lines = metadata.without_key(document.lines, "Editor", "Bookmarks")
+        if lines == document.lines:
+            return
+        state.history.push(ReplaceDocumentLines(list(document.lines), lines), state)
+        self._reload_timing_bars(state, force=True)
+
+    def _bookmark_requested(self, action: str) -> None:
+        """The timing bar's bookmark toolbar: + and - are Ctrl+B and
+        Ctrl+Shift+B, Reset takes every one away (undoable, so no prompt)."""
+        if action == "reset":
+            if self.state is not None:
+                self._set_bookmarks(self.state, [])
+        else:
+            self._bookmark_at_playhead(action == "add")
+
+    def _bookmark_at_playhead(self, add: bool) -> None:
+        """Ctrl+B adds one at the playhead, snapped; Ctrl+Shift+B takes away
+        the nearest, whichever side of the playhead it is on."""
+        state = self.state
+        if state is None:
+            return
+        now = self.timeline.current_time
+        bookmarks, _preview = editor_timeline_metadata(state.document)
+        if add:
+            self._set_bookmarks(state, [*bookmarks, self._snap_bookmark_ms(now)])
+        elif bookmarks:
+            nearest = min(bookmarks, key=lambda time: abs(time - now))
+            self._set_bookmarks(state, [time for time in bookmarks if time != nearest])
+
     def _reload_timing_bars(self, state, force: bool = False) -> None:
         """Rebuild every kiai/bookmark/marker bar from `state`.
 
@@ -4286,6 +4356,9 @@ class MainWindow(QMainWindow):
             # its own event-queue lock: test_gimmick_editor hung forever in
             # ScrollBarWheelTests.setUp, the 33rd window of the module.
             self.gameplay_render_timer.stop()
+            if self._vblank is not None:
+                self._vblank.stop()
+                self._vblank = None
             self.info_timer.stop()
             self.settings.set_value("fancy/dock_state", self.fancy_docks.saveState())
             self.settings.set_value("window/geometry", self.saveGeometry())
@@ -7720,6 +7793,7 @@ class MainWindow(QMainWindow):
         label = state.document.version or difficulty_path.stem
         frame = EditorViewFrame(view_type, label, compact=band)
         frame.difficulty_path = difficulty_path
+        frame.band = band
         frame.closed.connect(self._close_editor_view)
 
         # The layer-restricted types are ordinary chart/gameplay views with one
@@ -7924,6 +7998,12 @@ class MainWindow(QMainWindow):
             view.set_snap_divisor(int(self.editor_snap_combo.currentData()))
             view.current_time = state.playhead_ms
             view.seek_requested.connect(self.seek_audio)
+            if not band and gameplay_layer is None:
+                # The Editor page only: a gimmick layer's preview shows one
+                # layer's objects, and song select's is a stage, not a chart.
+                view.click_selects = True
+                view.note_clicked.connect(
+                    lambda index, path=difficulty_path: self._select_note_from_preview(path, index))
             frame.set_content(view)
             frame.gameplay_view = view
             skin = getattr(self, "skin", None)
@@ -7959,6 +8039,19 @@ class MainWindow(QMainWindow):
             return
         group_layout = self._difficulty_group_layout(difficulty_path, label)
         self._insert_into_group(group_layout, frame)
+
+    def _select_note_from_preview(self, difficulty_path: Path, index: int) -> None:
+        """A note clicked in an Editor-page preview, selected in that
+        difficulty's Editor-page chart views. No seek: the preview stays where
+        the note was found."""
+        for frame in self._editor_views:
+            view = getattr(frame, "chart_view", None)
+            if view is None or frame.band or frame.difficulty_path != difficulty_path:
+                continue
+            view.selected = {index}
+            view.selected_timing_uids = set()
+            view.selection_changed.emit({index})
+            view.update()
 
     def _frame_layout(self, frame: EditorViewFrame):
         """The box layout that directly holds `frame`, or None.
@@ -8820,8 +8913,8 @@ class MainWindow(QMainWindow):
 
         Big (finisher) is the same HITSOUND_FINISH bit sliders already place
         with Shift held; kat additionally keeps its whistle bit, since a big
-        kat is a finisher whistle, not a finisher replacing the whistle. Kat
-        is whistle, osu!'s W (owner, 2026-10-24); it was a clap.
+        kat is a finisher clap, not a finisher replacing the clap. Kat is
+        clap (owner, 2026-11-04); it was whistle from 2026-10-24, osu!'s W.
         """
         # Taiko gameplay ignores hit-object x/y entirely; center is the
         # convention used elsewhere in this codebase (e.g. the fake-slider
@@ -8832,7 +8925,7 @@ class MainWindow(QMainWindow):
         if note_kind == "don":
             return HitObject(x=x, y=y, time=time_ms, type=TYPE_CIRCLE | combo_bit, hit_sound=finisher_bit)
         if note_kind == "kat":
-            return HitObject(x=x, y=y, time=time_ms, type=TYPE_CIRCLE | combo_bit, hit_sound=HITSOUND_WHISTLE | finisher_bit)
+            return HitObject(x=x, y=y, time=time_ms, type=TYPE_CIRCLE | combo_bit, hit_sound=HITSOUND_CLAP | finisher_bit)
         raise ValueError(f"Unknown note kind: {note_kind}")
 
     def _place_note(self, difficulty_path: Path, note_kind: str, time_ms: float, new_combo: bool, big: bool = False) -> None:
@@ -9812,6 +9905,34 @@ class MainWindow(QMainWindow):
             handle.screenChanged.connect(self._follow_screen)
             self._screen_followed = True
         self.gameplay_frame_interval_ns = display_frame_interval_ns(screen or self.screen())
+        if self._vblank is not None:
+            self._vblank.retarget(screen or self.screen())
+        elif VBlankWaiter.available():
+            waiter = VBlankWaiter(self._vblank_arrived)
+            if waiter.start(screen or self.screen()):
+                self._vblank = waiter
+                self.gameplay_render_timer.stop()
+
+    def _vblank_arrived(self) -> None:
+        """VBlankWaiter's thread: one tick at a time, so a GUI thread busy
+        for a few refreshes renders once when it is free, not a burst."""
+        if not self._vblank_pending:
+            self._vblank_pending = True
+            self._vblank_tick.emit()
+
+    def _on_vblank(self) -> None:
+        self._vblank_pending = False
+        now_ms = self.gameplay_frame_clock.nsecsElapsed() / 1_000_000.0
+        screen = self.screen()
+        paced = self._vsync_pacer.frame_time(now_ms, screen.refreshRate() if screen is not None else 60.0)
+        self._render_gameplay_frame(round(paced * 1_000_000.0))
+
+    def _stop_vsync(self) -> None:
+        """Back to the timer loop: closing, or a harness's before/after."""
+        if self._vblank is not None:
+            self._vblank.stop()
+            self._vblank = None
+            self.gameplay_render_timer.start()
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -10744,6 +10865,16 @@ class MainWindow(QMainWindow):
         self.refresh_canvas()
         if self.state is state:
             self._show_chart_identity(state)
+        self._follow_audio_file(state)
+
+    def _follow_audio_file(self, state) -> None:
+        """Play `state`'s song if it is the open difficulty and its file
+        changed under it: the lead-in, and undoing one."""
+        if state is None or state is not self.state or state.audio_path is None:
+            return
+        url = QUrl.fromLocalFile(str(state.audio_path))
+        if self.player.source() != url:
+            self.player.setSource(url)
 
     def _reload_from_disk(self, paths, confirm: bool = False) -> None:
         """Re-read each open difficulty in `paths` from its .osu (F5).
@@ -11305,12 +11436,18 @@ class MainWindow(QMainWindow):
             self.audio_anchor_clock.restart()
             self._last_predicted_position = float(position)
 
-    def _render_gameplay_frame(self) -> None:
-        now_ns = self.gameplay_frame_clock.nsecsElapsed()
-        due = next_frame_due(self._next_frame_due_ns, now_ns, self.gameplay_frame_interval_ns)
-        if due is None:
-            return
-        self._next_frame_due_ns = due
+    def _render_gameplay_frame(self, paced_ns: int | None = None) -> None:
+        """One frame. `paced_ns` is a vsync frame's time on the refresh grid
+        (_on_vblank); without it this is the timer loop, which schedules its
+        own frames off the display's cadence."""
+        if paced_ns is None:
+            now_ns = self.gameplay_frame_clock.nsecsElapsed()
+            due = next_frame_due(self._next_frame_due_ns, now_ns, self.gameplay_frame_interval_ns)
+            if due is None:
+                return
+            self._next_frame_due_ns = due
+        else:
+            now_ns = paced_ns
 
         # osu!'s InterpolatingFramedClock advances once per rendered frame,
         # by that frame's own real elapsed time -- not the fixed interval

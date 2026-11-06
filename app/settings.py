@@ -145,6 +145,8 @@ SHORTCUT_DEFINITIONS: tuple[ShortcutDefinition, ...] = (
     ShortcutDefinition("seek_next_note", "Seek to the next note", "Navigation", "Ctrl+Right"),
     ShortcutDefinition("seek_previous_bookmark", "Seek to the previous bookmark", "Navigation", "Alt+Left"),
     ShortcutDefinition("seek_next_bookmark", "Seek to the next bookmark", "Navigation", "Alt+Right"),
+    ShortcutDefinition("add_bookmark", "Add a bookmark at the playhead", "Editing", "Ctrl+B"),
+    ShortcutDefinition("remove_bookmark", "Remove the nearest bookmark", "Editing", "Ctrl+Shift+B"),
     ShortcutDefinition("focus_previous_view", "Focus the view above", "Navigation", "Up"),
     ShortcutDefinition("focus_next_view", "Focus the view below", "Navigation", "Down"),
     ShortcutDefinition("snap_1", "Beat snap 1/1", "Beat snap", "Shift+1"),

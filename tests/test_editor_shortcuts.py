@@ -165,11 +165,11 @@ class EditorKeysTests(unittest.TestCase):
         self._key(Qt.Key_4)
         self.assertFalse(self.view.finisher)
 
-    def test_a_kat_placed_with_the_finisher_on_is_a_big_whistle_kat(self):
+    def test_a_kat_placed_with_the_finisher_on_is_a_big_clap_kat(self):
         self.window.tool_buttons["kat"].setChecked(True)
         self.window._tool_state.finisher_button.setChecked(True)
         self.view.note_place_requested.emit("kat", 4250.0, False, self.view.finisher)
-        self.assertEqual(self._note_at(4250).hit_sound, HITSOUND_WHISTLE | HITSOUND_FINISH)
+        self.assertEqual(self._note_at(4250).hit_sound, HITSOUND_CLAP | HITSOUND_FINISH)
 
     def test_e_toggles_big_and_q_new_combo(self):
         self._select(1000)

@@ -23,7 +23,7 @@ KatsuDon Editor (formerly Taiko Fancy Arranger) started as a tool for turning os
 
 The editor does not support editing storyboards, breaks, colours, editor bookmarks yet.
 
-> **Current release:** v3.6.1  
+> **Current release:** v3.6.2  
 > **Platform:** Windows x64  
 > **Author:** [jimmyreturnz](https://osu.ppy.sh/users/11306153)
 
@@ -68,6 +68,17 @@ The main inspirations include Alchyr's ranked maps *13 Stairs* and *Helios*, whi
 | ![Generate SV](docs/screenshots/generate-sv.png) | ![Settings](docs/screenshots/settings.png) |
 
 ---
+
+## What is new in 3.6.2
+
+- **Smoother scrolling:** frames wait for the monitor's own refresh. 99% of refreshes now show exactly one new frame, from 19-98% before.
+- **Faster frames below 100% View opacity:** 4.1 -> 2.5 ms at 1080p, 8.9 -> 3.8 ms at 4K.
+- **Heavy gimmick maps preview 3-4x faster**, and pop-up notes fade in again on maps with very slow gimmick lines.
+- **The song list loads faster:** a warm scan of 24,698 difficulties went from 2.66 s to 0.49 s.
+- **Autoplay** hits drumrolls on osu!'s ticks and skips the circles a NaN slider makes unhittable in stable.
+- **Bookmarks on the timing bar** (Ctrl+B, Ctrl+Shift+B), **add silence to the start of the song** (Miscellaneous), and **new kats are clap**.
+
+Details: [`docs/releases/v3.6.2.md`](docs/releases/v3.6.2.md).
 
 ## What is new in 3.6.1
 
@@ -556,7 +567,7 @@ Do not upload copyrighted audio or private beatmap assets unless permission has 
 
 ## Project status
 
-Version 3.6.1 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
+Version 3.6.2 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
 
 Not yet implemented, and next in line:
 

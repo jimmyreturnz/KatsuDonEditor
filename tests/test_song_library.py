@@ -163,6 +163,67 @@ class ScanTests(unittest.TestCase):
         list(scan(self.root, cache))
         self.assertEqual(cache, {})
 
+    def _reads_during(self, cache):
+        reads = []
+        original = song_library.read_header
+        song_library.read_header = lambda path: reads.append(path) or original(path)
+        try:
+            found = [item for item in scan(self.root, cache) if item is not None]
+        finally:
+            song_library.read_header = original
+        return reads, found
+
+    def test_an_unchanged_folder_is_not_opened(self):
+        """taiko-rs's rule (2026-11-04): a set folder whose own time has not
+        moved is its cached entries, without a file in it being stat'ed."""
+        make_song(self.root, "song")
+        cache = song_library.Cache()
+        list(scan(self.root, cache))
+        stats = []
+        original = Path.stat
+        def counting(path, *args, **kwargs):
+            stats.append(path)
+            return original(path, *args, **kwargs)
+        Path.stat = counting
+        try:
+            found = [item for item in scan(self.root, cache) if item is not None]
+        finally:
+            Path.stat = original
+        self.assertEqual(len(found), 1)
+        self.assertEqual([path for path in stats if path.suffix == ".osu"], [])
+
+    def test_a_new_file_in_a_folder_is_read(self):
+        path = make_song(self.root, "song")
+        cache = song_library.Cache()
+        list(scan(self.root, cache))
+        twin = path.with_name("twin.osu")
+        twin.write_bytes(path.read_bytes().replace(b"Version:Oni", b"Version:Twin"))
+        # The folder's time has moved, whatever the filesystem's resolution.
+        folder = str(path.parent)
+        cache.folders[folder] -= 1
+        reads, found = self._reads_during(cache)
+        self.assertEqual(sorted(item.version for item in found), ["Oni", "Twin"])
+        self.assertEqual(reads, [twin], "the unchanged difficulty beside it is not re-read")
+
+    def test_a_removed_folder_leaves_the_cache_and_its_time(self):
+        path = make_song(self.root, "song")
+        cache = song_library.Cache()
+        list(scan(self.root, cache))
+        for item in path.parent.iterdir():
+            item.unlink()
+        path.parent.rmdir()
+        list(scan(self.root, cache))
+        self.assertEqual(dict(cache), {})
+        self.assertEqual(cache.folders, {})
+
+    def test_folder_times_survive_the_cache_file(self):
+        make_song(self.root, "song")
+        cache = song_library.Cache()
+        list(scan(self.root, cache))
+        cache_file = self.root / "index.json"
+        save_cache(cache_file, cache)
+        self.assertEqual(load_cache(cache_file).folders, cache.folders)
+
     def test_cache_round_trip_and_version_guard(self):
         cache_file = self.root / "index.json"
         save_cache(cache_file, {"a": [1, 2, "1", "artist", "title", "Oni"]})

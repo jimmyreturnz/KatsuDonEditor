@@ -150,6 +150,31 @@ class ScanFieldTests(unittest.TestCase):
             self.assertGreater(fields["bpm_max"], 0)
 
 
+class SplitMemoryTests(unittest.TestCase):
+    def test_the_list_and_background_divider_is_where_it_was_left(self):
+        """Owner, 2026-11-04: the next launch opens with the divider between
+        the song list and the background where the user last dragged it."""
+        from ui import gui
+
+        windows = []
+        try:
+            def opened():
+                window = gui.MainWindow(); windows.append(window)
+                window.resize(1600, 900); window.show(); QApplication.processEvents()
+                return window._library._split
+
+            split = opened()
+            total = sum(split.sizes())
+            split.setSizes([total // 4, total - total // 4])
+            split.splitterMoved.emit(total // 4, 1)
+            wanted = split.sizes()
+            self.assertNotEqual(opened().sizes(), [], "a second window is built")
+            self.assertEqual(windows[-1]._library._split.sizes(), wanted)
+        finally:
+            for window in windows:
+                window.scan_timer.stop(); window.close(); window.deleteLater()
+
+
 class PageTests(unittest.TestCase):
     def setUp(self):
         from ui import gui
@@ -708,6 +733,59 @@ class PageTests(unittest.TestCase):
         natural = common.osu_screen_height_for(600)
         self.assertEqual(library.chart_preview.height(), round(natural * 0.67))
         self.assertFalse(library.chart_preview.follows_view_opacity)
+
+    def test_an_open_difficulty_previews_the_editors_audio(self):
+        """Owner, 2026-11-05: after Add silence (unsaved) song select still
+        played the old track, the one the file on disk names."""
+        from types import SimpleNamespace
+        library = self.window._library
+        difficulty = next(iter(library.library_songs.values()))[0]
+        new = difficulty.folder / "audio (lead-in 1000ms).mp3"
+        self.window._states = {difficulty.path: SimpleNamespace(audio_path=new)}
+        library.schedule_preview(difficulty)
+        self.assertEqual(library._preview_pending[0], new)
+        self.window._states = {}
+        library.schedule_preview(difficulty)
+        self.assertNotEqual(library._preview_pending[0], new, "not open: the file's own")
+
+    def test_the_chart_preview_wears_the_sets_own_skin(self):
+        """Owner, 2026-11-05: it took the editor's skin, which carries the
+        editor's map, and never the selected set's own images."""
+        from PySide6.QtGui import QImage
+        for name in ("Tester - Test Song", "Other - Second Song"):
+            image = QImage(8, 8, QImage.Format_ARGB32)
+            image.fill(0)
+            image.save(str(self.root / name / "taiko-roll-middle.png"))
+        library = self.window._library
+        self.window.song_list.setCurrentRow(0)
+        library.difficulty_changed()
+        library._load_chart_preview()
+        library.jobs.drain()
+        skin = library.chart_preview.skin
+        self.assertTrue(skin.from_beatmap("taiko-roll-middle"))
+        self.assertEqual(library._chart_shown.parent, library._set_skin_key[1])
+        self.assertIsNot(skin, self.window.skin, "the editor's own skin is left alone")
+
+    def test_a_beatmap_skin_stays_with_its_own_set(self):
+        """Owner, 2026-11-05: leaving a set that ships a skin, the next song
+        went on wearing it until the editor was opened -- the fallback was
+        the editor's skin, which still carries the last map it had."""
+        from PySide6.QtGui import QImage
+        from library.skin import TaikoSkin
+        image = QImage(8, 8, QImage.Format_ARGB32)
+        image.fill(0)
+        image.save(str(self.root / "Tester - Test Song" / "taiko-roll-middle.png"))
+        # As after editing that set: the editor's skin holds its art.
+        self.window.skin = TaikoSkin(None, self.root / "Tester - Test Song")
+        library = self.window._library
+        shown = {}
+        for row in range(self.window.song_list.count()):
+            self.window.song_list.setCurrentRow(row)
+            library.difficulty_changed()
+            library._load_chart_preview()
+            library.jobs.drain()
+            shown[library._chart_shown.parent.name] = library.chart_preview.skin.from_beatmap("taiko-roll-middle")
+        self.assertEqual(shown, {"Tester - Test Song": True, "Other - Second Song": False})
 
     def test_the_chart_preview_comes_and_goes_with_the_song(self):
         # Like the difficulties (owner, 2026-10-08): an empty black band

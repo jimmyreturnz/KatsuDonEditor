@@ -3456,6 +3456,58 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <source>Separate tags with spaces, not commas: that is what a tag is in the .osu file. Left blank, the tags are not changed.</source>
             <translation>タグはカンマではなくスペースで区切ってください。.osuファイルではそれがタグの区切りです。空欄のままなら、タグは変更されません。</translation>
         </message>
+        <message>
+            <source>Add silence to the start of the song</source>
+            <translation>曲の頭に無音を追加</translation>
+        </message>
+        <message>
+            <source>For a first note that comes too soon, or plays late on a slow machine. Writes a new song file with this much silence before it, points every difficulty using the song at it, and shifts them all later by the same amount. The original file is kept.</source>
+            <translation>最初のノーツが早すぎる、または遅いPCで遅れて鳴る場合に。この長さの無音を頭に付けた新しい曲ファイルを書き出し、その曲を使う全難易度をそのファイルに切り替え、同じだけ後ろにずらします。元のファイルは残ります。</translation>
+        </message>
+        <message>
+            <source>Add silence and shift the map</source>
+            <translation>無音を追加して譜面をずらす</translation>
+        </message>
+        <message>
+            <source>Not written: {0} already exists.</source>
+            <translation>書き出していません：{0} は既にあります。</translation>
+        </message>
+        <message>
+            <source>Adding {0} ms of silence to {1}…</source>
+            <translation>{1} に {0} ms の無音を追加しています…</translation>
+        </message>
+        <message>
+            <source>Wrote {0} and shifted {1} difficulties by {2} ms.</source>
+            <translation>{0} を書き出し、{1} 個の難易度を {2} ms ずらしました。</translation>
+        </message>
+        <message>
+            <source>Not written: {0}</source>
+            <translation>書き出していません：{0}</translation>
+        </message>
+        <message>
+            <source>Add a bookmark at the playhead</source>
+            <translation>再生位置にブックマークを追加</translation>
+        </message>
+        <message>
+            <source>Remove the nearest bookmark</source>
+            <translation>一番近いブックマークを削除</translation>
+        </message>
+        <message>
+            <source>Previous bookmark</source>
+            <translation>前のブックマーク</translation>
+        </message>
+        <message>
+            <source>Next bookmark</source>
+            <translation>次のブックマーク</translation>
+        </message>
+        <message>
+            <source>Reset</source>
+            <translation>リセット</translation>
+        </message>
+        <message>
+            <source>Remove every bookmark</source>
+            <translation>ブックマークをすべて削除</translation>
+        </message>
     </context>
     <context>
         <name>Parameters</name>
@@ -4433,6 +4485,14 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
         <message>
             <source>Scale the selected green lines&apos; SV</source>
             <translation>選択した緑線のSVをスケール</translation>
+        </message>
+        <message>
+            <source>Add a bookmark at the playhead</source>
+            <translation>再生位置にブックマークを追加</translation>
+        </message>
+        <message>
+            <source>Remove the nearest bookmark</source>
+            <translation>一番近いブックマークを削除</translation>
         </message>
     </context>
     <context>

@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import math
 from bisect import bisect_left, bisect_right
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen
+from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QImage, QKeySequence, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 from ui import theme
 from osu_io.timing import TimingPoint, sorted_by_time, uninherited_points
 from chart.time_axis import TimeAxisMixin
-from ui.common import view_ground, view_ground_is_opaque
+from ui.common import paint_view_ground
 from ui.chart_views import (
     SV_LABEL_MIN_SPACING_PX,
     TimelineGameplay,
@@ -253,9 +253,9 @@ class SVEditorView(TimeAxisMixin, QWidget):
         # it again. Measured: over half of a six-chart Editor frame was Qt's
         # own work in processEvents, not these paintEvents. If a paintEvent
         # here ever stops filling its whole rect, this has to go with it, or
-        # stale pixels show through -- which is why it follows View opacity
-        # (`set_view_opacity`): below 100% the fill lets the backdrop through.
-        self.setAttribute(Qt.WA_OpaquePaintEvent, view_ground_is_opaque())
+        # stale pixels show through. Below 100% View opacity it still fills
+        # everything: `paint_view_ground` lays the backdrop under it itself.
+        self.setAttribute(Qt.WA_OpaquePaintEvent, True)
 
     # -- data ----------------------------------------------------------------
 
@@ -935,7 +935,7 @@ class SVEditorView(TimeAxisMixin, QWidget):
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
-        painter.fillRect(self.rect(), view_ground("#151b24"))
+        paint_view_ground(self, painter, "#151b24")
         self.draw_kiai_bands(painter)
         painter.setRenderHint(QPainter.Antialiasing, True)
 
@@ -980,6 +980,15 @@ class SVEditorView(TimeAxisMixin, QWidget):
         # same x, and space the BPM labels like the SV ones already are.
         last_drawn: tuple[int, str] | None = None
         previous_x = -1e9
+        # Every line runs the full height, so they are painted into one row,
+        # with the same pens and antialiasing, and the row is stretched down
+        # in one blit. Drawn each, a translucent 1px column rasterises row by
+        # row: mekurume [eclosion]'s 467 a frame were 2.7ms of the graph.
+        row = QImage(self.width(), 1, QImage.Format_ARGB32_Premultiplied)
+        row.fill(Qt.transparent)
+        lines = QPainter(row)
+        lines.setRenderHint(QPainter.Antialiasing, painter.testRenderHint(QPainter.Antialiasing))
+        labels: list[tuple[float, float]] = []
         for time_ms in self._line_kind_times[first:after_last]:
             kind = self._line_kinds[time_ms]
             x = self.x_for_time(time_ms)
@@ -991,18 +1000,24 @@ class SVEditorView(TimeAxisMixin, QWidget):
             if not selected and last_drawn == (round(x), kind):
                 continue
             last_drawn = (round(x), kind)
+            # Reaching past the row on both sides: no end caps in it.
             if selected:
-                painter.setPen(self.selected_pen)
-                painter.drawLine(round(x), 0, round(x), self.height())
-            painter.setPen(pens[kind])
-            painter.drawLine(round(x), 0, round(x), self.height())
+                lines.setPen(self.selected_pen)
+                lines.drawLine(round(x), -4, round(x), 4)
+            lines.setPen(pens[kind])
+            lines.drawLine(round(x), -4, round(x), 4)
             bpm = self._bpm_at.get(time_ms) if self.show_bpm_labels else None
             if bpm and clear_of_previous:
-                painter.save()
-                painter.setFont(self.label_font)
-                painter.setPen(self.label_pen)
+                labels.append((x, bpm))
+        lines.end()
+        painter.drawImage(QRect(0, 0, self.width(), self.height()), row)
+        if labels:
+            painter.save()
+            painter.setFont(self.label_font)
+            painter.setPen(self.label_pen)
+            for x, bpm in labels:
                 painter.drawText(QPointF(x + 4, self.height() - 6), f"{bpm:.0f} BPM")
-                painter.restore()
+            painter.restore()
 
         self._draw_sv_curve(painter, top, bottom, start_time, end_time)
         self._draw_placement_ghost(painter, top, bottom)

@@ -4,6 +4,11 @@
                                      [--gameplay] [--skin NAME] [--profile]
                                      [--at MS] [--playing RATE] [--view-opacity N]
                                      [--focused] [--no-motion] [--autoplay STYLE]
+                                     [--size WxH]
+
+--size sets the window (default 1920x1080): 3840x2160 is a 4K screen. Run
+it with QT_QPA_PLATFORM=windows to include flushing the frame to the
+screen, which the offscreen platform never does.
 
 --autoplay plays the gameplay preview's input drum in STYLE (autoplay.STYLES,
 or "off"); without it the run uses whatever the settings last saved.
@@ -46,7 +51,8 @@ window = gui.MainWindow()
 # Paint cost scales with pixels, and the offscreen platform's default screen
 # is far smaller than a real maximized window -- measuring at 758x180 would
 # understate every number here by the ratio of the areas.
-window.resize(1920, 1080)
+size = sys.argv[sys.argv.index("--size") + 1] if "--size" in sys.argv else "1920x1080"
+window.resize(*map(int, size.split("x")))
 window.show()
 window._load_map_path(path, refresh_difficulties=True)
 app.processEvents()
@@ -170,7 +176,7 @@ if "--no-settle" not in sys.argv:
           f"waited {perf_counter() - began:.1f}s")
 
 state = window.state
-print(f"map: {path.name}")
+print(f"map: {path.name}  window {window.width()}x{window.height()}")
 print(f"     {len(state.document.hit_objects)} hit objects, "
       f"{len(state.document.timing_points)} timing points")
 

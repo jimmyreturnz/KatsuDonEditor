@@ -386,6 +386,7 @@ class TaikoSkin:
         see-through `taiko-roll-middle`/`taiko-roll-end` (and spinner) so only
         the head is left."""
         self.name = folder.name if folder is not None else ""
+        self.folder = folder
         self.sounds: dict[str, Path] = {}
         self.ui_sounds: dict[str, Path] = {}
         self._sources: dict[str, QPixmap] = {}

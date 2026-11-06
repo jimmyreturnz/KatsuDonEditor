@@ -84,6 +84,19 @@ def write_audio(pcm: bytes, path_stem: Path, suffix: str = ".mp3") -> Path:
     return target
 
 
+def with_lead_in(pcm: bytes, ms: int) -> bytes:
+    """`pcm` (44.1kHz stereo s16) after `ms` of digital silence: the lead-in
+    a map gets when its first note comes too soon after the song starts to be
+    read, or plays late on a slow machine (owner, 2026-11-04)."""
+    return bytes(frame_for_ms(ms) * CHANNELS * 2) + pcm
+
+
+def lead_in_to_file(pcm: bytes, ms: int, path_stem: str, suffix: str = ".mp3") -> str:
+    """Thread entry point: the ffmpeg encode is a subprocess, so it
+    releases the GIL, and the padding is one allocation."""
+    return str(write_audio(with_lead_in(pcm, ms), Path(path_stem), suffix))
+
+
 def render_to_file(pcm: bytes, rate: float, pitch: bool, path_stem: str, suffix: str = ".mp3") -> str:
     """Worker-process entry point: render, write, return the file written."""
     return str(write_audio(render(pcm, rate, pitch), Path(path_stem), suffix))

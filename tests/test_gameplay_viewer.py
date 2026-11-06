@@ -781,6 +781,45 @@ class PopUpTests(unittest.TestCase):
         view.current_time = 1000.0
         self.assertIsNone(view._pop_up(self._fake(-300.0)))
 
+    def test_its_beats_are_the_musics_not_the_maps_most_common(self):
+        """Kikuo - Gakkou o Yasunda Hi no Koto (owner, 2026-11-05): 0.8 BPM
+        gimmick lines made 75000ms the "main beat", and every pop-up stood
+        for minutes with its fade long over. The beat is the red line after
+        its own 1ms one."""
+        view = self._view()
+        view._main_beat = 75000.0
+        self.assertAlmostEqual(view._pop_up_lead(self._fake(-300.0)), 300.0 / 180.0 * 387.0)
+
+    def test_standing_pop_ups_paint_from_layers_as_they_would_live(self):
+        """Kikuo - Gakkou o Yasunda Hi no Koto stands thousands of them at
+        once (`_draw_notes`): composed once and blitted, the frame must be the
+        one drawing each live gives, and the next frame must reuse the layers."""
+        from PySide6.QtGui import QImage
+        from types import SimpleNamespace
+        view, live = self._view(), self._view()
+        chart = SimpleNamespace(
+            hit_objects=[self._fake(-500.0 - 0.3 * k, time=1000 + k) for k in range(300)],  # leads > the fade
+            timing_points=view.timing_points, slider_multiplier=1.8)
+        view.refresh_notes(chart)
+        live.refresh_notes(chart)
+        live._draw_notes = lambda p, shown, cy, nr, br: [live._draw_note(p, n, cy, nr, br) for _i, n in shown]
+
+        def frame(v, now):
+            v.current_time = now
+            image = QImage(v.size(), QImage.Format_ARGB32_Premultiplied)
+            image.fill(0)
+            v.render(image)
+            return image
+
+        a, b = frame(view, 990.0), frame(live, 990.0)
+        self.assertTrue(view._pop_up_layers, "standing pop-ups went through layers")
+        worst = max((abs(x - y) for x, y in zip(bytes(a.constBits()), bytes(b.constBits()))), default=0)
+        self.assertLessEqual(worst, 4, "8-bit rounding of a regrouped over, no more")
+        before = {id(layer[2]) for layer in view._pop_up_layers.values()}
+        frame(view, 990.5)
+        after = {id(layer[2]) for layer in view._pop_up_layers.values()}
+        self.assertTrue(before & after, "an unchanged run is not composed again")
+
     def test_at_an_ordinary_speed_it_is_the_usual_fake_slider(self):
         view = self._view()
         view.current_time = 450.0
@@ -858,13 +897,24 @@ class AutoplayRollOverNotesTests(unittest.TestCase):
     def test_a_roll_alone_is_rolled(self):
         self.assertGreater(len(self._hits([self._roll()])), 8)
 
-    def test_the_note_before_a_nan_slider_is_not_hit(self):
-        """Owner, 2026-10-28: autoplay can't hit it either (taiko-rs's
-        `unhittable`): the circle at 1000, not 500 or 2000."""
+    def test_what_stable_never_reaches_past_a_nan_slider_is_not_hit(self):
+        """Stable's object window misses whatever its derailed search skips
+        (`stable_window`, owner-checked 2026-11-05). Seven objects put the
+        NaN slider on the search's first midpoint, so all three circles before
+        it go -- not only the one right before it -- and the three after stay."""
+        times = (1000, 1100, 1200, 1400, 1500, 1600)
+        notes = [HitObject(x=256, y=192, time=t, type=1, hit_sound=0) for t in times]
+        nan = HitObject(x=256, y=192, time=1300, type=2, hit_sound=0,
+                        extras=("L|268:192", "1", "NaN"))
+        self.assertEqual(self._hits([*notes, nan]), [1400.0, 1500.0, 1600.0])
+
+    def test_a_nan_slider_the_search_never_lands_on_hides_nothing(self):
+        """Four objects: every circle's search settles before reaching it,
+        so stable plays the circle before it, which the old rule dropped."""
         notes = [HitObject(x=256, y=192, time=t, type=1, hit_sound=0) for t in (500, 1000, 2000)]
         nan = HitObject(x=256, y=192, time=1499, type=2, hit_sound=0,
                         extras=("L|268:192", "1", "NaN"))
-        self.assertEqual(self._hits([*notes, nan]), [500.0, 2000.0])
+        self.assertEqual(self._hits([*notes, nan]), [500.0, 1000.0, 2000.0])
 
     def test_a_sub_ms_fake_slider_is_not_played(self):
         """Owner, 2026-10-28: written 0.1 to -0.1 long, left alone."""
@@ -937,14 +987,26 @@ class GimmickRollTickTests(unittest.TestCase):
         """We Love Hardcore (katacheh), 242401: a 600px roll under a 0.06ms
         red line and a near-zero SV came to 10^12 ticks and froze the editor
         (owner, 2026-10-28). osu!'s 6ms / 0.1x floors make it 600 / 14 beats
-        of 6ms: 257ms at 1/2-beat ticks, 86 of them."""
+        of 6ms: 257ms. Stable's ticks are 1/8 of the raw beat doubled up
+        into 60-120ms, 0.0079 x 2^13 = 64.76ms: 4 of them, not the 86 at 3ms
+        apart that played as a buzz (owner, 2026-11-04)."""
         from ui.common import drumroll_tick_times
         note = HitObject(x=256, y=192, time=1000, type=2, hit_sound=0, extras=("L|268:192", "1", "600.25"))
         red = TimingPoint(time=0.0, beat_length=0.0632386404957066, meter=4)
         green = TimingPoint(time=500.0, beat_length=-1e12, uninherited_flag=0)
         ticks = drumroll_tick_times(note, [red], [red, green], 1.4)
-        self.assertEqual(len(ticks), 86)
-        self.assertEqual(ticks[1] - ticks[0], 3.0)
+        self.assertEqual(len(ticks), 4)
+        self.assertAlmostEqual(ticks[1] - ticks[0], 0.0632386404957066 / 8 * 2 ** 13)
+
+    def test_ticks_stay_60_to_120ms_apart_at_any_bpm(self):
+        """Stable's rule against the old 1/4-beat one: the same between 63
+        and 500 BPM, and held inside 60-120ms outside it."""
+        from ui.common import drumroll_tick_times
+        note = HitObject(x=256, y=192, time=0, type=2, hit_sound=0, extras=("L|268:192", "1", "20000"))
+        for beat, spacing in ((500.0, 62.5), (300.0, 75.0), (200.0, 100.0), (1000.0, 62.5), (6.0, 96.0)):
+            red = TimingPoint(time=0.0, beat_length=beat, meter=4)
+            ticks = drumroll_tick_times(note, [red], [red], 1.4)
+            self.assertAlmostEqual(ticks[1] - ticks[0], spacing, msg=beat)
 
 
 class DrawOrderTests(unittest.TestCase):
@@ -1463,6 +1525,90 @@ class BarlineTests(unittest.TestCase):
         self.assertEqual(len(times), len(set(times)))
 
 
+
+class BlockCullingTests(unittest.TestCase):
+    """`_on_screen` and `_barlines` skip whole blocks of notes and sections
+    (taiko-rs's NoteBlock); the answer must be the one testing every item
+    gives, on a chart built to defeat the bounds: a crawling note that sizes
+    the range for the whole map, a 60000 BPM wall of red lines, fake sliders
+    short and long, pop-ups on 1ms red lines, drumrolls and a spinner."""
+
+    def setUp(self) -> None:
+        from tests.osu_fixtures import FULL_V14
+        head = FULL_V14.split(b"[TimingPoints]")[0].decode()
+        points = ["0,500,4,1,0,100,1,0", "1000,-10000,4,1,0,100,0,0", "1500,-100,4,1,0,100,0,0"]
+        points += [f"{t},1,{1 + t % 3},1,0,100,1,{8 if t % 20 else 0}" for t in range(10000, 13000, 10)]
+        points += ["13000,500,4,1,0,100,1,0", "16000,-25,4,1,0,100,0,0"]
+        objects = ["256,192,1000,1,0,0:0:0:0:"]
+        for i, t in enumerate(range(2000, 30000, 47)):
+            kind = i % 9
+            if kind == 3:
+                objects.append(f"256,192,{t},2,0,L|300:192,1,-0.0001")
+            elif kind == 5:
+                objects.append(f"256,192,{t},2,0,L|300:192,1,{-800 if i % 2 else -300}")
+            elif kind == 7:
+                objects.append(f"256,192,{t},2,0,L|300:192,1,120")
+            else:
+                objects.append(f"256,192,{t},1,{2 if i % 2 else 0},0:0:0:0:")
+        objects.append("256,192,30500,12,0,31500,0:0:0:0:")
+        # Pop-ups: long fake sliders, each on its own 1ms red line.
+        for t in (20003, 24006):
+            points += [f"{t},1,4,1,0,100,1,0", f"{t + 1},500,4,1,0,100,1,0"]
+            objects.append(f"256,192,{t},2,0,L|300:192,1,-510")
+        points.sort(key=lambda line: float(line.split(",")[0]))
+        objects.sort(key=lambda line: int(line.split(",")[2]))
+        newline = chr(10)
+        text = (head + "[TimingPoints]" + newline + newline.join(points) + newline * 2
+                + "[HitObjects]" + newline + newline.join(objects) + newline)
+        self._temp = tempfile.TemporaryDirectory()
+        path = Path(self._temp.name) / "blocks.osu"
+        path.write_text(text, encoding="utf-8")
+        self.view = _viewer(parse_osu(path))
+        self.view.resize(1754, 257)
+
+    def tearDown(self) -> None:
+        self._temp.cleanup()
+
+    def _every_note(self, first, after_last, radius):
+        view = self.view
+        ppb = view.px_per_beat
+        ahead = (view.width() - view._hit_x() + radius) / ppb
+        behind = (view._hit_x() + radius) / ppb
+        now = view.current_time
+        return [
+            i for i in range(first, after_last)
+            for time, trail, inverse, lead, gone in (view._screen_spans()[i],)
+            if now <= gone and (
+                time - (trail - time) - ahead * inverse <= now <= trail + behind * inverse
+                or time <= now + lead
+                or (gone < float("inf") and trail > time and now >= time - (trail - time)))]
+
+    def test_the_same_notes_and_barlines_as_testing_every_one(self):
+        view = self.view
+        count = len(view.notes)
+        self.assertGreater(count, 4 * gameplay_view.NOTE_BLOCK)
+        self.assertGreater(len(view.beat_points), 4 * gameplay_view.SECTION_BLOCK)
+        shown = bars = 0
+        for now in [float(t) for t in range(0, 33000, 37)] + [10000.5, 11234.0, 20003.0, 24006.5]:
+            view.current_time = now
+            radius = view.height() * gameplay_view.TAIKO_NOTE_SIZE / 2.0 * gameplay_view.TAIKO_STRONG_SCALE
+            for first, after_last in ((0, count), (130, 401), (255, 257)):
+                expected = self._every_note(first, after_last, radius)
+                self.assertEqual(view._on_screen(first, after_last, radius), expected, now)
+                shown += len(expected)
+            start, end = view.visible_time_range()
+            blocked = view._barlines(start, end)
+            blocks, view._section_blocks = view._section_blocks, []
+            try:
+                self.assertEqual(blocked, view._barlines(start, end), now)
+            finally:
+                view._section_blocks = blocks
+            bars += len(blocked)
+        # Not vacuous: plenty was on screen to agree about.
+        self.assertGreater(shown, 1000)
+        self.assertGreater(bars, 1000)
+
+
 class PaintAndInputTests(unittest.TestCase):
     def setUp(self) -> None:
         self._temp = tempfile.TemporaryDirectory()
@@ -1659,6 +1805,32 @@ class GameplayViewIntegrationTests(unittest.TestCase):
 
     def _frame(self):
         return next(f for f in self.window._editor_views if f.view_type == "gameplay")
+
+    def test_clicking_a_note_selects_it_in_the_editor_chart(self):
+        """Owner, 2026-11-04: not a test play, so a click on a note in the
+        Editor page's preview is "that one" in the chart view."""
+        from PySide6.QtTest import QTest
+        view = self._frame().gameplay_view
+        view.resize(1200, 200)
+        note = next(n for n in view.notes if n.is_circle and not view._has_been_hit(n))
+        view.set_time(note.time - 200, force=True)
+        x = round(view.x_for_time(note.time))
+        QTest.mouseClick(view, Qt.LeftButton, Qt.NoModifier, QPoint(x, view.height() // 2))
+        chart = next(f for f in self.window._editor_views if f.view_type == "chart").chart_view
+        self.assertEqual(chart.selected, {note.original_index})
+
+    def test_a_click_off_every_note_selects_nothing(self):
+        from PySide6.QtTest import QTest
+        view = self._frame().gameplay_view
+        view.resize(1200, 200)
+        chart = next(f for f in self.window._editor_views if f.view_type == "chart").chart_view
+        chart.selected = {12345}
+        QTest.mouseClick(view, Qt.LeftButton, Qt.NoModifier, QPoint(5, 5))
+        self.assertEqual(chart.selected, {12345})
+
+    def test_a_gimmick_layer_preview_does_not_select(self):
+        self.assertTrue(self._frame().gameplay_view.click_selects)
+        self.assertFalse(gameplay_view.GameplayViewerView().click_selects)
 
     def test_the_gameplay_view_type_is_a_real_widget_not_a_placeholder(self):
         view = self._frame().gameplay_view

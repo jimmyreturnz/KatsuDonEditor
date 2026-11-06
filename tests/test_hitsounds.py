@@ -93,7 +93,8 @@ class SampleChoiceTests(unittest.TestCase):
         """Owner, 2026-10-10: a roll is heard the way the autoplay hits it --
         a don every tick, head to end. At SliderMultiplier 1.2, 1.0x and a
         400ms beat (150 BPM: 1/4 ticks), length 120 is one beat: ticks at 0,
-        100, 200, 300, 400. At 120 BPM they are 1/8, and above 250 BPM 1/2."""
+        100, 200, 300, 400. Always 60-120ms apart (stable's drumroll): 1/8
+        at 120 BPM, 1/2 at 300."""
         roll = HitObject(x=256, y=192, time=1000, type=TYPE_SLIDER, hit_sound=0,
                          extras=("L|356:192", "1", "120"))
         points = [TimingPoint(time=0.0, beat_length=400.0, meter=4)]
@@ -105,6 +106,15 @@ class SampleChoiceTests(unittest.TestCase):
             points = [TimingPoint(time=0.0, beat_length=beat, meter=4)]
             times, _keys, _volumes = gui.hitsound_schedule([roll], points, slider_multiplier=1.2)
             self.assertEqual(times[1] - times[0], spacing, beat)
+
+    def test_rolls_stacked_on_one_place_are_one_hit_a_tick(self):
+        """Owner, 2026-11-04: a stack is hit once per tick, and the rest of
+        the stack is no miss. A longer roll under it keeps its own tail."""
+        points = [TimingPoint(time=0.0, beat_length=400.0, meter=4)]
+        rolls = [HitObject(x=256, y=192, time=1000, type=TYPE_SLIDER, hit_sound=0,
+                           extras=("L|356:192", "1", length)) for length in ("120", "120", "120", "240")]
+        times, _keys, _volumes = gui.hitsound_schedule(rolls, points, slider_multiplier=1.2)
+        self.assertEqual(times, [1000.0 + 100 * k for k in range(9)])
 
     def test_a_roll_across_notes_is_heard_as_the_notes(self):
         """Owner, 2026-10-28: a real drumroll mapped through dons and kats

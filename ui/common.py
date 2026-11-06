@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import operator
 from pathlib import Path
-from PySide6.QtCore import QPointF, QRect, Qt
+from PySide6.QtCore import QLine, QPoint, QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import QImage, QColor, QFont, QFontMetrics, QPainter, QPen, QPixmap, QIcon
 from PySide6.QtWidgets import (
     QFrame, QPushButton, QScrollArea, QSizePolicy, QStyle, QStyleOptionButton, QWidget,
@@ -305,9 +305,15 @@ def spans_circles(start_ms: float, end_ms: float, circle_times) -> bool:
 
 
 def drumroll_tick_times(note, beat_points, timing_points, slider_multiplier) -> list[float]:
-    """Where a real drumroll's ticks fall: every 1/4 beat of its red line,
-    from the head to the end -- 1/8 at 125 BPM or slower, 1/2 above 250, as
-    osu!taiko does (taiko-rs's `beatmap.rs` has the same rule). A fake slider
+    """Where a real drumroll's ticks fall, from the head to the end: 1/8 of
+    its red line's beat, doubled while under 60ms and halved while over
+    120ms, so always 60-120ms apart whatever the BPM -- osu! stable's
+    drumroll, read from osu!.exe (2026-11-04). The 1/4-beat rule this
+    replaced (1/8 at 125 BPM or slower, 1/2 above 250) agrees between 63 and
+    500 BPM and nowhere else: under a gimmick's 60000 BPM line it ticked
+    every 1.5ms, and rolls stacked on one place were hit as a buzz (owner,
+    2026-11-04). The spacing uses the line's own beat, unclamped, as stable
+    does. A fake slider
     -- no positive duration -- has none. SliderTickRate 3 (1/3 beat) is not
     read by the parser, so not here. Nor does one written 0.1 to -0.1 long:
     +0.0001 is a fake slider too, and three stacked on a note sounded three
@@ -328,10 +334,14 @@ def drumroll_tick_times(note, beat_points, timing_points, slider_multiplier) -> 
     beat_length = min(60000.0, max(6.0, timing.beat_length))
     sv = min(10.0, max(0.1, sv_at(timing_points, note.time)))
     duration = duration_for_slider_length(note.length * note.slides, beat_length, sv, slider_multiplier)
-    bpm = 60000.0 / beat_length
-    divisor = 8 if bpm <= 125 else 2 if bpm > 250 else 4
-    tick = beat_length / divisor
-    if duration <= 0 or tick <= 0:
+    # ponytail: stable's /6 for SliderTickRate 3, 6 or 1.5 and its pre-v8
+    # SV-scaled beat are not read; add with the parser fields.
+    tick = timing.beat_length / 8
+    while tick < 60.0:
+        tick *= 2.0
+    while tick > 120.0:
+        tick /= 2.0
+    if duration <= 0:
         return []
     count = int(duration / tick + 1e-6) + 1
     return [note.time + index * tick for index in range(count)]
@@ -389,8 +399,13 @@ def draw_pixmap_subpixel(painter: QPainter, pixmap: QPixmap, x: float, y: float)
     So each sprite gets copies shifted by 1/4, 1/2 and 3/4 of a pixel, made
     once: (1 - f) of the sprite plus f of it one pixel over, added with
     CompositionMode_Plus, which on premultiplied pixels is exactly a linear
-    resample. Drawing is still one unscaled blit.
+    resample. Drawing is still one unscaled blit -- so paint with
+    SmoothPixmapTransform off: it changes no pixel of an unscaled blit and
+    makes it 5x slower (525 barlines of a wall, 9.0ms -> 1.7ms). Toggled
+    per call instead it cost a millisecond a frame of its own.
     """
+    if is_blank(pixmap):
+        return  # a gimmick skin's see-through cap or circle base
     ratio = pixmap.devicePixelRatio()
     if painter.device().devicePixelRatioF() != ratio:
         # A pixmap at another density is resampled by the draw already.
@@ -414,6 +429,105 @@ def draw_pixmap_subpixel(painter: QPainter, pixmap: QPixmap, x: float, y: float)
             _SUBPIXEL_SHIFTED[key] = shifted = QPixmap.fromImage(image)
         pixmap = shifted
     painter.drawPixmap(QPointF(whole / ratio, y), pixmap)
+
+
+# (pen, antialiasing, y0, y1) -> (first row, last row) a vertical line covers,
+# or None when its rows differ (an antialiased end); see draw_vertical_lines.
+_LINE_ROWS: dict[tuple, tuple[int, int] | None] = {}
+
+
+def _line_rows(pen: QPen, antialiased: bool, y0: int, y1: int) -> tuple[int, int] | None:
+    key = (pen.color().rgba(), pen.widthF(), int(pen.capStyle().value), antialiased, y0, y1)
+    if key not in _LINE_ROWS:
+        top, bottom = min(y0, y1), max(y0, y1)
+        margin = int(math.ceil(pen.widthF())) + 2
+        image = QImage(16, bottom - top + 2 * margin + 1, QImage.Format_ARGB32_Premultiplied)
+        image.fill(Qt.transparent)
+        p = QPainter(image)
+        p.setRenderHint(QPainter.Antialiasing, antialiased)
+        p.setPen(pen)
+        p.drawLine(8, y0 - top + margin, 8, y1 - top + margin)
+        p.end()
+        stride = image.bytesPerLine()
+        bits = bytes(image.constBits())
+        rows = [bits[r * stride:r * stride + 64] for r in range(image.height())]
+        covered = [r for r, row in enumerate(rows) if any(row)]
+        same = bool(covered) and covered == list(range(covered[0], covered[-1] + 1)) and all(
+            rows[r] == rows[covered[0]] for r in covered)
+        if len(_LINE_ROWS) > 256:
+            _LINE_ROWS.clear()
+        _LINE_ROWS[key] = (covered[0] + top - margin, covered[-1] + top - margin) if same else None
+    return _LINE_ROWS[key]
+
+
+def draw_vertical_lines(painter: QPainter, pen: QPen, xs, y0: int, y1: int) -> None:
+    """`painter.drawLine(x, y0, x, y1)` for every x in `xs`, in one blit.
+
+    The lines share their rows, so the picture is one row repeated: painted
+    once with the same pen, hint and order, then stretched. Qt rasterises a
+    vertical line row by row, and a 2px pen through its stroker -- the snap
+    grid's ticks were 4.8ms of a 7ms chart lane on Nbt-Hwt [The Pharaoh's
+    Curse], the barline wall of mekurume [eclosion] 5.9ms of a preview frame.
+    Where the rows a line covers are not all alike (an antialiased end cap),
+    it draws the lines one by one as before."""
+    xs = list(xs)
+    if not xs:
+        return
+    antialiased = painter.testRenderHint(QPainter.Antialiasing)
+    rows = _line_rows(pen, antialiased, y0, y1)
+    if rows is None:
+        painter.setPen(pen)
+        painter.drawLines([QLine(x, y0, x, y1) for x in xs])
+        return
+    width = painter.device().width()
+    row = QImage(width, 1, QImage.Format_ARGB32_Premultiplied)
+    row.fill(Qt.transparent)
+    p = QPainter(row)
+    p.setRenderHint(QPainter.Antialiasing, antialiased)
+    p.setPen(pen)
+    reach = int(math.ceil(pen.widthF())) + 2
+    for x in xs:
+        p.drawLine(x, -reach, x, reach)
+    p.end()
+    painter.drawImage(QRect(0, rows[0], width, rows[1] - rows[0] + 1), row)
+
+
+# pixmap.cacheKey() -> whether every pixel is transparent; see draw_stretched.
+_BLANK_PIXMAPS: dict[int, bool] = {}
+
+
+def is_blank(pixmap: QPixmap) -> bool:
+    """Whether every pixel of `pixmap` is transparent, checked once per pixmap."""
+    if pixmap.isNull():
+        return True  # and constBits() of its image is a null pointer: a crash
+    key = pixmap.cacheKey()
+    blank = _BLANK_PIXMAPS.get(key)
+    if blank is None:
+        alpha = pixmap.toImage().convertToFormat(QImage.Format_Alpha8)
+        # Row by row: the padding to 4 bytes is not zeroed, and read with the
+        # pixels it called Kikuo - Gakkou o Yasunda Hi no Koto's see-through
+        # 1x1 track drawn, 150 filtered stretches a frame.
+        bits, stride, width = bytes(alpha.constBits()), alpha.bytesPerLine(), alpha.width()
+        blank = not any(any(bits[row * stride:row * stride + width]) for row in range(alpha.height()))
+        if len(_BLANK_PIXMAPS) > 512:
+            _BLANK_PIXMAPS.clear()  # like _SUBPIXEL_SHIFTED: grows only on resize
+        _BLANK_PIXMAPS[key] = blank
+    return blank
+
+
+def draw_stretched(painter: QPainter, rect: QRectF, pixmap: QPixmap) -> None:
+    """`pixmap` stretched across `rect`, filtered -- unless it is blank.
+
+    A gimmick map hides its roll tracks by shipping a transparent 1x1
+    `taiko-roll-middle`, and the stretch is filtered over the whole area
+    regardless: 58 invisible pop-up tracks a frame were 3ms of senpai,
+    notice me! [w]. Checked once per pixmap."""
+    if is_blank(pixmap):
+        return
+    smooth = painter.testRenderHint(QPainter.SmoothPixmapTransform)
+    painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+    painter.drawPixmap(rect, pixmap, QRectF(pixmap.rect()))
+    painter.setRenderHint(QPainter.SmoothPixmapTransform, smooth)
 
 
 def draw_note_sprite(
@@ -569,6 +683,79 @@ def view_ground(colour: str) -> QColor:
     return ground
 
 
+def view_underlay(widget, colour: str) -> QPixmap | None:
+    """`widget`'s ground below 100% View opacity, `colour` at that alpha
+    over what shows through it -- the page's map backdrop and the view
+    frame's own ground (`view_frame_ground`) -- as one opaque, cached pixmap.
+    Everything else between is see-through chrome (`see_through`). Composed
+    by hand rather than through `QWidget.render`, which lays out what it
+    renders: a lane moved 148px inside its frame mid-test.
+
+    The lane draws this itself and stays WA_OpaquePaintEvent. Left see-through
+    it made Qt repaint everything under it each frame -- the backdrop, the
+    page, the scroll area, the view frames, ten layers of a full window's
+    pixels for a lane that changed -- 1.9ms of every 1080p frame inside
+    processEvents, and four times the pixels at 4K (2026-11-04). taiko-rs
+    has no such cost because it draws into one surface; this is that, for
+    the one region a lane covers. None off a page with no backdrop.
+
+    Rebuilt when the lane moves against the backdrop (a scroll, a layout),
+    resizes, or View opacity, the picture or the theme changes -- the last
+    two re-bake the backdrop, which gives its pixmap a new cacheKey.
+    """
+    chain, ancestor = [], widget.parentWidget()
+    while ancestor is not None and not hasattr(ancestor, "baked"):
+        chain.append(ancestor)
+        ancestor = ancestor.parentWidget()
+    if ancestor is None or widget.width() <= 0 or widget.height() <= 0:
+        return None
+    baked = ancestor.baked()
+    origin = widget.mapTo(ancestor, QPoint(0, 0))
+    key = (widget.width(), widget.height(), origin.x(), origin.y(), _view_ground_alpha, baked.cacheKey(), colour)
+    cached = getattr(widget, "_view_underlay", None)
+    if cached is not None and cached[0] == key:
+        return cached[1]
+    layer = QPixmap(widget.size())
+    painter = QPainter(layer)
+    painter.drawPixmap(0, 0, baked, origin.x(), origin.y(), widget.width(), widget.height())
+    for container in reversed(chain):
+        ground = getattr(container, "view_frame_ground", None)
+        if ground is not None:
+            painter.fillRect(layer.rect(), ground())
+    # Baked in: blended once here, a frame is one opaque blit, which is
+    # what the 100% path costs.
+    painter.fillRect(layer.rect(), view_ground(colour))
+    painter.end()
+    widget._view_underlay = (key, layer)
+    return layer
+
+
+def paint_view_ground(widget, painter: QPainter, colour: str) -> None:
+    """Fill a lane's whole rect with its ground at View opacity, over the
+    backdrop it lets through (`view_underlay`), so the lane can stay opaque
+    to Qt at any opacity."""
+    # Re-asserted, not set once: the view frame's sheet gives its children a
+    # translucent `background`, and Qt's stylesheet polish clears
+    # WA_OpaquePaintEvent on any widget it styles that way -- measured, a
+    # lane was see-through again from the moment its frame was built, and
+    # every frame repainted the whole page under it. A polish costs at most
+    # the one frame before this paint.
+    underlay = None if view_ground_is_opaque() else view_underlay(widget, colour)
+    was_opaque = widget.testAttribute(Qt.WA_OpaquePaintEvent)
+    # Off a backdrop (the Fancy page's docks) the lane is see-through to Qt
+    # as it always was; that takes effect from the next frame, so this one,
+    # whose parents were not repainted, is filled opaque rather than smeared.
+    wants_opaque = view_ground_is_opaque() or underlay is not None
+    if was_opaque != wants_opaque:
+        widget.setAttribute(Qt.WA_OpaquePaintEvent, wants_opaque)
+    if underlay is not None:
+        painter.drawPixmap(0, 0, underlay)
+        return
+    if was_opaque and not wants_opaque:
+        painter.fillRect(widget.rect(), theme.screen(colour))
+    painter.fillRect(widget.rect(), view_ground(colour))
+
+
 # The app's accent, used by the global button style and anywhere a widget has
 # to reproduce it in code rather than in a stylesheet.
 ACCENT_PINK = "#f3a6bd"
@@ -601,6 +788,233 @@ def next_frame_due(due_ns: int, now_ns: int, interval_ns: int) -> int | None:
         return None
     due_ns += interval_ns
     return due_ns if due_ns >= now_ns else now_ns + interval_ns
+
+
+class VsyncPacer:
+    """taiko-rs's `VsyncPacer` (clock.rs, 2026-11-04): each frame's time on
+    the refresh grid rather than the moment it was woken for.
+
+    A frame woken a little early or late around a vblank is still *shown* one
+    refresh after the last, so content drawn for the wake time moves by
+    uneven steps on even refreshes. The refresh it goes by is the one the
+    wakeups show, not the one Qt reports, and it glides to the fraction of a
+    millisecond (99.93Hz is not 100). All times are in ms.
+    """
+
+    PACE_STEPS = 24
+    PACE_STEPS_KEPT = 120
+
+    def __init__(self) -> None:
+        from collections import deque
+        self.period = 1000.0 / 60.0
+        self.told_hz = 0.0
+        self.last: tuple[float, float] | None = None  # (frame time, when it was woken)
+        self.steps = deque(maxlen=self.PACE_STEPS_KEPT)
+
+    def frame_time(self, acquired: float, refresh_hz: float) -> float:
+        if refresh_hz != self.told_hz:
+            self.told_hz = refresh_hz
+            self.period = 1000.0 / min(max(refresh_hz, 24.0), 1000.0)
+            self.last = None
+            self.steps.clear()
+        if self.last is None:
+            self.last = (acquired, acquired)
+            return acquired
+        previous, previous_acquired = self.last
+        step = acquired - previous_acquired
+        if 0.5 <= step < 250.0:
+            self.steps.append(step)
+        seen = self.seen_refresh()
+        if seen is not None:
+            if abs(seen - self.period) > 0.15 * self.period:
+                # The wakeups come at another refresh than the one told.
+                self.period = seen
+                self.last = (acquired, acquired)
+                return acquired
+            self.period += (seen - self.period) * 0.05
+        period = self.period
+        time = previous + period
+        error = acquired - time
+        if error > 0.5 * period:
+            # Came late: the frame before stayed up for whole refreshes more.
+            missed = round(error / period)
+            if missed > 8:
+                # A stall, or the window was hidden: pick up from now.
+                self.last = (acquired, acquired)
+                return acquired
+            time += missed * period
+            error -= missed * period
+        if abs(error) < 0.5 * period:
+            # Near the grid: drift toward the real clock slowly enough that
+            # its jitter does not show.
+            time += 0.05 * error
+        elif error < -2.0 * period:
+            time = acquired
+        self.last = (time, acquired)
+        return time
+
+    def seen_refresh(self) -> float | None:
+        """The mean of the wakeup steps near their median: the median alone
+        lands on one step's jitter, the mean of all of them counts slow frames."""
+        if len(self.steps) < self.PACE_STEPS:
+            return None
+        ordered = sorted(self.steps)
+        median = ordered[len(ordered) // 2]
+        near = [step for step in ordered if abs(step - median) < 0.5 * median]
+        return sum(near) / len(near)
+
+
+class VBlankWaiter:
+    """Calls `on_vblank()` from a thread of its own once per refresh of a
+    screen, so frames can be rendered on vsync.
+
+    Qt's widgets have no vsync: the render loop was a 4ms timer, so frames
+    could only start on a 4ms grid, which beats against every refresh that is
+    not a multiple of it -- 8 and 12ms frames on a 100Hz screen, 8, 8, 8, 4 on
+    144Hz -- and DWM showed whichever was newest at each vblank. That is the
+    stutter a fast machine had as much as a slow one. taiko-rs renders under
+    wgpu's Fifo present and never had it.
+
+    `D3DKMTWaitForVerticalBlankEvent` on the screen's own adapter, as Chromium
+    waits; `DwmFlush` if that cannot be opened. `on_vblank` must be cheap and
+    thread-safe: it is meant to post to the GUI thread, and the caller drops a
+    tick the GUI thread has not consumed yet rather than queueing a burst.
+    """
+
+    def __init__(self, on_vblank) -> None:
+        import threading
+        self._on_vblank = on_vblank
+        self._lock = threading.Lock()
+        self._adapter = None  # (hAdapter, VidPnSourceId)
+        self._running = False
+        self._thread = None
+        self.method = None
+
+    @staticmethod
+    def available() -> bool:
+        import sys
+        from PySide6.QtGui import QGuiApplication
+        return sys.platform == "win32" and QGuiApplication.platformName() == "windows"
+
+    def start(self, screen) -> bool:
+        """Begin waiting on `screen`'s vblanks; False if neither wait works here."""
+        import threading
+        if not self.available():
+            return False
+        self.retarget(screen)
+        if self.method is None:
+            return False
+        self._running = True
+        self._thread = threading.Thread(target=self._run, name="vblank", daemon=True)
+        self._thread.start()
+        return True
+
+    def retarget(self, screen) -> None:
+        """Wait on `screen` from now on: a 60Hz panel beside a 144Hz monitor."""
+        import ctypes
+        from ctypes import wintypes
+        with self._lock:
+            self._close_adapter()
+            name = self._device_name(screen)
+            try:
+                gdi32 = ctypes.WinDLL("gdi32")
+                gdi32.CreateDCW.restype = wintypes.HDC
+                gdi32.CreateDCW.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.LPCWSTR, ctypes.c_void_p)
+                hdc = gdi32.CreateDCW(None, name, None, None) if name else None
+                if hdc:
+                    request = _OpenAdapterFromHdc(hDc=hdc)
+                    status = gdi32.D3DKMTOpenAdapterFromHdc(ctypes.byref(request))
+                    gdi32.DeleteDC(wintypes.HDC(hdc))
+                    if status == 0:
+                        self._adapter = (request.hAdapter, request.VidPnSourceId)
+                        self.method = "D3DKMT"
+                        return
+            except (OSError, AttributeError):
+                pass
+            try:
+                ctypes.WinDLL("dwmapi").DwmFlush
+                self.method = "DwmFlush"
+            except (OSError, AttributeError):
+                self.method = None
+
+    @staticmethod
+    def _device_name(screen) -> str:
+        """`\\\\.\\DISPLAYn` for `screen`. QScreen.name() is the monitor's
+        model ("27G2G4") on Windows, which CreateDC cannot open, so the
+        monitor is found from the screen's top-left -- Qt keeps that corner
+        native under display scaling, where the logical size is not."""
+        import ctypes
+        from ctypes import wintypes
+        if screen is None:
+            return ""
+
+        class MonitorInfo(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT),
+                        ("dwFlags", wintypes.DWORD), ("szDevice", wintypes.WCHAR * 32)]
+        user32 = ctypes.WinDLL("user32")
+        user32.MonitorFromPoint.restype = wintypes.HMONITOR
+        user32.MonitorFromPoint.argtypes = (wintypes.POINT, wintypes.DWORD)
+        corner = screen.geometry().topLeft()
+        monitor = user32.MonitorFromPoint(wintypes.POINT(corner.x() + 1, corner.y() + 1), 2)  # NEAREST
+        info = MonitorInfo(cbSize=ctypes.sizeof(MonitorInfo))
+        if not monitor or not user32.GetMonitorInfoW(wintypes.HMONITOR(monitor), ctypes.byref(info)):
+            return ""
+        return info.szDevice
+
+    def stop(self) -> None:
+        self._running = False
+        if self._thread is not None:
+            # A wait never outlasts a refresh, so this is a frame at most.
+            self._thread.join(0.5)
+            self._thread = None
+        with self._lock:
+            self._close_adapter()
+
+    def _close_adapter(self) -> None:
+        import ctypes
+        if self._adapter is not None:
+            close = _CloseAdapter(hAdapter=self._adapter[0])
+            ctypes.WinDLL("gdi32").D3DKMTCloseAdapter(ctypes.byref(close))
+            self._adapter = None
+
+    def _run(self) -> None:
+        import ctypes
+        import time
+        gdi32 = ctypes.WinDLL("gdi32")
+        dwm = ctypes.WinDLL("dwmapi")
+        while self._running:
+            with self._lock:
+                adapter = self._adapter
+            # Both calls release the GIL while they block.
+            if adapter is not None:
+                wait = _WaitForVerticalBlank(hAdapter=adapter[0], hDevice=0, VidPnSourceId=adapter[1])
+                status = gdi32.D3DKMTWaitForVerticalBlankEvent(ctypes.byref(wait))
+            else:
+                status = dwm.DwmFlush()
+            if status != 0:
+                # A display mode change or a locked session: no vblanks to
+                # wait for, and a failing wait returns at once. Don't spin.
+                time.sleep(0.005)
+            if self._running:
+                self._on_vblank()
+
+
+try:
+    import ctypes as _ctypes
+    from ctypes import wintypes as _wintypes
+
+    class _OpenAdapterFromHdc(_ctypes.Structure):
+        _fields_ = [("hDc", _wintypes.HDC), ("hAdapter", _ctypes.c_uint),
+                    ("AdapterLuidLow", _ctypes.c_ulong), ("AdapterLuidHigh", _ctypes.c_long),
+                    ("VidPnSourceId", _ctypes.c_uint)]
+
+    class _WaitForVerticalBlank(_ctypes.Structure):
+        _fields_ = [("hAdapter", _ctypes.c_uint), ("hDevice", _ctypes.c_uint), ("VidPnSourceId", _ctypes.c_uint)]
+
+    class _CloseAdapter(_ctypes.Structure):
+        _fields_ = [("hAdapter", _ctypes.c_uint)]
+except (ImportError, ValueError):  # pragma: no cover - ctypes is stdlib everywhere we run
+    pass
 
 
 # The song select's chart preview, as a share of a gameplay view's height.

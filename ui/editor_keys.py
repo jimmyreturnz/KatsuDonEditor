@@ -105,6 +105,8 @@ class EditorKeys(QObject):
         ("seek_next_note", "_seek_note", (1,), "both"),
         ("seek_previous_bookmark", "_seek_bookmark", (-1,), "both"),
         ("seek_next_bookmark", "_seek_bookmark", (1,), "both"),
+        ("add_bookmark", "_bookmark", (True,), "both"),
+        ("remove_bookmark", "_bookmark", (False,), "both"),
         ("focus_previous_view", "_focus_view", (-1,), "both"),
         ("focus_next_view", "_focus_view", (1,), "both"),
         *((f"snap_{d}", "_set_snap", (d,), "both") for d in range(1, 10)),
@@ -245,6 +247,9 @@ class EditorKeys(QObject):
             return
         bookmarks, _preview = editor_timeline_metadata(state.document)
         self._seek_to_neighbour(view, bookmarks, direction)
+
+    def _bookmark(self, add: bool) -> None:
+        self.window._bookmark_at_playhead(add)
 
     def _seek_to_neighbour(self, view, times, direction: int) -> None:
         """The nearest of `times` strictly before or after the playhead. Half

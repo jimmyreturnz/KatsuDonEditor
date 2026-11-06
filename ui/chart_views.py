@@ -4,8 +4,9 @@ from __future__ import annotations
 import math
 from bisect import bisect_left, bisect_right
 from functools import lru_cache
-from PySide6.QtCore import QEvent, QLine, QPoint, QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QLine, QPoint, QPointF, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
+    QCursor,
     QRegion,
     QLinearGradient,
     QColor,
@@ -32,6 +33,7 @@ from osu_io.timing import (
 from chart.time_axis import TimeAxisMixin, osu_snap_ms
 from chart.gimmick_session import FAKE_SLIDER_MAX_LENGTH
 from ui.common import (
+    draw_vertical_lines,
     ACCENT_PINK,
     DON_COLOR,
     DRUMROLL_COLOR,
@@ -43,8 +45,8 @@ from ui.common import (
     equalize_button_widths,
     most_common_beat_length,
     spinner_pixmap,
+    paint_view_ground,
     view_ground,
-    view_ground_is_opaque,
 )
 
 
@@ -484,9 +486,9 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
         # it again. Measured: over half of a six-chart Editor frame was Qt's
         # own work in processEvents, not these paintEvents. If a paintEvent
         # here ever stops filling its whole rect, this has to go with it, or
-        # stale pixels show through -- which is why it follows View opacity
-        # (`set_view_opacity`): below 100% the fill lets the backdrop through.
-        self.setAttribute(Qt.WA_OpaquePaintEvent, view_ground_is_opaque())
+        # stale pixels show through. Below 100% View opacity it still fills
+        # everything: `paint_view_ground` lays the backdrop under it itself.
+        self.setAttribute(Qt.WA_OpaquePaintEvent, True)
 
     def restyle_pens(self) -> None:
         """The view's pens, built once rather than per tick per frame. The
@@ -1476,13 +1478,15 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
 
             tick_time += snap_length
 
-        if full_beats:
-            painter.setPen(self.beat_line_pen)
-            painter.drawLines(full_beats)
-        for kind, lines in batches.items():
-            if lines:
-                painter.setPen(self._tick_styles[kind][0])
-                painter.drawLines(lines)
+        # One stretched row per pen and span (`draw_vertical_lines`), in the
+        # order they were stroked before.
+        for pen, lines in ((self.beat_line_pen, full_beats),
+                           *((self._tick_styles[kind][0], lines) for kind, lines in batches.items())):
+            spans: dict[tuple[int, int], list[int]] = {}
+            for line in lines:
+                spans.setdefault((line.y1(), line.y2()), []).append(line.x1())
+            for (y0, y1), xs in spans.items():
+                draw_vertical_lines(painter, pen, xs, y0, y1)
 
     def _owns_timing_point(self, point: TimingPoint) -> bool:
         """Whether this view's tools act on `point`, or merely show it.
@@ -1634,7 +1638,7 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
-        painter.fillRect(self.rect(), view_ground("#151b24"))
+        paint_view_ground(self, painter, "#151b24")
         self.draw_kiai_bands(painter)
 
         baseline_y = self._baseline_y()
@@ -2085,8 +2089,13 @@ def timeline_bar_data(document, duration_ms: int):
 
 class TimingOverviewBar(QWidget):
     seek_requested = Signal(int)
+    # "add", "remove" or "reset", from the bookmark toolbar that floats over
+    # the bar's left end while it is hovered, as osu!'s editor has it (owner,
+    # 2026-11-04). Previous and next are seeks, so the bar does those itself.
+    bookmark_requested = Signal(str)
     def __init__(self) -> None:
         super().__init__()
+        self._toolbar = None
         self.duration_ms=1; self.current_time=0; self.viewport_start=0; self.viewport_end=0
         self.kiai=[]; self.timing_markers=[]; self._marker_kinds=[]; self.bookmarks=[]; self.preview_time=None; self.dragging=False
         self._marker_cache_key=None; self._marker_lines=[]; self._last_seek_ms=None
@@ -2103,6 +2112,10 @@ class TimingOverviewBar(QWidget):
         # Both are kept and the longer one drawn.
         self._document_ms=1; self._media_ms=0
         self.setFixedHeight(28); self.setCursor(Qt.PointingHandCursor)
+        # The static layer covers every pixel, so nothing under the bar needs
+        # painting: without this each frame repainted the window's whole
+        # parent chain beneath its strip (2026-11-04).
+        self.setAttribute(Qt.WA_OpaquePaintEvent, True)
     def load_document(self,document,duration_ms:int)->None:
         self.apply_document_data(timeline_bar_data(document,duration_ms))
 
@@ -2176,6 +2189,64 @@ class TimingOverviewBar(QWidget):
     def mouseReleaseEvent(self,event)->None:
         if self.dragging:self._seek(event.position().x())
         self.dragging=False
+    def seek_bookmark(self,forward:bool)->None:
+        # 1ms of slack: a seek lands on a whole millisecond, and the playhead
+        # sitting on a bookmark must step past it, not back onto it.
+        if forward:target=min((b for b in self.bookmarks if b>self.current_time+1),default=None)
+        else:target=max((b for b in self.bookmarks if b<self.current_time-1),default=None)
+        if target is not None:self._last_seek_ms=None;self.seek_requested.emit(target)
+    def bookmark_toolbar(self)->QWidget:
+        """The floating + - |< >| Reset row, built on first use.
+
+        A child of the window, not of the bar's layout, so showing it moves
+        nothing: it sits just above the bar's left end, over whatever is
+        there, like osu!'s."""
+        if self._toolbar is None:
+            bar=QWidget(self.window());bar.setObjectName("bookmarkToolbar")
+            bar.setStyleSheet("#bookmarkToolbar QPushButton{background:rgba(0,0,0,150);color:white;border:0;"
+                              "border-radius:6px;padding:4px 10px;font-size:15px;font-weight:700;}"
+                              "#bookmarkToolbar QPushButton:hover{background:rgba(255,255,255,60);}"
+                              "#bookmarkToolbar QPushButton[glyph=\"true\"]{font-size:20px;padding:0px 8px;}")
+            row=QHBoxLayout(bar);row.setContentsMargins(0,0,0,0);row.setSpacing(4)
+            for text,tip,act in (
+                ("+",tr("MainWindow","Add a bookmark at the playhead"),lambda:self.bookmark_requested.emit("add")),
+                ("−",tr("MainWindow","Remove the nearest bookmark"),lambda:self.bookmark_requested.emit("remove")),
+                ("|◀",tr("MainWindow","Previous bookmark"),lambda:self.seek_bookmark(False)),
+                ("▶|",tr("MainWindow","Next bookmark"),lambda:self.seek_bookmark(True)),
+                ("✕ "+tr("MainWindow","Reset"),tr("MainWindow","Remove every bookmark"),lambda:self.bookmark_requested.emit("reset"))):
+                button=QPushButton(text,bar);button.setToolTip(tip);button.setCursor(Qt.PointingHandCursor)
+                button.setFocusPolicy(Qt.NoFocus);button.clicked.connect(act);row.addWidget(button)
+                # + and - are one thin glyph each, and at the row's size they read as dots.
+                button.setProperty("glyph",len(text)==1)
+            bar.installEventFilter(self);bar.adjustSize();bar.hide()
+            self._toolbar=bar
+        return self._toolbar
+    def _show_toolbar(self)->None:
+        toolbar=self.bookmark_toolbar()
+        if toolbar.parentWidget() is not self.window():toolbar.setParent(self.window())
+        toolbar.move(self.mapTo(self.window(),QPoint(0,-toolbar.height())));toolbar.show();toolbar.raise_()
+    def _hide_toolbar_unless_hovered(self)->None:
+        # Gone the moment the cursor leaves both (owner, 2026-11-04). The row
+        # sits flush on the bar, so crossing from one to the other never
+        # passes through neither; read from the cursor, because underMouse()
+        # is not yet updated while a Leave is being delivered.
+        if self._toolbar is None:return
+        pos=QCursor.pos()
+        if not any(QRect(w.mapToGlobal(QPoint(0,0)),w.size()).contains(pos) for w in (self,self._toolbar)):self._toolbar.hide()
+    def eventFilter(self,watched,event)->bool:
+        if watched is self._toolbar:
+            if event.type()==QEvent.Leave:self._hide_toolbar_unless_hovered()
+        return False
+    def enterEvent(self,event)->None:
+        self._show_toolbar();super().enterEvent(event)
+    def leaveEvent(self,event)->None:
+        self._hide_toolbar_unless_hovered();super().leaveEvent(event)
+    def hideEvent(self,event)->None:
+        # The row is the window's child, not the bar's, so leaving the page
+        # (to song select) hid the bar under the cursor with no Leave and left
+        # the row floating over the next page.
+        if self._toolbar is not None:self._toolbar.hide()
+        super().hideEvent(event)
     def resizeEvent(self,event)->None:
         self.static_layer_dirty=True
         super().resizeEvent(event)
@@ -2209,6 +2280,8 @@ class TimingOverviewBar(QWidget):
             x=round(bookmark/self.duration_ms*self.width());painter.drawLine(x,center+1,x,self.height()-2)
         painter.end();self.static_layer=layer;self.static_layer_dirty=False
     def paintEvent(self,event)->None:
+        # A restyle (a theme switch) clears it again; see paint_view_ground.
+        if not self.testAttribute(Qt.WA_OpaquePaintEvent):self.setAttribute(Qt.WA_OpaquePaintEvent,True)
         if self.static_layer_dirty or self.static_layer.size()!=self.size():self._rebuild_static_layer()
         painter=QPainter(self);painter.drawPixmap(0,0,self.static_layer)
         painter.setRenderHint(QPainter.Antialiasing,False)
@@ -2604,8 +2677,13 @@ class EditorViewFrame(QWidget):
         self.kind_label.setStyleSheet(self._caption_style(focused))
         self.difficulty_name_label.setStyleSheet(self._name_style(focused))
 
+    def view_frame_ground(self) -> QColor:
+        """The ground its sheet paints, for a lane drawing what shows
+        through it (`common.view_underlay`)."""
+        return view_ground("#1b212b")
+
     def _frame_style(self) -> str:
-        ground = view_ground("#1b212b")
+        ground = self.view_frame_ground()
         rgba = f"rgba({ground.red()}, {ground.green()}, {ground.blue()}, {ground.alpha()})"
         return self.FRAME_STYLE.format(ground=rgba)
 

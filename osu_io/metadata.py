@@ -70,6 +70,20 @@ def with_keys(lines: list[str], section: str, values: dict[str, str], ending: st
     return lines[:end] + [f"{k}:{v}{ending}" for k, v in pending.items()] + lines[end:]
 
 
+def without_key(lines: list[str], section: str, key: str) -> list[str]:
+    """A copy of `lines` with `key` gone from `section`. osu! writes no
+    `Bookmarks:` line at all when there are none, so neither does this."""
+    out, current = [], None
+    for line in lines:
+        name = _header(line)
+        if name is not None:
+            current = name
+        elif current == section and ":" in line and line.split(":", 1)[0].strip() == key:
+            continue
+        out.append(line)
+    return out
+
+
 # Characters Windows will not put in a file name; osu! drops them the same way.
 _UNSAFE = set('\/:*?"<>|')
 
@@ -87,5 +101,6 @@ if __name__ == "__main__":
     out = with_keys(out, "Editor", {"Bookmarks": "1,2"})
     assert read_keys(out, "Editor") == {"Bookmarks": "1,2"} and _header(out[3]) == "Editor", out
     assert read_keys(out, "General") == {"PreviewTime": "100"}
+    assert read_keys(without_key(out, "Editor", "Bookmarks"), "Editor") == {}
     assert osu_filename("A", "B?", "C", "x/y") == "A - B (C) [xy].osu"
     print("ok")

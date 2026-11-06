@@ -144,9 +144,10 @@ class HitObject:
 
     @property
     def is_nan_slider(self) -> bool:
-        """A slider of length NaN: osu! draws nothing for it, and the don/kat
-        right before it can't be hit (owner, 2026-10-28; taiko-rs plays that).
-        The chart still shows it, marked NaN, so it can be found."""
+        """A slider of length NaN: osu! draws nothing for it, and the circles
+        its derailed object-window search skips can't be hit
+        (`chart.stable_window`). The chart still shows it, marked NaN, so it
+        can be found."""
         length = self.length
         return length is not None and length != length
 

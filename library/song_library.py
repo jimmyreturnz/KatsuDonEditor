@@ -324,6 +324,16 @@ def _read_hit_objects(fields: dict, text: str) -> None:
         fields["_first_ms"], fields["_last_ms"] = times
 
 
+class Cache(dict):
+    """The index: .osu path -> entry, plus `folders`, each set folder's own
+    modified time when it was last walked (ns). A plain dict works wherever
+    this does; it just never skips a folder."""
+
+    def __init__(self, files=(), folders=None) -> None:
+        super().__init__(files)
+        self.folders: dict[str, int] = dict(folders or {})
+
+
 def scan(root: Path, cache: dict[str, list]) -> Iterator[TaikoDifficulty | None]:
     """Walk `root`, yielding one item per .osu file: the taiko ones, else None.
 
@@ -331,21 +341,39 @@ def scan(root: Path, cache: dict[str, list]) -> Iterator[TaikoDifficulty | None]
     the window responsive. `cache` is mutated in place (mtime + size keyed) and
     belongs to the caller to persist; entries for vanished files are dropped
     once the walk finishes.
+
+    A set folder whose own modified time has not moved since the last walk is
+    not opened: adding, removing or renaming a file in it moves it, so its
+    cached entries are what is there (taiko-rs's `library::scan`). Every file
+    was listed and stat'ed before, which was 2.4s of a 2.7s warm scan over
+    24,698 files; the 6,871 folders' stats are 0.36s (2026-11-04).
     """
+    # ponytail: a .osu rewritten in place does not move its folder's time, so
+    # its new header shows after Reload song (`reload_folder`, which never
+    # trusts the cache), a Rescan, or the folder's next change.
     root = Path(root)
+    folders = getattr(cache, "folders", None)
+    prefix = os.path.join(str(root), "")
+    by_folder: dict[str, list[str]] = {}
+    if folders:
+        for key in cache:
+            if key.startswith(prefix):
+                by_folder.setdefault(prefix + key[len(prefix):].split(os.sep, 1)[0], []).append(key)
     seen: set[str] = set()
-    for path in root.rglob("*.osu"):
+    walked: set[str] = set()
+
+    def checked(path: Path) -> Iterator[TaikoDifficulty | None]:
         key = str(path)
         seen.add(key)
         try:
             stat = path.stat()
         except OSError:
-            continue
+            return
         entry = cache.get(key)
         if not (entry and entry[0] == stat.st_mtime_ns and entry[1] == stat.st_size):
             header = read_header(path)
             if header is None:
-                continue
+                return
             entry = ([stat.st_mtime_ns, stat.st_size]
                      + [header[name] for name in _FIELD_ORDER]
                      + [header[name] for name in _DETAIL_ORDER])
@@ -353,8 +381,44 @@ def scan(root: Path, cache: dict[str, list]) -> Iterator[TaikoDifficulty | None]
         # entry[2] is the mode; everything after it lines up with
         # TaikoDifficulty's fields: _FIELD_ORDER, then _DETAIL_ORDER.
         yield TaikoDifficulty(path, *entry[3:]) if entry[2] == TAIKO_MODE else None
+
+    try:
+        listing = sorted(os.scandir(root), key=lambda item: item.name)
+    except OSError:
+        listing = []
+    for item in listing:
+        try:
+            is_folder = item.is_dir()
+        except OSError:
+            continue
+        if not is_folder:
+            if item.name.lower().endswith(".osu"):
+                yield from checked(root / item.name)
+            continue
+        folder = root / item.name
+        name = str(folder)
+        walked.add(name)
+        try:
+            # The folder's own stat: the copy Windows lists with the parent
+            # lags it (taiko-rs measured as much).
+            modified = os.stat(name).st_mtime_ns
+        except OSError:
+            continue
+        if folders is not None and modified and folders.get(name) == modified:
+            for key in by_folder.get(name, ()):
+                seen.add(key)
+                entry = cache[key]
+                yield TaikoDifficulty(Path(key), *entry[3:]) if entry[2] == TAIKO_MODE else None
+            continue
+        for path in sorted(folder.rglob("*.osu")):
+            yield from checked(path)
+        if folders is not None:
+            folders[name] = modified
     for stale in set(cache) - seen:
         del cache[stale]
+    if folders is not None:
+        for stale in [name for name in folders if name.startswith(prefix) and name not in walked]:
+            del folders[stale]
 
 
 def songs_from_cache(cache: dict[str, list], root: Path) -> Iterator[TaikoDifficulty]:
@@ -376,22 +440,26 @@ def songs_from_cache(cache: dict[str, list], root: Path) -> Iterator[TaikoDiffic
             yield TaikoDifficulty(Path(key), *entry[3:])
 
 
-def load_cache(path: Path) -> dict[str, list]:
-    """Read the on-disk index, or start empty when it is missing or unusable."""
+def load_cache(path: Path) -> Cache:
+    """Read the on-disk index, or start empty when it is missing or unusable.
+
+    An index written before folder times were kept has none, which is every
+    folder walked file by file once and remembered from then on -- not a
+    cold scan."""
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {}
+        return Cache()
     if payload.get("version") != CACHE_VERSION:
-        return {}
-    return payload.get("files", {})
+        return Cache()
+    return Cache(payload.get("files", {}), payload.get("folders"))
 
 
 def save_cache(path: Path, cache: dict[str, list]) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps({"version": CACHE_VERSION, "files": cache}),
+        json.dumps({"version": CACHE_VERSION, "files": cache, "folders": getattr(cache, "folders", {})}),
         encoding="utf-8",
     )
 

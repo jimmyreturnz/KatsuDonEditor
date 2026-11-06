@@ -2,8 +2,8 @@
 from __future__ import annotations
 import math
 from bisect import bisect_left, bisect_right
-from PySide6.QtCore import QVariantAnimation, QPointF, QRectF, Qt, QEasingCurve, Signal
-from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient
+from PySide6.QtCore import QVariantAnimation, QPointF, QRect, QRectF, Qt, QEasingCurve, Signal
+from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient
 from PySide6.QtWidgets import QApplication, QWidget
 from ui.smooth_scroll import reduced_motion
 from library.skin import TaikoSkin
@@ -17,8 +17,10 @@ from osu_io.timing import (
     uninherited_points,
 )
 from chart import autoplay
+from chart.stable_window import net_int, unhittable_circles
 from chart.time_axis import KIAI_OPEN_END_MS, TimeAxisMixin, wheel_seek_time
 from ui.common import (
+    is_blank,
     DON_COLOR,
     DRUMROLL_COLOR,
     tick_tint,
@@ -32,14 +34,14 @@ from ui.common import (
     TAIKO_STRONG_SCALE,
     draw_note_sprite,
     draw_pixmap_subpixel,
+    draw_stretched,
     drumroll_tick_times,
     spans_circles,
     duration_for_slider_length,
     most_common_beat_length,
     osu_screen_height_for,
     spinner_pixmap,
-    view_ground,
-    view_ground_is_opaque,
+    paint_view_ground,
 )
 
 
@@ -116,6 +118,9 @@ POP_UP_FROM_LENGTH = 215.0
 # fast, 2026-10-28). No fade out: gone at its time, as in stable.
 # ponytail: guessed from "too fast"; measure stable's if it still looks off.
 POP_UP_FADE_MS = 666.0
+# Standing pop-ups per cached layer (`_draw_notes`): the one the playhead is
+# eating recomposes every frame, and every layer is a blit of the lane.
+POP_UP_LAYER = 128
 
 
 def stable_preempt(first_velocity: float, cap: float = SPINNER_PREEMPT_CAP_MS) -> int:
@@ -345,9 +350,8 @@ def draw_note_light(
         opacity = painter.opacity()
         painter.setOpacity(opacity * min(255, alpha) / 255.0)
         if width is not None:
-            painter.drawPixmap(
-                QRectF(x, y - stamp.height() / 2.0, width, stamp.height()),
-                stamp, QRectF(stamp.rect()))
+            draw_stretched(
+                painter, QRectF(x, y - stamp.height() / 2.0, width, stamp.height()), stamp)
         else:
             # Centred at the artwork's own size rather than forced into a
             # square: a note circle is square and comes out identical either
@@ -544,6 +548,11 @@ def flashlight_combo_scale(combo: int) -> float:
 
 
 
+# Red-line sections and notes per culling block (`_section_blocks`,
+# `_screen_blocks`), taiko-rs's 128 for notes.
+SECTION_BLOCK = 64
+NOTE_BLOCK = 128
+
 class GameplayViewerView(QWidget):
     """M6: read-only preview that scrolls the way osu!taiko does.
 
@@ -559,13 +568,18 @@ class GameplayViewerView(QWidget):
     """
 
     seek_requested = Signal(int)
+    # A left click on a note: its original_index. Only the Editor page's
+    # previews say so (`click_selects`): this is not a test play, so a click
+    # is "that one", and the chart view selects it (owner, 2026-11-04).
+    note_clicked = Signal(int)
 
     def __init__(self) -> None:
         super().__init__()
-        # paintEvent fills the whole rect; saying so keeps the page's map
-        # backdrop out of every per-frame repaint -- while View opacity is
-        # 100%, which is what `view_ground_is_opaque` says.
-        self.setAttribute(Qt.WA_OpaquePaintEvent, view_ground_is_opaque())
+        self.click_selects = False
+        # paintEvent fills the whole rect, at any View opacity
+        # (`paint_view_ground`); saying so keeps the page's map backdrop out
+        # of every per-frame repaint.
+        self.setAttribute(Qt.WA_OpaquePaintEvent, True)
         self.notes = []
         self.note_times: list[int] = []
         # Predicate deciding which hit objects scroll past; see refresh_notes.
@@ -589,6 +603,7 @@ class GameplayViewerView(QWidget):
         self._slowest_velocity = 1.0 / 500.0
         self._main_beat = 500.0
         self._section_slowest: list[float] = []
+        self._section_blocks: list[tuple[int, int, float, float, float]] = []
         self._max_extend_ms = 0.0
         # Slider/spinner end time by note uid, rebuilt per edit -- see
         # refresh_notes. Circles are simply absent.
@@ -770,14 +785,13 @@ class GameplayViewerView(QWidget):
         if self.autoplay is None or not self.notes:
             return
         style, binding, left = self.autoplay
-        circles = [note for note in self.notes if note.is_circle]
-        # The circle right before a NaN slider can't be hit, autoplay
-        # included, and isn't a miss either (owner, 2026-10-28; taiko-rs's
-        # `unhittable`).
-        times = [note.time for note in circles]
-        unhittable = {bisect_left(times, note.time) - 1
-                      for note in self.notes if note.is_nan_slider} - {-1}
-        circles = [note for k, note in enumerate(circles) if k not in unhittable]
+        # What stable's derailed object window never reaches can't be hit,
+        # autoplay included, and isn't a miss either (`stable_window`).
+        unhittable = unhittable_circles(
+            [(int(note.time), self._stable_end_time(note), note.is_circle) for note in self.notes],
+            self._preempt_ms())
+        circles = [note for k, note in enumerate(self.notes)
+                   if note.is_circle and k not in unhittable]
         beat = most_common_beat_length(self.timing_points, self.notes[-1].time) or 500.0
         hits = list(zip(
             (float(note.time) for note in circles),
@@ -785,13 +799,20 @@ class GameplayViewerView(QWidget):
                 [(note.time, note.is_kat, note.is_finisher) for note in circles],
                 beat, style, binding, left)))
         circle_times = [float(note.time) for note in circles]
+        # Rolls stacked on one place tick on the same milliseconds, and one
+        # press is one hit: the first roll there takes it and the rest are
+        # not misses either (owner, 2026-11-04).
+        ticked = set()
         for note in self.notes:
             if note.is_slider and note.uid in self._end_times:
                 # A tick between the notes would take a note's timing window.
                 if spans_circles(note.time, self._end_times[note.uid], circle_times):
                     continue
-                hits.extend(autoplay.roll_halves(drumroll_tick_times(
-                    note, self.beat_points, self.timing_points, self.slider_multiplier), left))
+                for hit in autoplay.roll_halves(drumroll_tick_times(
+                        note, self.beat_points, self.timing_points, self.slider_multiplier), left):
+                    if round(hit[0]) not in ticked:
+                        ticked.add(round(hit[0]))
+                        hits.append(hit)
         hits.sort(key=lambda hit: hit[0])
         for time_ms, halves in hits:
             self._all_hits.append(time_ms)
@@ -870,6 +891,19 @@ class GameplayViewerView(QWidget):
         )
         return note.time + duration if duration < 0 else None
 
+    def _stable_end_time(self, note) -> int:
+        """The EndTime stable's object window searches on (`stable_window`):
+        a roll's duration cast as C# casts it, so a NaN length or a fake
+        slider's negative one ends before it starts."""
+        if note.is_spinner:
+            return int(note.end_time) if note.end_time is not None else int(note.time)
+        if note.is_slider and note.length is not None and note.slides is not None:
+            timing = active_uninherited_at(self.beat_points, note.time)
+            return int(note.time) + net_int(duration_for_slider_length(
+                note.length * note.slides, timing.beat_length,
+                sv_at(self.timing_points, note.time), self.slider_multiplier))
+        return int(note.time)
+
     def _compute_end_time(self, note) -> float | None:
         if note.is_spinner:
             return float(note.end_time) if note.end_time is not None else None
@@ -947,6 +981,17 @@ class GameplayViewerView(QWidget):
                 self.beat_points[i + 1].time if i + 1 < len(self.beat_points) else float("inf"))
             for i, point in enumerate(self.beat_points)
         ]
+        # The same per block of sections, taiko-rs's NoteBlock: a block that
+        # cannot reach the screen at its own slowest is skipped whole. A
+        # pop-up stack is a red line per object, and walking each of them
+        # every frame was most of a frame (senpai, notice me! [w]).
+        self._section_blocks = []
+        for first in range(0, len(self.beat_points), SECTION_BLOCK):
+            after = min(first + SECTION_BLOCK, len(self.beat_points))
+            self._section_blocks.append((
+                first, after, self.beat_points[first].time,
+                self.beat_points[after].time if after < len(self.beat_points) else float("inf"),
+                min(self._section_slowest[first:after])))
         # What a pop-up fake slider fades in by (`_pop_up`): its own red line
         # is a 1ms gimmick line.
         last = self.notes[-1].time if self.notes else (points[-1].time if points else 0.0)
@@ -1173,13 +1218,27 @@ class GameplayViewerView(QWidget):
         whole map can be on screen at once, its last object included (owner,
         2026-10-28). taiko-rs's lookahead is the same.
         """
-        # ponytail: one map-wide reach, so a slow section anywhere makes every
-        # frame scan the whole map; per-section reach if that gets slow.
+        # One map-wide reach, so a slow section anywhere puts the whole map in
+        # range; `_on_screen` and `_barlines` then skip it a block at a time.
         reach = self.osu_edge_x() / max(1e-6, self._slowest_velocity * self.px_per_beat)
         return self.current_time - reach, self.current_time + reach
 
     def barline_times(self, start_ms: float, end_ms: float) -> list[float]:
-        """Barlines on screen for the frame at `current_time`, within the range:
+        """The times of `_barlines`."""
+        return [time_ms for time_ms, _x in self._barlines(start_ms, end_ms)]
+
+    def _barline_pixel(self) -> bytes:
+        """`barline_pen`'s colour as one premultiplied ARGB32 pixel, as the
+        pen would have blended it."""
+        rgba = self.barline_pen.color().rgba()
+        if getattr(self, "_barline_pixel_key", None) != rgba:
+            image = QImage(1, 1, QImage.Format_ARGB32_Premultiplied)
+            image.fill(self.barline_pen.color())
+            self._barline_pixel_key, self._barline_pixel_bytes = rgba, bytes(image.constBits())[:4]
+        return self._barline_pixel_bytes
+
+    def _barlines(self, start_ms: float, end_ms: float) -> list[tuple[float, float]]:
+        """(time, x) of the barlines on screen for the frame at `current_time`, within the range:
         one at every uninherited point, plus one each `meter` beats (4 by
         default) after it until the next one.
 
@@ -1206,15 +1265,21 @@ class GameplayViewerView(QWidget):
         widget without a number to pick, and it cannot starve a later section --
         every line that survives is one the user can see.
         """
-        times: list[float] = []
+        lines: list[tuple[float, float]] = []
         claimed_columns: set[int] = set()
+        velocity_times, velocities = self._velocity_times, self._velocities
+        last_velocity = len(velocity_times) - 1
         width = self.width()
         hit_x = self._hit_x()
         px_per_beat = self.px_per_beat
         cached = self._section_slowest if len(self._section_slowest) == len(self.beat_points) else None
         now = self.current_time
-        first_point = bisect_left(self._beat_times, start_ms) - 1
-        for index in range(max(0, first_point), len(self.beat_points)):
+        first_point = max(0, bisect_left(self._beat_times, start_ms) - 1)
+        if cached is not None and len(self._section_blocks) * SECTION_BLOCK >= len(cached):
+            candidates = self._reachable_sections(first_point, end_ms, now, width, px_per_beat)
+        else:
+            candidates = range(first_point, len(self.beat_points))
+        for index in candidates:
             point = self.beat_points[index]
             if point.time > end_ms:
                 break
@@ -1252,6 +1317,9 @@ class GameplayViewerView(QWidget):
             # Jump straight to the first measure line on screen: a section is
             # routinely minutes long and walking it from the point is not.
             step = 0 if point.time >= window_start else int((window_start - point.time) // measure)
+            # `velocity_at` as a forward cursor: the walk only moves forward,
+            # and a bisect per line was most of a frame on a barline wall.
+            vi = max(0, bisect_right(velocity_times, point.time + step * measure) - 1)
             while remaining > 0:
                 remaining -= 1
                 time_ms = point.time + step * measure
@@ -1261,19 +1329,55 @@ class GameplayViewerView(QWidget):
                     # Each line's own velocity, matching x_for_time -- a green
                     # line inside the section moves this one but not the ones
                     # before it.
-                    column = round(
-                        hit_x
-                        + (time_ms - self.current_time)
-                        * self.velocity_at(time_ms)
-                        * self.px_per_beat
-                    )
+                    while vi < last_velocity and velocity_times[vi + 1] <= time_ms:
+                        vi += 1
+                    x = hit_x + (time_ms - now) * velocities[vi] * px_per_beat
+                    column = round(x)
                     if column not in claimed_columns:
                         claimed_columns.add(column)
-                        times.append(time_ms)
+                        lines.append((time_ms, x))
                 step += 1
-        return times
+        return lines
+
+    def _reachable_sections(self, first_point, end_ms, now, width, px_per_beat):
+        """Section indexes from `first_point` on, less the blocks `_barlines`
+        would skip section by section: with every section's slowest at least
+        the block's, its reach is at most the block's, so a block out of
+        reach holds no section in reach."""
+        for first, after, start, end, slowest in self._section_blocks[first_point // SECTION_BLOCK:]:
+            if start > end_ms:
+                return
+            reach = width / max(1e-9, slowest * px_per_beat)
+            if now + reach < start or now - reach > end:
+                continue
+            yield from range(max(first, first_point), after)
 
     # -- input ---------------------------------------------------------------
+
+    def note_at(self, x: float, y: float):
+        """The drawn note under (x, y), the nearest if circles overlap; None
+        off every one. A note already taken away at the target is not drawn,
+        so it is not there to click."""
+        center_y = self.height() / 2
+        normal_radius = self.height() * TAIKO_NOTE_SIZE / 2.0
+        best, best_distance = None, None
+        for note in self.notes:
+            radius = normal_radius * (TAIKO_STRONG_SCALE if note.is_finisher else 1.0)
+            if abs(y - center_y) > radius:
+                continue
+            distance = abs(self.x_for_time(note.time) - x)
+            if distance <= radius and (best_distance is None or distance < best_distance)                     and not self._has_been_hit(note):
+                best, best_distance = note, distance
+        return best
+
+    def mousePressEvent(self, event) -> None:
+        if self.click_selects and not self.plain_stage and event.button() == Qt.LeftButton:
+            note = self.note_at(event.position().x(), event.position().y())
+            if note is not None:
+                self.note_clicked.emit(note.original_index)
+                event.accept()
+                return
+        super().mousePressEvent(event)
 
     def wheelEvent(self, event) -> None:
         angle = event.angleDelta()
@@ -1314,12 +1418,11 @@ class GameplayViewerView(QWidget):
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         if self.plain_stage:
-            ground = QColor(0, 0, 0)
+            painter.fillRect(self.rect(), QColor(0, 0, 0))
         elif self.follows_view_opacity:
-            ground = view_ground("#12161d")
+            paint_view_ground(self, painter, "#12161d")
         else:
-            ground = theme.screen("#12161d")
-        painter.fillRect(self.rect(), ground)
+            painter.fillRect(self.rect(), theme.screen("#12161d"))
 
         center_y = self.height() / 2
         normal_radius = self.height() * TAIKO_NOTE_SIZE / 2.0
@@ -1333,7 +1436,10 @@ class GameplayViewerView(QWidget):
         beats = self._kiai_beats()
         pulse = kiai_flash(beats, self.kiai_bands, self.current_time)
 
-        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        # Off: nearly every draw here is an unscaled blit, which the hint only
+        # slows (`draw_pixmap_subpixel`); the few that scale go through
+        # `draw_stretched`, which turns it on for themselves.
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, False)
         self._draw_playfield(painter, center_y, normal_radius, big_radius, pulse)
 
         start_time, end_time = self.visible_time_range()
@@ -1359,17 +1465,26 @@ class GameplayViewerView(QWidget):
         painter.setPen(self.barline_pen)
         top, bottom = round(center_y - big_radius * 1.2), round(center_y + big_radius * 1.2)
         last_bar = self._last_barline_ms()
-        for time_ms in self.barline_times(start_time, min(end_time, last_bar)):
+        # Without a skin every barline is the same column from `top` to
+        # `bottom`, so the layer is one row repeated: built here and drawn
+        # stretched in one blit. As a drawLine each, a translucent 1px column
+        # rasterises row by row -- 420 of mekurume [eclosion]'s wall were 5.9ms
+        # of an 8.2ms paint, the row 0.1ms, the same pixels.
+        width = self.width()
+        row = None if marker is not None else bytearray(width * 4)
+        for time_ms, x in self._barlines(start_time, min(end_time, last_bar)):
             if time_ms > last_bar:
                 break
-            x = self.x_for_time(time_ms)
-            if not -1.0 <= x <= self.width() + 1.0:
+            if not -1.0 <= x <= width + 1.0:
                 continue
-            if marker is not None:
+            if row is None:
                 draw_pixmap_subpixel(
                     painter, marker, x - marker.width() / 2.0, center_y - marker.height() / 2.0)
-            else:
-                painter.drawLine(round(x), top, round(x), bottom)
+            elif 0 <= (column := round(x)) < width:
+                row[column * 4:column * 4 + 4] = self._barline_pixel()
+        if row is not None and bottom >= top:
+            painter.drawImage(QRect(0, top, width, bottom - top + 1),
+                              QImage(bytes(row), width, 1, QImage.Format_ARGB32_Premultiplied))
 
         painter.setOpacity(1.0)
         painter.setRenderHint(QPainter.Antialiasing, True)
@@ -1394,14 +1509,24 @@ class GameplayViewerView(QWidget):
         painter.setOpacity(self.chart_opacity)
         # The time range spans the whole map once any note crawls, so drop
         # what can't be on screen before the per-object drawing does.
-        visible = [(i, self.notes[i]) for i in self._on_screen(first, after_last, big_radius)]
         # The slider-over-circle tie: owner, 2026-10-27; taiko-rs does the same.
-        # A spinner too when the map ships its own `spinner-warning`.
+        # A spinner too when the map ships its own `spinner-warning`. Ranked
+        # once per edit: a key built per object per frame was 2.5ms of a
+        # 4500-object one.
         gimmick_spinner = self.skin.from_beatmap("spinner-warning")
-        visible.sort(key=lambda item: (
-            -item[1].time, item[1].is_slider or (gimmick_spinner and item[1].is_spinner), -item[0]))
-        for _index, note in visible:
-            self._draw_note(painter, note, center_y, normal_radius, big_radius)
+        rank_key = (id(self.notes), len(self.notes), gimmick_spinner)
+        if getattr(self, "_draw_rank_key", None) != rank_key:
+            order = sorted(range(len(self.notes)), key=lambda i: (
+                -self.notes[i].time,
+                self.notes[i].is_slider or (gimmick_spinner and self.notes[i].is_spinner), -i))
+            self._draw_rank = [0] * len(order)
+            for position, i in enumerate(order):
+                self._draw_rank[i] = position
+            self._draw_rank_key = rank_key
+        shown = self._on_screen(first, after_last, big_radius)
+        shown.sort(key=self._draw_rank.__getitem__)
+        visible = [(i, self.notes[i]) for i in shown]
+        self._draw_notes(painter, visible, center_y, normal_radius, big_radius)
 
         # Second pass, so stacked objects compound: a note drawn on top of an
         # earlier note's flash would wipe it, and stacking a fake slider on a
@@ -1661,9 +1786,8 @@ class GameplayViewerView(QWidget):
         width, height = glow.width() * scale, glow.height() * scale
         previous = painter.opacity()
         painter.setOpacity(previous * alpha)
-        painter.drawPixmap(
-            QRectF(hit_x - width / 2.0, center_y - height / 2.0, width, height),
-            glow, QRectF(glow.rect()))
+        draw_stretched(
+            painter, QRectF(hit_x - width / 2.0, center_y - height / 2.0, width, height), glow)
         painter.setOpacity(previous)
 
     def _has_been_hit(self, note) -> bool:
@@ -1690,6 +1814,88 @@ class GameplayViewerView(QWidget):
         # A fake slider's head goes when its *cap* lands, which is behind it.
         phantom = self._phantom_end_time(note)
         return self.current_time >= (note.time if phantom is None else phantom)
+
+    def _draw_notes(self, painter, visible, center_y, normal_radius, big_radius) -> None:
+        """`visible`, in draw order, with every run of *standing* pop-ups --
+        fully faded in, not yet at their time, so not changing at all -- blitted
+        from a layer composed once by `_draw_note` itself.
+
+        Kikuo - Gakkou o Yasunda Hi no Koto stands 1400-5200 of them in the
+        lane for most of the map, against 1-2 fading at a time: 4173 head
+        blits a frame were 14ms of raster alone and 280ms with the Python
+        around them. A run stops at a block of POP_UP_LAYER notes, so the one
+        losing a member as the playhead passes recomposes only that much. Over
+        is associative, so a layer composed at the painter's opacity and laid
+        down at 1 is the same picture."""
+        statics = self._pop_up_statics()
+        if not self._pop_ups_any:
+            for _index, note in visible:
+                self._draw_note(painter, note, center_y, normal_radius, big_radius)
+            return
+        now = self.current_time
+        generation = (id(self.skin), self.width(), self.height(), painter.opacity(),
+                      QColor(self.slider_brush).rgba(), self.note_pen.color().rgba(), self._pop_up_key)
+        if getattr(self, "_pop_up_layer_generation", None) != generation:
+            self._pop_up_layer_generation, self._pop_up_layers = generation, {}
+        layers, kept = self._pop_up_layers, {}
+        run: list = []
+        # A fake slider past its time has no head, so with a see-through body
+        # it draws nothing -- and must not end a run (`_draw_fake_slider`).
+        inert = {big: self._fake_slider_body_blank(big_radius if big else normal_radius, big)
+                 for big in (False, True)}
+
+        def flush() -> None:
+            if not run:
+                return
+            key = tuple(note.uid for note in run)
+            layer = layers.get(key)
+            if layer is None:
+                spans = [statics[note.uid] for note in run]
+                pad = 3.0 * big_radius
+                # Heads only when the track and cap are see-through: the cap
+                # reaches `width` left and the track as far right, and a
+                # layer that wide is a blit of the whole lane for nothing.
+                body = 0.0 if inert[False] and inert[True] else 1.0
+                left = max(0, math.floor(min(x - width * body for x, width, _lead in spans) - pad))
+                right = min(self.width(), math.ceil(max(x + width * body for x, width, _lead in spans) + pad))
+                # The heads' own band, likewise: a circle is its diameter tall.
+                top = max(0, math.floor(center_y - big_radius - 2)) if not body else 0
+                bottom = min(self.height(), math.ceil(center_y + big_radius + 2)) if not body else self.height()
+                pixmap = QPixmap(max(1, right - left), max(1, bottom - top))
+                pixmap.fill(Qt.transparent)
+                layer_painter = QPainter(pixmap)
+                layer_painter.setRenderHint(QPainter.Antialiasing, True)
+                layer_painter.setRenderHint(QPainter.SmoothPixmapTransform, False)
+                layer_painter.setOpacity(painter.opacity())
+                layer_painter.translate(-left, -top)  # whole pixels: the sub-pixel phases survive
+                for note in run:
+                    self._draw_note(layer_painter, note, center_y, normal_radius, big_radius)
+                layer_painter.end()
+                layer = (left, top, pixmap)
+            kept[key] = layer
+            opacity = painter.opacity()
+            painter.setOpacity(1.0)
+            painter.drawPixmap(layer[0], layer[1], layer[2])
+            painter.setOpacity(opacity)
+            run.clear()
+
+        block = None
+        for index, note in visible:
+            static = statics.get(note.uid)
+            until = note.time - now
+            if static is not None and 0 < until <= static[2] - POP_UP_FADE_MS:
+                if run and index // POP_UP_LAYER != block:
+                    flush()
+                block = index // POP_UP_LAYER
+                run.append(note)
+                continue
+            if (until <= 0 and note.is_slider and inert[note.is_finisher]
+                    and self._note_end_time(note) is None):
+                continue
+            flush()
+            self._draw_note(painter, note, center_y, normal_radius, big_radius)
+        flush()
+        self._pop_up_layers = kept  # only what this frame used: bounded by the screen
 
     def _draw_note(self, painter, note, center_y, normal_radius, big_radius) -> None:
         if note.is_nan_slider:
@@ -1741,9 +1947,7 @@ class GameplayViewerView(QWidget):
             pixmap = spinner_pixmap()
             if not pixmap.isNull():
                 size = radius * 2
-                painter.drawPixmap(
-                    QRectF(x - radius, center_y - radius, size, size), pixmap, QRectF(pixmap.rect())
-                )
+                draw_stretched(painter, QRectF(x - radius, center_y - radius, size, size), pixmap)
             painter.restore()
             return
 
@@ -1924,10 +2128,10 @@ class GameplayViewerView(QWidget):
         painter.setOpacity(painter.opacity() * body)
         body_end = max(end_x, x)
         if body_end > x:
-            painter.drawPixmap(
-                QRectF(x, center_y - track / 2.0, body_end - x, track),
-                middle, QRectF(middle.rect()),
-            )
+            draw_stretched(
+                # On whole rows, as the cap's unscaled blit is: filtered at a
+                # half-pixel y the track ended a row short of its cap.
+                painter, QRectF(x, round(center_y - track / 2.0), body_end - x, track), middle)
         tail = self.skin.scaled("taiko-roll-end", cap, self.slider_brush)
         if tail is not None:
             draw_pixmap_subpixel(painter, tail, body_end, center_y - tail.height() / 2.0)
@@ -1986,6 +2190,10 @@ class GameplayViewerView(QWidget):
             opacity = fake_roll_fade(note.time, lands, self._preempt_ms(), self.current_time)
             if landed and opacity <= 0.0 and self.current_time > note.time:
                 return
+            # Headless, with see-through track and cap (Kikuo - Gakkou o
+            # Yasunda Hi no Koto's 345 a frame): there is nothing left to draw.
+            if (landed or self.current_time >= note.time) and self._fake_slider_body_blank(radius, note.is_finisher):
+                return
             x += fake_slider_freeze(
                 note.time, ahead, abs(note.length or 0.0) * (note.slides or 1), self.current_time) * speed
         if x - radius > self.width():
@@ -2031,7 +2239,26 @@ class GameplayViewerView(QWidget):
                     lead = self._pop_up_lead(note)
                 spans.append((float(note.time), trail, inverse, lead, gone))
             self._screen_spans_key, self._screen_spans_cache = key, spans
+            self._screen_blocks = [
+                self._screen_block(spans[first:first + NOTE_BLOCK])
+                for first in range(0, len(spans), NOTE_BLOCK)]
         return self._screen_spans_cache
+
+    @staticmethod
+    def _screen_block(spans) -> tuple[float, float, float, float, float, bool]:
+        """The loosest of `_on_screen`'s bounds over a block of notes, taiko-rs's
+        NoteBlock: (earliest a scrolling note can show before `ahead`, slowest
+        inverse velocity, earliest a pop-up shows, latest trail, latest gone,
+        whether any note has no upper bound but `gone`)."""
+        return (
+            min(2.0 * time - trail for time, trail, _inv, _lead, _gone in spans),
+            max(inverse for _time, _trail, inverse, _lead, _gone in spans),
+            min(time - lead for time, _trail, _inv, lead, _gone in spans),
+            max(trail for _time, trail, _inv, _lead, _gone in spans),
+            max(gone for _time, _trail, _inv, _lead, gone in spans),
+            any(lead > float("-inf") or (gone < float("inf") and trail > time)
+                for time, trail, _inv, lead, gone in spans),
+        )
 
     def _on_screen(self, first: int, after_last: int, radius: float) -> list[int]:
         """Indexes in [first, after_last) `_draw_note` won't cull, a little
@@ -2046,25 +2273,55 @@ class GameplayViewerView(QWidget):
         behind = (hit + radius) / ppb
         now = self.current_time
         spans = self._screen_spans()
-        # A fake slider's track also reaches left of its head, by as much.
-        # A pop-up stands still near its time whatever its speed.
-        # A fake slider stands still near the target once its cap has landed
-        # (`fake_slider_freeze`), wherever its own scroll would put it.
-        return [
-            i for i in range(first, after_last)
-            for time, trail, inverse, lead, gone in (spans[i],)
-            if now <= gone and (
-                time - (trail - time) - ahead * inverse <= now <= trail + behind * inverse
-                or time <= now + lead
-                or (gone < float("inf") and trail > time and now >= time - (trail - time)))
-        ]
+        # A whole block out of reach is skipped: one crawling note anywhere
+        # sizes the range for the whole map, and testing every note in it was
+        # a millisecond a frame on senpai, notice me! [w]'s 3143.
+        reach_ahead, reach_behind = max(0.0, ahead), max(0.0, behind)
+        shown: list[int] = []
+        for block in range(first // NOTE_BLOCK, (after_last - 1) // NOTE_BLOCK + 1):
+            lo_scroll, slowest, lo_pop, hi_trail, hi_gone, open_ended = self._screen_blocks[block]
+            if (now > hi_gone
+                    or (now < lo_scroll - reach_ahead * slowest and now < lo_pop)
+                    or (not open_ended and now > hi_trail + reach_behind * slowest)):
+                continue
+            # A fake slider's track also reaches left of its head, by as much.
+            # A pop-up stands still near its time whatever its speed.
+            # A fake slider stands still near the target once its cap has
+            # landed (`fake_slider_freeze`), wherever its own scroll would put it.
+            shown.extend(
+                i for i in range(max(first, block * NOTE_BLOCK), min(after_last, (block + 1) * NOTE_BLOCK))
+                for time, trail, inverse, lead, gone in (spans[i],)
+                if now <= gone and (
+                    time - (trail - time) - ahead * inverse <= now <= trail + behind * inverse
+                    or time <= now + lead
+                    or (gone < float("inf") and trail > time and now >= time - (trail - time))))
+        return shown
+
+    def _fake_slider_body_blank(self, radius: float, big: bool) -> bool:
+        """Whether the skin's track and cap are both see-through (or absent
+        with no stand-in -- there always is one, so absent is not blank)."""
+        for element in ("taiko-roll-middle", "taiko-roll-end"):
+            art = self.skin.scaled(element, self._roll_height(element, round(radius * 2), big), self.slider_brush)
+            if art is None or not is_blank(art):
+                return False
+        return True
 
     def _pop_up_lead(self, note) -> float:
         """How long before its time a pop-up shows: |length| / (100 x
-        SliderMultiplier x SV) of the map's main beats (see `_pop_up`)."""
+        SliderMultiplier x SV) beats of the music (see `_pop_up`).
+
+        The music's beat is the red line the map goes back to after the
+        pop-up's own 1ms one, not the map's most common: Kikuo - Gakkou o
+        Yasunda Hi no Koto's 0.8 BPM gimmick lines outweigh its 80 BPM, and a
+        75000ms "main beat" stood every pop-up in the lane 100x too long --
+        hundreds of seconds, its fade long over before anyone saw it (owner,
+        2026-11-05). On senpai, notice me! [w] it is the main beat for all
+        1038 of them."""
         length = abs(note.length) * (note.slides or 1)
         sv = sv_at(self.timing_points, note.time)
-        return length / (100.0 * max(0.01, self.slider_multiplier) * sv) * self._main_beat
+        after = bisect_right(self._beat_times, note.time)
+        beat = self.beat_points[after].beat_length if after < len(self.beat_points) else self._main_beat
+        return length / (100.0 * max(0.01, self.slider_multiplier) * sv) * beat
 
     def _pop_up(self, note) -> tuple[float, float, float] | None:
         """A pop-up fake slider's (head x, body width, opacity), or None.
@@ -2080,11 +2337,37 @@ class GameplayViewerView(QWidget):
         with no fade out (owner, checked in stable). taiko-rs's `popup` is the
         same rule.
         """
+        until = note.time - self.current_time
+        if until <= 0:
+            return None
+        statics = self._pop_up_statics()
+        static = statics[note.uid] if note.uid in statics else (
+            self._pop_up_static(note) if note.is_slider and note.length is not None and note.length < 0
+            else None)  # not one of the view's own notes
+        if static is None:
+            return None
+        x, width, lead = static
+        return x, width, fade_from(lead, POP_UP_FADE_MS, until)
+
+    def _pop_up_statics(self) -> dict[int, tuple[float, float, float] | None]:
+        """uid -> (head x, body width, lead) of every pop-up, None for any
+        other negative fake slider: all of
+        `_pop_up` but the clock, built once per edit or resize. Read per object
+        per frame, it was a third of a paint on Kikuo - Gakkou o Yasunda Hi no
+        Koto's 4000 standing pop-ups."""
+        key = (id(self.notes), len(self.notes), id(self._velocities), id(self.timing_points),
+               self.width(), self._hit_x(), self.px_per_beat, self.slider_multiplier, self._main_beat)
+        if getattr(self, "_pop_up_key", None) != key:
+            self._pop_up_key = key
+            self._pop_up_cache = {
+                note.uid: self._pop_up_static(note) for note in self.notes
+                if note.is_slider and note.length is not None and note.length < 0}
+            self._pop_ups_any = any(self._pop_up_cache.values())
+        return self._pop_up_cache
+
+    def _pop_up_static(self, note) -> tuple[float, float, float] | None:
         # ponytail: "too fast" is crossing the view within a 60Hz frame; refine
         # if a map shows a middle case.
-        until = note.time - self.current_time
-        if note.length is None or note.length >= 0 or until <= 0:
-            return None
         speed = self.velocity_at(note.time) * self.px_per_beat
         if self.width() >= 16.0 * speed:
             return None
@@ -2099,8 +2382,7 @@ class GameplayViewerView(QWidget):
         per = POP_UP_PER_LENGTH * (self.width() - self._hit_x())
         length = abs(note.length) * (note.slides or 1)
         x = self._hit_x() + max(0.0, length - POP_UP_FROM_LENGTH) * per
-        lead = self._pop_up_lead(note)
-        return x, length * per, fade_from(lead, POP_UP_FADE_MS, until)
+        return x, length * per, self._pop_up_lead(note)
 
     def _draw_fake_slider_parts(self, painter, note, x, center_y, radius, width, opacity, landed) -> None:
         """Track, cap and head of `_draw_fake_slider`, the head at `x`; no
@@ -2112,10 +2394,8 @@ class GameplayViewerView(QWidget):
             height = self._roll_height("taiko-roll-middle", round(radius * 2), note.is_finisher)
             track = self.skin.scaled("taiko-roll-middle", height, self.slider_brush)
             if track is not None:
-                painter.drawPixmap(
-                    QRectF(x, center_y - height / 2.0, width, height),
-                    track, QRectF(track.rect()),
-                )
+                draw_stretched(
+                    painter, QRectF(x, round(center_y - height / 2.0), width, height), track)
             else:
                 # No skin: the same track in the drumroll colour, since the
                 # built-in lane has no art of its own.

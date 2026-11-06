@@ -38,6 +38,23 @@ class PureTests(unittest.TestCase):
         self.assertEqual(metadata.read_keys(out, "General")["PreviewTime"], "²")
 
 
+class LeadInAudioTests(unittest.TestCase):
+    def test_the_silence_is_exactly_as_long_as_asked_in_the_file_written(self):
+        import array, tempfile, wave
+        from unittest.mock import patch
+        from audio import rate_render
+        from audio.audio_engine import CHANNELS, frame_for_ms
+        tone = array.array("h", [1000, -1000] * 441).tobytes()
+        with tempfile.TemporaryDirectory() as folder, patch.object(rate_render.shutil, "which", lambda _name: None):
+            written = rate_render.lead_in_to_file(tone, 500, str(Path(folder) / "song (lead-in 500ms)"))
+            self.assertTrue(written.endswith(".wav"), "no ffmpeg: WAV, as the Rate Changer")
+            with wave.open(written, "rb") as handle:
+                samples = array.array("h", handle.readframes(handle.getnframes()))
+        first = next(i for i, value in enumerate(samples) if value) // CHANNELS
+        self.assertEqual(first, frame_for_ms(500))
+        self.assertEqual(len(samples) * 2, len(tone) + frame_for_ms(500) * CHANNELS * 2)
+
+
 class MetadataValuesTests(unittest.TestCase):
     """The owner's osu-metadata rules."""
 
@@ -76,6 +93,60 @@ class MiscPageTests(WindowTestCase):
         self.assertEqual(circles[2].hit_sound, 0, "a don stays a don")
         self.window.undo()
         self.assertEqual(circles[1].hit_sound, HITSOUND_CLAP)
+
+    def test_the_kat_switch_starts_on_clap_and_survives_a_save(self):
+        """Owner, 2026-11-04: clap is the default kat, and the switch
+        flips every kat of the difficulty -- big ones keep their finish, a
+        don and a drumroll are left alone -- in the file as written, too."""
+        import tempfile
+        from osu_io.writer import write_osu
+        self.assertEqual(self.page.kat_sound_combo.currentData(), HITSOUND_CLAP)
+        notes = self.window.state.document.hit_objects
+        circles = [note for note in notes if note.is_circle]
+        circles[0].hit_sound = HITSOUND_WHISTLE | HITSOUND_FINISH
+        circles[1].hit_sound = HITSOUND_WHISTLE
+        circles[2].hit_sound = 0
+        rolls = [note for note in notes if not note.is_circle]
+        roll_sounds = [note.hit_sound for note in rolls]
+        self.page.set_kat_sound()
+
+        def written():
+            with tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / "out.osu"
+                document = self.window.state.document
+                write_osu(document, path, document.version, allow_overwrite_source=True)
+                return {round(n.time): n.hit_sound for n in parse_osu(path).hit_objects}
+
+        sounds = written()
+        self.assertEqual(sounds[round(circles[0].time)], HITSOUND_CLAP | HITSOUND_FINISH)
+        self.assertEqual(sounds[round(circles[1].time)], HITSOUND_CLAP)
+        self.assertEqual(sounds[round(circles[2].time)], 0, "a don stays a don")
+        self.assertEqual([sounds[round(n.time)] for n in rolls], roll_sounds)
+        self.page.kat_sound_combo.setCurrentIndex(self.page.kat_sound_combo.findData(HITSOUND_WHISTLE))
+        self.page.set_kat_sound()
+        sounds = written()
+        self.assertEqual(sounds[round(circles[0].time)], HITSOUND_WHISTLE | HITSOUND_FINISH)
+        self.assertEqual(sounds[round(circles[1].time)], HITSOUND_WHISTLE)
+
+    def test_a_lead_in_points_the_set_at_the_new_song_and_shifts_it(self):
+        """Owner, 2026-11-04: silence before the song, every note as much
+        later, the original file kept; and undo puts the chart and the song
+        the editor plays back together."""
+        state = self.window.state
+        old_name, old_path = state.document.audio_filename, state.audio_path
+        times = [note.time for note in state.document.hit_objects]
+        written = self.path.parent / "audio (lead-in 500ms).mp3"
+        written.write_bytes(b"\x00")
+        self.page._lead_in_written([state.source_path], 500, str(written))
+        self.assertEqual([note.time for note in state.document.hit_objects], [t + 500 for t in times])
+        self.assertEqual(state.document.audio_filename, written.name)
+        self.assertEqual(state.audio_path, written)
+        self.assertEqual(metadata.read_keys(state.document.lines, "General")["AudioFilename"], written.name)
+        self.assertTrue((self.path.parent / old_name).exists(), "the original is kept")
+        self.window.undo()
+        self.assertEqual([note.time for note in state.document.hit_objects], times)
+        self.assertEqual((state.document.audio_filename, state.audio_path), (old_name, old_path))
+        self.assertEqual(metadata.read_keys(state.document.lines, "General")["AudioFilename"], old_name)
 
     def test_tags_over_the_limit_cannot_be_applied(self):
         self.page.fields["Tags"].setText("x" * 1000)

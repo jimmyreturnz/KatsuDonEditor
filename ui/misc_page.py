@@ -34,7 +34,7 @@ from audio import rate_render
 from audio.audio_engine import CHANNELS, SAMPLE_RATE
 from chart import autoplay, rate_change, taiko_to_mania
 from library import mappack, osu_memory
-from model.commands import CompositeCommand, ReplaceDocumentLines, SetNoteFields, ShiftChartTimes
+from model.commands import CompositeCommand, ReplaceDocumentLines, SetAudioFile, SetNoteFields, ShiftChartTimes
 from model.hit_object import HITSOUND_CLAP, HITSOUND_WHISTLE, KAT_HITSOUNDS
 from osu_io import metadata
 from osu_io.parser import parse_osu
@@ -336,6 +336,20 @@ class MiscPage(QWidget):
         self.shift_button = QPushButton(tr("MainWindow", "Shift the whole map"))
         self.shift_button.clicked.connect(self.shift_offset)
         timing.add(self.shift_button, span=1)
+        self.lead_in_spin = QSpinBox()
+        self.lead_in_spin.setRange(1, 10000)
+        self.lead_in_spin.setValue(1000)
+        self.lead_in_spin.setSuffix(" ms")
+        timing.field(tr("MainWindow", "Add silence to the start of the song"), self.lead_in_spin, tr(
+            "MainWindow", "For a first note that comes too soon, or plays late on a slow machine. "
+            "Writes a new song file with this much silence before it, points every difficulty "
+            "using the song at it, and shifts them all later by the same amount. "
+            "The original file is kept."))
+        self.lead_in_button = QPushButton(tr("MainWindow", "Add silence and shift the map"))
+        self.lead_in_button.clicked.connect(self.add_lead_in)
+        timing.add(self.lead_in_button, span=1)
+        self._lead_jobs: BackgroundJobs | None = None
+        self._lead_decoder = None
 
         caption(tr("MainWindow", "SV: the difficulty being edited"))
         self.scale_all_button = QPushButton(tr("MainWindow", "Scale every green line…"))
@@ -345,8 +359,9 @@ class MiscPage(QWidget):
 
         caption(tr("MainWindow", "Kat hitsound: the difficulty being edited"))
         self.kat_sound_combo = QComboBox()
-        self.kat_sound_combo.addItem(tr("MainWindow", "Whistle"), HITSOUND_WHISTLE)
+        # Clap first: it is the kat new notes are placed as (owner, 2026-11-04).
         self.kat_sound_combo.addItem(tr("MainWindow", "Clap"), HITSOUND_CLAP)
+        self.kat_sound_combo.addItem(tr("MainWindow", "Whistle"), HITSOUND_WHISTLE)
         timing.field(tr("MainWindow", "Every kat plays"), self.kat_sound_combo, tr(
             "MainWindow", "Whistle and clap both make a kat, so this changes only what it sounds "
                           "like. Finishers stay finishers."))
@@ -436,7 +451,7 @@ class MiscPage(QWidget):
             self.target_combo.addItem(combo.itemText(index), combo.itemData(index))
         current = state.source_path if state is not None else None
         self.target_combo.blockSignals(False)
-        for widget in (self.apply_metadata_button, self.shift_button, self.scale_all_button,
+        for widget in (self.apply_metadata_button, self.shift_button, self.lead_in_button, self.scale_all_button,
                        self.kat_sound_button, self.mania_button):
             widget.setEnabled(state is not None)
         self._load_mania_defaults(state)
@@ -517,20 +532,104 @@ class MiscPage(QWidget):
                 changed.append(state.source_path)
         self._done(changed, tr("MainWindow", "Metadata written to {0} difficulties.").format(len(changed)))
 
+    @staticmethod
+    def _shift_commands(document, delta: int) -> list:
+        """Every note, timing line, bookmark, break and the preview point
+        `delta` later: the set-wide offset shift, as commands."""
+        commands = [ShiftChartTimes(delta)]
+        lines = shifted_lines(document.lines, delta, document.line_ending)
+        if lines != document.lines:
+            commands.append(ReplaceDocumentLines(list(document.lines), lines))
+        return commands
+
     def shift_offset(self) -> None:
         delta = int(self.offset_spin.value())
         if delta == 0:
             return
         paths = []
         for state in self._states():
-            document = state.document
-            commands = [ShiftChartTimes(delta)]
-            lines = shifted_lines(document.lines, delta, document.line_ending)
-            if lines != document.lines:
-                commands.append(ReplaceDocumentLines(list(document.lines), lines))
-            state.history.push(CompositeCommand(commands, "shift_offset"), state)
+            state.history.push(CompositeCommand(self._shift_commands(state.document, delta), "shift_offset"), state)
             paths.append(state.source_path)
         self._done(paths, tr("MainWindow", "Shifted {0} difficulties by {1} ms.").format(len(paths), delta))
+
+    def add_lead_in(self) -> None:
+        """Decode the song, write it again after `lead_in_spin` ms of
+        silence, then point every difficulty that plays it at the new file
+        and shift it by as much -- one undo step per difficulty."""
+        state = getattr(self.window, "state", None)
+        if state is None or self._lead_decoder is not None:
+            return
+        document = state.document
+        source = mappack.resolve_ci(document.source_path.parent, document.audio_filename)
+        if source is None:
+            self.window.show_toast(tr("MainWindow", "This difficulty's audio file is missing."))
+            return
+        ms = int(self.lead_in_spin.value())
+        suffix = source.suffix.lower() if source.suffix.lower() in rate_render.ENCODERS else ".mp3"
+        stem = source.with_name(f"{source.stem} (lead-in {ms}ms)")
+        taken = next((stem.with_name(stem.name + ext) for ext in (suffix, ".wav")
+                      if stem.with_name(stem.name + ext).exists()), None)
+        if taken is not None:
+            self.window.show_toast(tr("MainWindow", "Not written: {0} already exists.").format(taken.name))
+            return
+        paths = [s.source_path for s in self._states()
+                 if s.document.audio_filename.casefold() == document.audio_filename.casefold()]
+        self.lead_in_button.setEnabled(False)
+        self.window.status.setText(tr("MainWindow", "Adding {0} ms of silence to {1}…").format(ms, source.name))
+
+        def decoded(pcm: bytes) -> None:
+            self._lead_decoder = None
+            if self._lead_jobs is None:
+                self._lead_jobs = BackgroundJobs(self)
+            self._lead_jobs.submit(partial(rate_render.lead_in_to_file, pcm, ms, str(stem), suffix),
+                                   partial(self._lead_in_written, paths, ms), self._lead_in_failed)
+
+        self._lead_decoder = self._decode_song(source, decoded, self._lead_in_failed)
+
+    def _lead_in_written(self, paths, ms: int, written: str) -> None:
+        self.lead_in_button.setEnabled(True)
+        new_path = Path(written)
+        for path in paths:
+            state = self.window._states.get(path)
+            if state is None:
+                continue
+            document = state.document
+            commands = [*self._shift_commands(document, ms),
+                        SetAudioFile(document.audio_filename, new_path.name, state.audio_path, new_path)]
+            state.history.push(CompositeCommand(commands, "add_lead_in"), state)
+        self._done(paths, tr("MainWindow", "Wrote {0} and shifted {1} difficulties by {2} ms.").format(
+            new_path.name, len(paths), ms))
+        self.window._follow_audio_file(getattr(self.window, "state", None))
+
+    def _lead_in_failed(self, error) -> None:
+        decoder, self._lead_decoder = self._lead_decoder, None
+        if decoder is not None:
+            decoder.deleteLater()
+        self.lead_in_button.setEnabled(True)
+        self.window.show_toast(tr("MainWindow", "Not written: {0}").format(error))
+
+    def _decode_song(self, source: Path, done, failed) -> QAudioDecoder:
+        """`source` decoded to 44.1kHz stereo s16, handed to `done` as bytes;
+        `failed` gets the decoder's message. The caller keeps the decoder
+        alive until one of them runs."""
+        fmt = QAudioFormat()
+        fmt.setSampleRate(SAMPLE_RATE)
+        fmt.setChannelCount(CHANNELS)
+        fmt.setSampleFormat(QAudioFormat.Int16)
+        decoder = QAudioDecoder(self)
+        decoder.setAudioFormat(fmt)
+        chunks: list[bytes] = []
+        decoder.bufferReady.connect(lambda: chunks.append(bytes(decoder.read().constData())))
+
+        def finished() -> None:
+            decoder.deleteLater()
+            done(b"".join(chunks))
+
+        decoder.finished.connect(finished)
+        decoder.error.connect(lambda _error: failed(decoder.errorString()))
+        decoder.setSource(QUrl.fromLocalFile(str(source)))
+        decoder.start()
+        return decoder
 
     def scale_all_sv(self) -> None:
         state = getattr(self.window, "state", None)
@@ -1107,22 +1206,12 @@ class MiscPage(QWidget):
         self.rate_progress.setRange(0, 0)  # busy until the decode is in
         self.rate_progress.setFormat(tr("MainWindow", "Reading the song…"))
         self.rate_progress.setVisible(True)
-        fmt = QAudioFormat()
-        fmt.setSampleRate(SAMPLE_RATE)
-        fmt.setChannelCount(CHANNELS)
-        fmt.setSampleFormat(QAudioFormat.Int16)
-        decoder = self._rate_run["decoder"] = QAudioDecoder(self)
-        decoder.setAudioFormat(fmt)
-        chunks: list[bytes] = []
-        decoder.bufferReady.connect(lambda: chunks.append(bytes(decoder.read().constData())))
-        decoder.finished.connect(lambda: self._render_rates(b"".join(chunks), missing))
-        decoder.error.connect(lambda _error: self._rates_failed(decoder.errorString()))
-        decoder.setSource(QUrl.fromLocalFile(str(source)))
-        decoder.start()
+        self._rate_run["decoder"] = self._decode_song(
+            source, lambda pcm: self._render_rates(pcm, missing), self._rates_failed)
 
     def _render_rates(self, pcm: bytes, missing: list[tuple[float, bool]]) -> None:
         run = self._rate_run
-        run.pop("decoder").deleteLater()
+        run.pop("decoder")  # deleted by _decode_song once it finished
         if self.rate_jobs is None:
             # Three, as the test suite runs three: more made the owner's
             # machine lag while he was using it (2026-10-08).
@@ -1367,6 +1456,8 @@ class MiscPage(QWidget):
             self._osu_jobs.shutdown()
         if self._rate_pool is not None:
             self._rate_pool.shutdown(wait=False, cancel_futures=True)
+        if self._lead_jobs is not None:
+            self._lead_jobs.shutdown()
 
     def add_difficulty(self, path: Path, version: str | None = None) -> None:
         """Add `path` to the pack, and say so wherever the user is. A

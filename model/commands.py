@@ -343,6 +343,38 @@ class ReplaceDocumentLines(Command):
 
 
 @dataclass
+class SetAudioFile(Command):
+    """[General] AudioFilename, and the file the editor plays, as one.
+
+    The lead-in writes a new song file beside the old one (owner, 2026-11-04).
+    A line swap alone would undo the name in the file but leave the editor
+    playing the new audio against the unshifted chart; the state's own
+    `audio_path` and the parsed `audio_filename` go back with it.
+    """
+
+    old_name: str
+    new_name: str
+    old_path: Any
+    new_path: Any
+    label_id: str = "set_audio_file"
+
+    def _set(self, target: EditTarget, name: str, path) -> None:
+        from osu_io import metadata
+
+        document = target.document
+        lines = metadata.with_keys(document.lines, "General", {"AudioFilename": f" {name}"}, document.line_ending)
+        ReplaceDocumentLines(list(document.lines), lines)._set(target, lines)
+        document.audio_filename = name
+        target.audio_path = path
+
+    def apply(self, target: EditTarget) -> None:
+        self._set(target, self.new_name, self.new_path)
+
+    def revert(self, target: EditTarget) -> None:
+        self._set(target, self.old_name, self.old_path)
+
+
+@dataclass
 class CompositeCommand(Command):
     """Several commands as one undo step.
 

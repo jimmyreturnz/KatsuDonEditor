@@ -104,6 +104,30 @@ class ViewOpacityTests(unittest.TestCase):
         self.assertFalse(lane.testAttribute(gui.Qt.WA_OpaquePaintEvent))
         self.assertGreater(colour.lightness(), 200, "the white shows through")
 
+    def test_on_a_backdrop_a_see_through_lane_stays_opaque_to_qt(self):
+        """2026-11-04: see-through, a lane made Qt repaint the whole page under
+        it every frame -- 1.9ms of a 1080p frame. On a backdrop it draws what
+        shows through itself, pixel for pixel, and stays opaque. The frame's
+        sheet polishes the flag away, so a paint has to put it back."""
+        with tempfile.TemporaryDirectory() as folder:
+            picture = Path(folder) / "bg.png"
+            image = QImage(40, 20, QImage.Format_RGB32)
+            image.fill(QColor("#ffffff"))
+            image.save(str(picture))
+            backdrop = self.holder = gui.MapBackdrop()
+            backdrop.set_background(picture)
+            backdrop.set_opacity(100)
+            backdrop.resize(300, 120)
+            frame = gui.EditorViewFrame("sv", "Oni")
+            lane = gui.SVEditorView()
+            frame.set_content(lane)
+            frame.setParent(backdrop)
+            frame.resize(300, 120)
+            gui.set_view_opacity(0, [frame, lane])
+            colour = backdrop.grab().toImage().pixelColor(lane.mapTo(backdrop, QPoint(150, 5)))
+            self.assertTrue(lane.testAttribute(gui.Qt.WA_OpaquePaintEvent))
+            self.assertGreater(colour.lightness(), 200, "the picture shows through")
+
     def test_views_sit_edge_to_edge(self):
         frame = gui.EditorViewFrame("chart", "Oni")
         self.assertIn("border-radius: 0", frame.styleSheet())

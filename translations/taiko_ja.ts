@@ -3465,6 +3465,26 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>最初のノーツが早すぎる、または遅いPCで遅れて鳴る場合に。この長さの無音を頭に付けた新しい曲ファイルを書き出し、その曲を使う全難易度をそのファイルに切り替え、同じだけ後ろにずらします。元のファイルは残ります。</translation>
         </message>
         <message>
+            <source>Check the song is rankable</source>
+            <translation>曲がランク可能か確認</translation>
+        </message>
+        <message>
+            <source>Make a rankable copy of the song</source>
+            <translation>ランク可能な曲のコピーを作成</translation>
+        </message>
+        <message>
+            <source>Not rankable: {0}</source>
+            <translation>ランク不可：{0}</translation>
+        </message>
+        <message>
+            <source>Rankable: {0} kbps, {1} Hz.</source>
+            <translation>ランク可能：{0} kbps、{1} Hz。</translation>
+        </message>
+        <message>
+            <source>Wrote {0}.</source>
+            <translation>{0} を書き出しました。</translation>
+        </message>
+        <message>
             <source>Add silence and shift the map</source>
             <translation>無音を追加して譜面をずらす</translation>
         </message>

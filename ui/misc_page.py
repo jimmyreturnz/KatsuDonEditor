@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.i18n import tr
-from audio import rate_render
+from audio import rankable, rate_render
 from audio.audio_engine import CHANNELS, SAMPLE_RATE
 from chart import autoplay, rate_change, taiko_to_mania
 from library import mappack, osu_memory
@@ -348,6 +348,12 @@ class MiscPage(QWidget):
         self.lead_in_button = QPushButton(tr("MainWindow", "Add silence and shift the map"))
         self.lead_in_button.clicked.connect(self.add_lead_in)
         timing.add(self.lead_in_button, span=1)
+        self.rankable_check_button = QPushButton(tr("MainWindow", "Check the song is rankable"))
+        self.rankable_check_button.clicked.connect(self.check_rankable)
+        timing.add(self.rankable_check_button, span=1)
+        self.rankable_convert_button = QPushButton(tr("MainWindow", "Make a rankable copy of the song"))
+        self.rankable_convert_button.clicked.connect(self.convert_rankable)
+        timing.add(self.rankable_convert_button, span=1)
         self._lead_jobs: BackgroundJobs | None = None
         self._lead_decoder = None
 
@@ -572,6 +578,7 @@ class MiscPage(QWidget):
         if taken is not None:
             self.window.show_toast(tr("MainWindow", "Not written: {0} already exists.").format(taken.name))
             return
+        kbps = rankable.target_kbps(source, suffix)  # never above the source's own, nor the cap
         paths = [s.source_path for s in self._states()
                  if s.document.audio_filename.casefold() == document.audio_filename.casefold()]
         self.lead_in_button.setEnabled(False)
@@ -581,7 +588,7 @@ class MiscPage(QWidget):
             self._lead_decoder = None
             if self._lead_jobs is None:
                 self._lead_jobs = BackgroundJobs(self)
-            self._lead_jobs.submit(partial(rate_render.lead_in_to_file, pcm, ms, str(stem), suffix),
+            self._lead_jobs.submit(partial(rate_render.lead_in_to_file, pcm, ms, str(stem), suffix, kbps),
                                    partial(self._lead_in_written, paths, ms), self._lead_in_failed)
 
         self._lead_decoder = self._decode_song(source, decoded, self._lead_in_failed)
@@ -600,6 +607,48 @@ class MiscPage(QWidget):
         self._done(paths, tr("MainWindow", "Wrote {0} and shifted {1} difficulties by {2} ms.").format(
             new_path.name, len(paths), ms))
         self.window._follow_audio_file(getattr(self.window, "state", None))
+
+    def _song_file(self) -> Path | None:
+        state = getattr(self.window, "state", None)
+        if state is None:
+            return None
+        document = state.document
+        source = mappack.resolve_ci(document.source_path.parent, document.audio_filename)
+        if source is None:
+            self.window.show_toast(tr("MainWindow", "This difficulty's audio file is missing."))
+        return source
+
+    def check_rankable(self) -> None:
+        source = self._song_file()
+        if source is None:
+            return
+        found = rankable.problems(source)
+        if found:
+            self.window.show_toast(tr("MainWindow", "Not rankable: {0}").format(" ".join(found)))
+        else:
+            info = rankable.probe(source)
+            if info is None:
+                return
+            self.window.show_toast(tr("MainWindow", "Rankable: {0} kbps, {1} Hz.").format(
+                round(info.kbps or 0), info.sample_rate))
+
+    def convert_rankable(self) -> None:
+        source = self._song_file()
+        if source is None or self._lead_decoder is not None:
+            return
+        stem = source.with_name(f"{source.stem} (rankable)")
+        if self._lead_jobs is None:
+            self._lead_jobs = BackgroundJobs(self)
+        self.rankable_convert_button.setEnabled(False)
+        self._lead_jobs.submit(partial(rankable.convert, source, stem), self._rankable_written, self._rankable_failed)
+
+    def _rankable_written(self, written) -> None:
+        self.rankable_convert_button.setEnabled(True)
+        self.window.show_toast(tr("MainWindow", "Wrote {0}.").format(Path(written).name))
+
+    def _rankable_failed(self, error) -> None:
+        self.rankable_convert_button.setEnabled(True)
+        self.window.show_toast(tr("MainWindow", "Not written: {0}").format(error))
 
     def _lead_in_failed(self, error) -> None:
         decoder, self._lead_decoder = self._lead_decoder, None
@@ -1222,9 +1271,11 @@ class MiscPage(QWidget):
         self.rate_progress.setValue(0)
         self.rate_progress.setFormat(tr("MainWindow", "Rendering: %v of %m rates done"))
         document = run["document"]
+        source = mappack.resolve_ci(document.source_path.parent, document.audio_filename)
+        kbps = rankable.target_kbps(source, run["format"])
         for rate, pitch in missing:
             stem = document.source_path.parent / rate_change.audio_name(document.audio_filename, rate, pitch, "")
-            self.rate_jobs.submit(partial(rate_render.render_to_file, pcm, rate, pitch, str(stem), run["format"]),
+            self.rate_jobs.submit(partial(rate_render.render_to_file, pcm, rate, pitch, str(stem), run["format"], kbps),
                                   partial(self._rate_rendered, (rate, pitch)), self._rate_render_failed)
 
     def _rate_rendered(self, key: tuple[float, bool], path: str) -> None:

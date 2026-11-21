@@ -627,6 +627,8 @@ class MiscPage(QWidget):
             self.window.show_toast(tr("MainWindow", "Not rankable: {0}").format(" ".join(found)))
         else:
             info = rankable.probe(source)
+            if info is None:
+                return
             self.window.show_toast(tr("MainWindow", "Rankable: {0} kbps, {1} Hz.").format(
                 round(info.kbps or 0), info.sample_rate))
 

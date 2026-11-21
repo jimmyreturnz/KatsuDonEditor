@@ -41,7 +41,7 @@ def probe(path: Path) -> AudioInfo | None:
     if not ffprobe:
         return None
     done = subprocess.run(
-        [ffprobe, "-v", "error", "-select_streams", "a:0", "-show_entries",
+        [ffprobe, "-v", "error", "-protocol_whitelist", "file", "-select_streams", "a:0", "-show_entries",
          "stream=codec_name,sample_rate,channels,bit_rate:format=bit_rate", "-of", "json", str(path)],
         capture_output=True, creationflags=_NO_WINDOW)
     if done.returncode != 0:
@@ -100,10 +100,12 @@ def convert(source: Path, stem: Path) -> Path:
     suffix = source.suffix.lower() if source.suffix.lower() in rate_render.ENCODERS else ".mp3"
     info = probe(source)
     target = stem.with_name(stem.name + suffix)
+    if target.exists():  # -n would refuse, and the cleanup below must not delete what is not ours
+        raise RuntimeError(f"{target.name} already exists")
     rate = min(info.sample_rate, MAX_RATE) if info else 44100
     codec = rate_render.ENCODERS[suffix]
     done = subprocess.run(
-        [ffmpeg, "-hide_banner", "-loglevel", "error", "-n", "-i", str(source), "-vn", "-ar", str(rate),
+        [ffmpeg, "-hide_banner", "-loglevel", "error", "-n", "-protocol_whitelist", "file", "-i", str(source), "-vn", "-ar", str(rate),
          "-c:a", codec, "-b:a", f"{target_kbps(source, suffix)}k", str(target)],
         capture_output=True, creationflags=_NO_WINDOW)
     if done.returncode != 0:

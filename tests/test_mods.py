@@ -47,6 +47,7 @@ class _Window(unittest.TestCase):
         # leaves its mods there -- start from none, whatever was last played.
         from app import settings
         settings.SettingsManager().set_value("playback/mods", "")
+        settings.SettingsManager().set_value("playback/custom_rate", "")
         self.window = gui.MainWindow()
         self.window.show()
         self.window._load_map_path(self.path, refresh_difficulties=True)
@@ -56,6 +57,7 @@ class _Window(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.window._set_mods(set())
+        self.window._choose_speed(1.0)
         self.window.close()
         self._temp.cleanup()
 
@@ -166,6 +168,55 @@ class ModToggleTests(_Window):
             self.assertEqual({m for m, b in buttons.items() if b.isChecked()}, {"HD", "HR"})
         self.assertEqual(self.window.mods_chip.text(), "HDHR")
         self.assertFalse(self.window.mods_chip.isHidden())
+
+    def test_a_custom_rate_moves_the_pitch_when_asked(self):
+        self.window._toggle_mod("HD")
+        self.window._toggle_mod("DT")
+        self.window._choose_custom_rate(1.3, True)
+        self.assertEqual(self.window._mods, {"HD"})
+        self.assertEqual(self.window.player.playbackRate(), 1.3)
+        self.assertEqual(self.pitch_calls[-1], True)
+        self.assertEqual(self.window.mods_chip.text(), "HD 130%" + gui.RATE_PITCH_MARK)
+        for button, *_ in self.window._custom_rate_controls:
+            self.assertTrue(button.isChecked())
+            self.assertEqual(button.text(), "130%" + gui.RATE_PITCH_MARK)
+        pressed = [b for b in self.window.editor_playback_speed_buttons if b.isChecked()]
+        self.assertEqual(pressed, [])
+        for view in self.window._gameplay_views:
+            self.assertEqual(view.custom_rate, 1.3)
+
+    def test_a_custom_rate_a_mod_names_is_that_mod(self):
+        self.window._choose_custom_rate(0.75, True)
+        self.assertEqual(self.window._mods, {"DC"})
+        self.assertIsNone(self.window._custom_rate)
+        self.window._choose_custom_rate(0.5, False)
+        self.assertEqual(self.window._mods, frozenset())
+        self.assertIsNone(self.window._custom_rate)
+        self.assertEqual([b.text() for b in self.window.editor_playback_speed_buttons if b.isChecked()],
+                         ["50%"])
+
+    def test_a_pill_or_a_speed_button_ends_the_custom_rate(self):
+        self.window._choose_custom_rate(1.3, False)
+        self.window._toggle_mod("NC")
+        self.assertIsNone(self.window._custom_rate)
+        self.assertEqual(self.window.player.playbackRate(), 1.5)
+        self.window._toggle_mod("NC")
+        self.window._choose_custom_rate(0.6, True)
+        self.window._choose_speed(0.25)
+        self.assertIsNone(self.window._custom_rate)
+        self.assertEqual(self.pitch_calls[-1], False)
+        for button, *_ in self.window._custom_rate_controls:
+            self.assertFalse(button.isChecked())
+
+    def test_the_custom_rate_comes_back_next_time(self):
+        self.window._choose_custom_rate(1.3, True)
+        second = gui.MainWindow()
+        try:
+            self.assertEqual(second._custom_rate, (1.3, True))
+            self.assertEqual(second.player.playbackRate(), 1.3)
+        finally:
+            second._choose_speed(1.0)
+            second.close()
 
     def test_mods_come_back_next_time(self):
         self.window._toggle_mod("HD")

@@ -481,6 +481,12 @@ class SettingsDialog(QDialog):
             "them as well as around them."
         ))
 
+        chart = page.group(self.tr("Chart view"))
+        self.show_combo = QCheckBox(self.tr("Show combo numbers"))
+        chart.switch(self.show_combo, self.tr(
+            "osu!'s combo numbers, the ones a timestamp quotes, under the notes "
+            "of the chart view: on every note, or every few as the zoom leaves room."))
+
         fancy = page.group(self.tr("Fancy Arranger"))
         self.transform_animation = QCheckBox(self.tr("Animate transforms"))
         fancy.switch(self.transform_animation, self.tr(
@@ -621,6 +627,7 @@ class SettingsDialog(QDialog):
     def _load_current_values(self) -> None:
         self.confirm_overwrite.setChecked(self.settings.bool_value("general/confirm_overwrite", True))
         self.transform_animation.setChecked(self.settings.bool_value("appearance/transform_animation", True))
+        self.show_combo.setChecked(self.settings.bool_value("appearance/show_combo", True))
         self.check_updates_on_startup.setChecked(
             self.settings.bool_value(updater.SETTING_CHECK_ON_STARTUP, True)
         )
@@ -689,6 +696,7 @@ class SettingsDialog(QDialog):
             self.background_opacity.setValue(25)
             self.view_opacity.setValue(100)
             self.song_select_preview.setValue(67)
+            self.show_combo.setChecked(True)
         elif page == "language":
             self.language_combo.setCurrentIndex(self.language_combo.findData("en"))
         elif page == "shortcuts":
@@ -736,6 +744,7 @@ class SettingsDialog(QDialog):
         self.settings.set_value(theme.SETTING, selected_theme)
         self.settings.set_value("general/confirm_overwrite", self.confirm_overwrite.isChecked())
         self.settings.set_value("appearance/transform_animation", self.transform_animation.isChecked())
+        self.settings.set_value("appearance/show_combo", self.show_combo.isChecked())
         self.settings.set_value(
             updater.SETTING_CHECK_ON_STARTUP, self.check_updates_on_startup.isChecked()
         )

@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
     QPushButton, QScrollArea, QTextEdit, QSlider, QSpinBox, QStackedWidget, QTabWidget,
     QToolButton, QVBoxLayout, QWidget, QDockWidget, QMenu, QDialog, QDialogButtonBox,
-    QFontComboBox, QSizePolicy, QStyle, QStyleOptionFrame,
+    QFontComboBox, QSizePolicy, QStyle, QStyleOptionFrame, QCheckBox, QWidgetAction,
 )
 
 from ui.motion import (
@@ -108,7 +108,7 @@ from ui.editor_keys import EditorKeys
 
 from ui.chart_views import (
     DensityOverview, EditorViewFrame, TimelineGameplay, TimingOverviewBar,
-    editor_timeline_metadata, extract_timing_points, is_fake_slider, timeline_bar_data,
+    editor_timeline_metadata, extract_timing_points, is_fake_slider, set_show_combo, timeline_bar_data,
 )
 
 from ui.sv_editor import (
@@ -1557,6 +1557,10 @@ MOD_ORDER = ("HD", "NC", "DT", "DC", "HT", "HR", "EZ", "FL")
 # use); NC/DC are Frequency (resampled, the song's pitch follows the rate). The
 # hitsounds keep their own pitch under all four -- the owner's call.
 RATE_MODS = {"NC": (1.5, True), "DT": (1.5, False), "DC": (0.75, True), "HT": (0.75, False)}
+# The speed buttons, every one pitch kept; and what marks a Custom rate whose
+# pitch moves with it.
+SPEED_PRESETS = (0.25, 0.5, 0.75, 1.0)
+RATE_PITCH_MARK = "♪"
 # The pill row's layout, and only that: scroll, visibility, rate.
 MOD_PILL_GROUPS = (("HR", "EZ"), ("HD", "FL"), ("DT", "NC", "HT", "DC"))
 # Hard-coded, like the note colours: a mod is the same colour in every theme,
@@ -3141,6 +3145,9 @@ class MainWindow(QMainWindow):
         """
         self.note_opacity_percent = self.settings.int_value(
             "appearance/note_opacity", NOTE_OPACITY_DEFAULT_PERCENT)
+        # Every chart view repaints below (set_note_opacity), so the flag
+        # needs no update() of its own.
+        set_show_combo(self.settings.bool_value("appearance/show_combo", True))
         name = self.settings.string_value("appearance/skin", "")
         folder = None
         if name:
@@ -3917,7 +3924,7 @@ class MainWindow(QMainWindow):
         for label,rate in (("25%",.25),("50%",.5),("75%",.75),("100%",1.0)):
             button=QPushButton(label);button.setCheckable(True);button.setProperty("playbackRate",rate)
             button.clicked.connect(lambda checked=False,r=rate:self._choose_speed(r));self.playback_speed_buttons.append(button)
-        timeline_row.addWidget(segmented(self.playback_speed_buttons))
+        timeline_row.addWidget(segmented([*self.playback_speed_buttons, self._custom_rate_button()]))
         layout.addWidget(scroll_row(timeline_row_widget))
 
         self.fancy_density = DensityOverview()
@@ -4641,7 +4648,7 @@ class MainWindow(QMainWindow):
         height_row.addWidget(self.editor_view_height_spin)
         # Speed beside View size, at the bottom (owner, 2026-10-24): the strip
         # above gives the width it took to the timing bar.
-        status_row.addWidget(segmented(self.editor_playback_speed_buttons))
+        status_row.addWidget(segmented([*self.editor_playback_speed_buttons, self._custom_rate_button()]))
         status_row.addWidget(height_box)
         # A stepper nobody reaches for often: quiet, like the rest of the bar.
         for button in height_box.findChildren(QPushButton):
@@ -4769,7 +4776,7 @@ class MainWindow(QMainWindow):
             "gimmick/view_height", self.GIMMICK_LAYER_HEIGHT))
         self.gimmick_view_height_spin.valueChanged.connect(self._gimmick_view_height_changed)
         # As on the Editor page: speed at the bottom, left of View size.
-        status_row.addWidget(segmented(self.gimmick_playback_speed_buttons))
+        status_row.addWidget(segmented([*self.gimmick_playback_speed_buttons, self._custom_rate_button()]))
         status_row.addWidget(QLabel(tr("MainWindow", "View size")))
         status_row.addWidget(self.gimmick_view_height_spin)
 
@@ -8010,6 +8017,7 @@ class MainWindow(QMainWindow):
             if skin is not None:
                 view.set_skin(skin)
             view.set_mods(self._mods)
+            view.set_custom_rate(self._custom_rate[0] if self._custom_rate else None)
             view.set_autoplay(self._autoplay)
             self._gameplay_views.append(view)
             self._editor_snap_views.append(view)
@@ -9941,6 +9949,15 @@ class MainWindow(QMainWindow):
         # Checked whenever one plays, so it is sized for its bold label.
         for button, _actions in getattr(self, "_autoplay_menus", ()):
             fit_button_width(button)
+        # Sized for its widest label, so the speed row does not re-flow as
+        # the rate is dragged.
+        for button, *_controls in getattr(self, "_custom_rate_controls", ()):
+            text, widths = button.text(), []
+            for label in (tr("MainWindow", "Custom"), "200%" + RATE_PITCH_MARK):
+                button.setText(label)
+                widths.append(button_text_width(button))
+            button.setText(text)
+            button.setFixedWidth(max(widths))
         self.misc_page.fit_buttons()
         # One size for every tool button, across both rows: they swap in and out
         # of the same spot, so per-label widths made the row re-flow on every
@@ -11039,8 +11056,109 @@ class MainWindow(QMainWindow):
     def _rate_mod(self) -> str | None:
         return next((mod for mod in MOD_ORDER if mod in self._mods and mod in RATE_MODS), None)
 
+    _custom_rate: tuple[float, bool] | None = None
+
+    def _custom_rate_button(self) -> QPushButton:
+        """Custom, the last segment of a speed row (owner, 2026-11-24): any
+        rate from 25 to 200%, the pitch kept or moved with it. A popup rather
+        than more of the strip, which has no room left for a slider."""
+        if not hasattr(self, "_custom_rate_controls"):
+            self._custom_rate_controls: list[tuple] = []
+        button = QPushButton(tr("MainWindow", "Custom"))
+        button.setCheckable(True)
+        button.setFocusPolicy(Qt.NoFocus)
+        button.setToolTip(tr("MainWindow", "Any playback rate, with the pitch kept or moved with it"))
+        menu = QMenu(button)
+        panel = QWidget()
+        column = QVBoxLayout(panel)
+        column.setContentsMargins(10, 8, 10, 8)
+        column.setSpacing(6)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        slider = QSlider(Qt.Horizontal)
+        slider.setRange(25, 200)
+        slider.setPageStep(5)
+        slider.setMinimumWidth(200)
+        value = QLabel()
+        value.setMinimumWidth(value.fontMetrics().horizontalAdvance("200%") + 4)
+        row.addWidget(slider, 1)
+        row.addWidget(value)
+        pitch = QCheckBox(tr("MainWindow", "Change pitch"))
+        pitch.setToolTip(tr(
+            "MainWindow",
+            "Off keeps the song's pitch, as DT and HT do; on moves it with the speed, as NC and DC do"))
+        column.addLayout(row)
+        column.addWidget(pitch)
+        action = QWidgetAction(menu)
+        action.setDefaultWidget(panel)
+        menu.addAction(action)
+        apply = lambda *_: self._choose_custom_rate(slider.value() / 100.0, pitch.isChecked())
+        slider.valueChanged.connect(apply)
+        pitch.toggled.connect(apply)
+        button.setMenu(menu)
+        self._custom_rate_controls.append((button, slider, pitch, value))
+        self._sync_custom_rate_controls()
+        return button
+
+    def _current_rate(self) -> tuple[float, bool]:
+        """The song's (rate, whether its pitch moves), whoever set it."""
+        rate_mod = self._rate_mod()
+        if rate_mod:
+            return RATE_MODS[rate_mod]
+        return self._custom_rate or (float(self.player.playbackRate()), False)
+
+    def _choose_custom_rate(self, rate: float, pitch: bool) -> None:
+        """The Custom popup. A rate a mod already names is that mod, so its
+        pill lights; one a speed button names is that button; anything else
+        replaces any rate mod, as a speed button does."""
+        mod = next((m for m, value in RATE_MODS.items() if value == (rate, pitch)), None)
+        if mod is not None:
+            self._set_mods((set(self._mods) - set(RATE_MODS)) | {mod})
+            return
+        if rate == 1.0 or (not pitch and rate in SPEED_PRESETS):
+            self._choose_speed(rate)
+            return
+        if self._rate_mod():
+            self._mods = frozenset(m for m in self._mods if m not in RATE_MODS)
+            self._store_mods()
+            for view in self._gameplay_views:
+                view.set_mods(self._mods)
+        self._set_custom_rate((rate, pitch))
+        self.player.set_pitch_shift(pitch)
+        self._change_playback_speed(rate)
+
+    def _set_custom_rate(self, value: tuple[float, bool] | None) -> None:
+        self._custom_rate = value
+        self.settings.set_value("playback/custom_rate", f"{value[0]:g},{int(value[1])}" if value else "")
+        for view in self._gameplay_views:
+            view.set_custom_rate(value[0] if value else None)
+
+    def _custom_rate_text(self) -> str:
+        """`130%`, with the note mark when the pitch moves; "" with none."""
+        if not self._custom_rate:
+            return ""
+        rate, pitch = self._custom_rate
+        return f"{round(rate * 100)}%" + (RATE_PITCH_MARK if pitch else "")
+
+    def _sync_custom_rate_controls(self) -> None:
+        rate, pitch = self._current_rate()
+        for button, slider, pitch_box, value in getattr(self, "_custom_rate_controls", ()):
+            button.setChecked(self._custom_rate is not None)
+            button.setText(self._custom_rate_text() or tr("MainWindow", "Custom"))
+            # Blocked: these follow the rate, and a slider dragged onto 75%
+            # must not hear its own echo as a second choice.
+            for widget in (slider, pitch_box):
+                widget.blockSignals(True)
+            slider.setValue(round(rate * 100))
+            pitch_box.setChecked(pitch)
+            for widget in (slider, pitch_box):
+                widget.blockSignals(False)
+            value.setText(f"{slider.value()}%")
+
     def _choose_speed(self, rate: float) -> None:
         """A speed button. It replaces any rate mod: the song plays at one rate."""
+        if self._custom_rate:
+            self._set_custom_rate(None)
         if self._rate_mod():
             self._mods = frozenset(mod for mod in self._mods if mod not in RATE_MODS)
             self._store_mods()
@@ -11066,6 +11184,8 @@ class MainWindow(QMainWindow):
         self._store_mods()
         rate_mod = self._rate_mod()
         if rate_mod != previous_rate_mod:
+            if self._custom_rate:
+                self._set_custom_rate(None)
             rate, pitch = RATE_MODS[rate_mod] if rate_mod else (1.0, False)
             # Pitch first: the engine reads both on its next grain, in order.
             self.player.set_pitch_shift(pitch)
@@ -11082,6 +11202,14 @@ class MainWindow(QMainWindow):
         mods = {text[i:i + 2] for i in range(0, len(text), 2)} & set(MOD_ORDER)
         if mods:
             self._set_mods(mods)
+        rate, _, pitch = self.settings.string_value("playback/custom_rate", "").partition(",")
+        if self._rate_mod():
+            return
+        try:
+            rate = min(2.0, max(0.25, float(rate)))
+        except ValueError:
+            return
+        self._choose_custom_rate(rate, pitch == "1")
 
     def _sync_mod_controls(self) -> None:
         for buttons in getattr(self, "_mod_buttons", []):
@@ -11089,12 +11217,14 @@ class MainWindow(QMainWindow):
                 button.blockSignals(True)
                 button.setChecked(mod in self._mods)
                 button.blockSignals(False)
+        self._sync_custom_rate_controls()
         chip = getattr(self, "mods_chip", None)
         if chip is not None:
-            chip.setText(mod_string(self._mods))
+            text = " ".join(part for part in (mod_string(self._mods), self._custom_rate_text()) if part)
+            chip.setText(text)
             # Not on song select (owner, 2026-10-17): the mods are the
             # editor's, and its preview plays without them.
-            chip.setVisible(bool(self._mods) and self.page_stack.currentIndex() != PAGE_LIBRARY)
+            chip.setVisible(bool(text) and self.page_stack.currentIndex() != PAGE_LIBRARY)
 
     def _change_playback_speed(self,rate:float)->None:
         # Re-anchor from *our own* playhead, sampled before the rate changes --
@@ -11135,7 +11265,8 @@ class MainWindow(QMainWindow):
         ):
             # The speed the song is at, whoever set it: HT/DC light 75% too
             # (owner's call), and DT/NC light nothing, since there is no 150%.
-            active=abs(float(button.property("playbackRate"))-rate)<0.0001
+            # A Custom rate lights only Custom, even at 50% with the pitch moved.
+            active=abs(float(button.property("playbackRate"))-rate)<0.0001 and not self._custom_rate
             button.blockSignals(True);button.setChecked(active);button.blockSignals(False)
         self._sync_mod_controls()
 

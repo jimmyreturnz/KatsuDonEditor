@@ -23,7 +23,7 @@ KatsuDon Editor (formerly Taiko Fancy Arranger) started as a tool for turning os
 
 The editor does not support editing storyboards, breaks, colours, editor bookmarks yet.
 
-> **Current release:** v3.6.2  
+> **Current release:** v3.6.3  
 > **Platform:** Windows x64  
 > **Author:** [jimmyreturnz](https://osu.ppy.sh/users/11306153)
 
@@ -68,6 +68,14 @@ The main inspirations include Alchyr's ranked maps *13 Stairs* and *Helios*, whi
 | ![Generate SV](docs/screenshots/generate-sv.png) | ![Settings](docs/screenshots/settings.png) |
 
 ---
+
+## What is new in 3.6.3
+
+- **Custom playback rate:** a fifth speed button opens a 25-200% slider, with the pitch kept (as DT/HT) or moved with the speed (as NC/DC).
+- **Combo numbers in the chart view:** osu!'s editor numbers, under the notes, thinned to what the zoom has room for. Toggle in Settings -> Appearance.
+- **Rankable audio:** check whether a song meets osu!'s audio rules and make a rankable copy (Miscellaneous). The lead-in tool and the Rate Changer now write under the bitrate cap instead of about 245-256 kbps.
+
+Details: [`docs/releases/v3.6.3.md`](docs/releases/v3.6.3.md).
 
 ## What is new in 3.6.2
 
@@ -567,7 +575,7 @@ Do not upload copyrighted audio or private beatmap assets unless permission has 
 
 ## Project status
 
-Version 3.6.2 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
+Version 3.6.3 is the current public release. The project is for editing, arranging and previewing charts. Multiplayer and difficulty calculation are out of scope.
 
 Not yet implemented, and next in line:
 

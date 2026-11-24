@@ -33,6 +33,8 @@ from osu_io.timing import (
 from chart.time_axis import TimeAxisMixin, osu_snap_ms
 from chart.gimmick_session import FAKE_SLIDER_MAX_LENGTH
 from ui.common import (
+    break_periods,
+    combo_numbers,
     draw_vertical_lines,
     ACCENT_PINK,
     DON_COLOR,
@@ -165,6 +167,29 @@ def is_fake_slider(note) -> bool:
     )
 
 
+_show_combo = True
+
+
+def set_show_combo(on: bool) -> None:
+    """Settings' "Show combo numbers". Here, with a setter, because a
+    `global` in gui.py would rebind only gui's copy of the name."""
+    global _show_combo
+    _show_combo = bool(on)
+
+
+COMBO_STEPS = (1, 2, 5, 10, 25, 50, 100)
+
+
+def combo_step(pixels_per_object: float, label_px: float) -> int:
+    """The smallest step whose labels do not touch. Numbering 1 and every
+    `step`th, rather than whichever notes happen to have room, keeps the same
+    notes labelled while the view scrolls."""
+    for step in COMBO_STEPS:
+        if pixels_per_object * step >= label_px:
+            return step
+    return COMBO_STEPS[-1]
+
+
 class TimelineGameplay(TimeAxisMixin, QWidget):
     # Tools whose gesture is "drag a range", not "click a spot". Listed once
     # because mousePressEvent has to start the drag and mouseReleaseEvent has
@@ -260,6 +285,7 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
 
         self.notes = []
         self.note_times: list[int] = []
+        self.note_combo: list[int] = []
         self._max_extend_ms = 0.0
         self.timing_points: list[TimingPoint] = []
         self._timing_times: list[float] = []
@@ -614,6 +640,11 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
         if self.timing_line_times_for is not None:
             self.timing_line_times = self.timing_line_times_for(document)
         self.note_times = [note.time for note in self.notes]
+        # Only over the whole chart: a gimmick layer's filtered list would
+        # count its own objects, not the combo.
+        breaks = break_periods(getattr(document, "lines", ())) if self.object_filter is None else ()
+        self.note_combo = ([number for number, _note in combo_numbers(self.notes, breaks)]
+                           if self.object_filter is None else [])
         if self.foreign_times_for is not None:
             self.foreign_times = self.foreign_times_for(document)
         if self.gimmick_times_for is not None:
@@ -1783,6 +1814,8 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
                     Qt.AlignCenter, "NaN")
                 painter.restore()
 
+        self._draw_combo_numbers(painter, start_time, end_time, baseline_y, normal_note_radius,
+                                 finisher_note_radius, moving_notes)
         self._draw_placement_ghost(painter, baseline_y, normal_note_radius, finisher_note_radius)
         self.draw_ctrl_precision_line(painter)
         self.draw_cursor_position(painter)
@@ -1798,6 +1831,49 @@ class TimelineGameplay(TimeAxisMixin, QWidget):
                 cursor_x,
                 baseline_y + 7,
             )
+
+    def _draw_combo_numbers(self, painter, start_time, end_time, baseline_y, normal_radius,
+                            finisher_radius, moving_notes) -> None:
+        """osu!'s editor combo numbers -- the ones a timestamp quotes, from 1
+        at every new combo -- under 1 and every `step`th, `step` sized so the
+        labels have room at this zoom (owner, 2026-11-24). Under the note, not
+        inside it as osu! draws them: a chart-lane circle is too small."""
+        if not _show_combo or not self.note_combo:
+            return
+        first = bisect_left(self.note_times, start_time)
+        last = bisect_right(self.note_times, end_time)
+        if last <= first:
+            return
+        font = QFont(painter.font())
+        font.setPixelSize(max(8, round(normal_radius * 0.55)))
+        metrics = QFontMetrics(font)
+        gap = 6
+        widest = metrics.horizontalAdvance(str(max(self.note_combo[first:last])))
+        step = combo_step(self.width() / (last - first), widest + gap)
+        painter.save()
+        painter.setFont(font)
+        painter.setPen(QColor(220, 225, 235, 160))
+        # The step is from the average spacing, so a burst denser than the
+        # view's average can still crowd, and a shiny's fake sliders share
+        # the note's x: a label that would touch the one before it is skipped.
+        right = -math.inf
+        for index in range(first, last):
+            note = self.notes[index]
+            combo = self.note_combo[index]
+            if combo != 1 and combo % step:
+                continue
+            time = note.time + (self._move_delta if note.uid in moving_notes else 0.0)
+            x = self.x_for_time(time)
+            text = str(combo)
+            width = metrics.horizontalAdvance(text)
+            if x - width / 2 < right:
+                continue
+            right = x + width / 2 + gap
+            radius = finisher_radius if note.is_finisher else normal_radius
+            top = self.note_center_y(note, baseline_y, radius) + radius + 1
+            painter.drawText(QRectF(x - width / 2 - 1, top, width + 2, metrics.height()),
+                             Qt.AlignCenter, text)
+        painter.restore()
 
     def _baseline_y(self) -> float:
         """The y objects are centred on. Bottom-anchored views draw lower."""

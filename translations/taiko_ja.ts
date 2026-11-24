@@ -3169,6 +3169,14 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
             <translation>ピッチを変える</translation>
         </message>
         <message>
+            <source>Any playback rate, with the pitch kept or moved with it</source>
+            <translation>好きな再生速度。ピッチはそのままか、速度に合わせて変える</translation>
+        </message>
+        <message>
+            <source>Off keeps the song&apos;s pitch, as DT and HT do; on moves it with the speed, as NC and DC do</source>
+            <translation>オフは DT・HT のように曲のピッチを保ち、オンは NC・DC のように速度に合わせて変えます</translation>
+        </message>
+        <message>
             <source>Pitch</source>
             <translation>ピッチ</translation>
         </message>
@@ -4373,6 +4381,18 @@ Every beatmap in it is checked once for taiko difficulties, and the result is re
         <message>
             <source>Animate transforms</source>
             <translation>変形をアニメーション</translation>
+        </message>
+        <message>
+            <source>Chart view</source>
+            <translation>譜面ビュー</translation>
+        </message>
+        <message>
+            <source>Show combo numbers</source>
+            <translation>コンボ番号を表示</translation>
+        </message>
+        <message>
+            <source>osu!&apos;s combo numbers, the ones a timestamp quotes, under the notes of the chart view: on every note, or every few as the zoom leaves room.</source>
+            <translation>タイムスタンプで使われる osu! のコンボ番号を譜面ビューのノーツの下に表示します。ズームに余裕があれば全ノーツ、なければ数個おきに表示します。</translation>
         </message>
         <message>
             <source>Notes glide to their new places when a transform changes. Off jumps straight there, which is lighter on a dense map.</source>

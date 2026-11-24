@@ -617,6 +617,8 @@ class GameplayViewerView(QWidget):
         # The mods in force (see MOD_ORDER). HR/EZ change the map's own
         # SliderMultiplier, so the document is kept to re-derive from.
         self.mods: frozenset[str] = frozenset()
+        # The status bar's Custom rate, None under a rate mod or none at all.
+        self.custom_rate: float | None = None
         self._document = None
 
         self.don_brush = QColor(*DON_COLOR)
@@ -1035,7 +1037,7 @@ class GameplayViewerView(QWidget):
 
     def _kiai_beats(self) -> KiaiBeats:
         """`KiaiBeats` for these red lines at this rate, built once per edit."""
-        key = (id(self.beat_points), len(self.beat_points), mod_rate_percent(self.mods))
+        key = (id(self.beat_points), len(self.beat_points), self._rate_percent())
         if getattr(self, "_kiai_beats_key", None) != key:
             self._kiai_beats_key = key
             self._kiai_beats_cache = KiaiBeats(self.beat_points, key[2])
@@ -1143,13 +1145,24 @@ class GameplayViewerView(QWidget):
             self.refresh_notes(self._document)
         self.update()
 
+    def set_custom_rate(self, rate: float | None) -> None:
+        """A Custom rate is a rate mod the pills have no name for: the kiai
+        flash and the hit animations follow it as they follow DT/HT."""
+        if rate != self.custom_rate:
+            self.custom_rate = rate
+            self.update()
+
+    def _rate_percent(self) -> float:
+        return self.custom_rate * 100.0 if self.custom_rate else mod_rate_percent(self.mods)
+
     def _animation_ms(self, song_ms: float) -> float:
         """`song_ms` of song time as the wall-clock ms an animation has run.
 
         Under DT/NC the song runs 1.5x, so a 150ms drum flash timed on song
         time was over in 100ms. The hit animations keep nomod's length (owner,
         2026-10-19); the kiai pulse is per beat and stays on song time."""
-        return song_ms / 1.5 if "DT" in self.mods or "NC" in self.mods else song_ms
+        rate = self._rate_percent() / 100.0
+        return song_ms / rate if rate > 1.0 else song_ms
 
     def _scroll_length_px(self) -> float:
         """osu!'s scroll length on this view, hit target to screen edge --
